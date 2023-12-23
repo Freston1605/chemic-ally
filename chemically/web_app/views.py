@@ -8,7 +8,8 @@ from abc import ABC, abstractmethod
 
 
 class LandingPage(TemplateView):
-    """Landing Page
+    """
+    Class based view for the landing page of the website.
 
     Args:
         TemplateView (Class): Class Based Django View
