@@ -1,10 +1,10 @@
+from abc import ABC, abstractmethod
 from django.contrib import messages
 from django.http import HttpResponse
 from django.views.generic.edit import FormView
 from django.views.generic import TemplateView
 from .forms import MolecularFormulaForm, ChemicalReaction
 from .utils import calculations
-from abc import ABC, abstractmethod
 
 
 class LandingPage(TemplateView):
