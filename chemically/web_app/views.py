@@ -81,9 +81,6 @@ class CalculateMolecularWeightView(BaseCalculateView):
 
     Args:
     - BaseCalculateView (Type[BaseCalculateView]): Base class for views that involve form submissions and custom calculations.
-
-    Returns:
-    - dict: The result of the molecular weight calculation, including name, formula, and molecular weight.
     """
 
     template_name = "calculator/molecular_weight.html"
@@ -106,13 +103,12 @@ class CalculateMolecularWeightView(BaseCalculateView):
 
 
 class BalanceChemicalReaction(BaseCalculateView):
-    """_summary_
+    """
+    Concrete view class for handling a chemical reaction from the django form ChemicalReaction.
+    It is intended to be used in the context of stoichiomtetric coefficient balancing for a particular chemical reaction.
 
     Args:
-        BaseCalculateView (_type_): _description_
-
-    Returns:
-        _type_: _description_
+        - BaseCalculateView (Type[BaseCalculateView]): Base class for views that involve form submissions and custom calculations.
     """
 
     template_name = "calculator/reaction_balancer.html"
