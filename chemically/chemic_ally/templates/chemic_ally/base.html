@@ -1,3 +1,4 @@
+{% load static %}
 <!DOCTYPE html>
 <html lang="en" data-bs-theme="dark">
   <head>
@@ -12,14 +13,17 @@
     <!-- MathJax 3 -->
     <script src="https://polyfill.io/v3/polyfill.min.js?features=es6"></script>
     <script id="MathJax-script" async src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-mml-chtml.js"></script>
+
+    <!-- CSS Sheet -->
+    <link rel="stylesheet" href="{% static 'css/style.css' %}" />
   </head>
 
   <body>
     <!-- Navigation bar -->
-    <header class="navbar navbar-expand-lg sticky-top bg-primary">
-      <nav class="container-xxl flex-wrap flex-lg-nowrap">
-        <a class="navbar-brand" href="{% url "landing" %}">
-          <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" class="bi bi-calculator" viewBox="0 0 16 16">
+    <header class="navbar navbar-expand-lg sticky-top bg-dark" data-bs-theme="dark">
+      <nav class="container-xxl flex-wrap flex-lg-nowrap" aria-label="Main navigation">
+        <a class="navbar-brand p-0 me-0 me-lg-2" href="{% url 'landing' %}" aria-label="ChemicAlly">
+          <svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" fill="currentColor" class="bi bi-calculator" viewBox="0 0 16 16">
             <path d="M12 1a1 1 0 0 1 1 1v12a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V2a1 1 0 0 1 1-1zM4 0a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h8a2 2 0 0 0 2-2V2a2 2 0 0 0-2-2z" />
             <path d="M4 2.5a.5.5 0 0 1 .5-.5h7a.5.5 0 0 1 .5.5v2a.5.5 0 0 1-.5.5h-7a.5.5 0 0 1-.5-.5zm0 4a.5.5 0 0 1 .5-.5h1a.5.5 0 0 1 .5.5v1a.5.5 0 0 1-.5.5h-1a.5.5 0 0 1-.5-.5zm0 3a.5.5 0 0 1 .5-.5h1a.5.5 0 0 1 .5.5v1a.5.5 0 0 1-.5.5h-1a.5.5 0 0 1-.5-.5zm0 3a.5.5 0 0 1 .5-.5h1a.5.5 0 0 1 .5.5v1a.5.5 0 0 1-.5.5h-1a.5.5 0 0 1-.5-.5zm3-6a.5.5 0 0 1 .5-.5h1a.5.5 0 0 1 .5.5v1a.5.5 0 0 1-.5.5h-1a.5.5 0 0 1-.5-.5zm0 3a.5.5 0 0 1 .5-.5h1a.5.5 0 0 1 .5.5v1a.5.5 0 0 1-.5.5h-1a.5.5 0 0 1-.5-.5zm0 3a.5.5 0 0 1 .5-.5h1a.5.5 0 0 1 .5.5v1a.5.5 0 0 1-.5.5h-1a.5.5 0 0 1-.5-.5zm3-6a.5.5 0 0 1 .5-.5h1a.5.5 0 0 1 .5.5v1a.5.5 0 0 1-.5.5h-1a.5.5 0 0 1-.5-.5zm0 3a.5.5 0 0 1 .5-.5h1a.5.5 0 0 1 .5.5v4a.5.5 0 0 1-.5.5h-1a.5.5 0 0 1-.5-.5z" />
           </svg>ChemicAlly
@@ -27,71 +31,66 @@
         <button class="navbar-toggler d-lg-none" type="button" data-bs-toggle="collapse" data-bs-target="#collapsibleNavId" aria-controls="collapsibleNavId" aria-expanded="false" aria-label="Toggle navigation"></button>
         <div class="collapse navbar-collapse" id="collapsibleNavId">
           <ul class="navbar-nav me-auto mt-2 mt-lg-0">
-            <li class="nav-item">
-              <a class="nav-link active" href="#" aria-current="page">Home <span class="visually-hidden">(current)</span></a>
-            </li>
-            <li class="nav-item">
-              <a class="nav-link" href="#">Link</a>
-            </li>
             <li class="nav-item dropdown">
-              <a class="nav-link dropdown-toggle" href="#" id="dropdownId" data-bs-toggle="dropdown" aria-haspopup="true" aria-expanded="false">Dropdown</a>
+              <a class="nav-link dropdown-toggle" href="#" id="dropdownId" data-bs-toggle="dropdown" aria-haspopup="true" aria-expanded="false">Tools</a>
               <div class="dropdown-menu" aria-labelledby="dropdownId">
-                <a class="dropdown-item" href="#">Action 1</a>
-                <a class="dropdown-item" href="#">Action 2</a>
+                <a class="dropdown-item" href="{% url 'molecular_weight' %}">Molecular Weight Calculator</a>
+                <a class="dropdown-item" href="{% url 'dilution' %}">Dilution Calculator</a>
+                <a class="dropdown-item" href="{% url 'reaction_balancer' %}">Reaction Balancer</a>
               </div>
             </li>
           </ul>
-          <form class="d-flex my-2 my-lg-0">
-            <input class="form-control me-sm-2" type="text" placeholder="Search" />
-            <button class="btn btn-outline-success my-2 my-sm-0" type="submit">Search</button>
-          </form>
         </div>
       </nav>
     </header>
-    <div></div>
-
-    <!-- Display mesagges -->
-    {% if messages %}
-    <div class="container mt-3">
-      {% for message in messages %}
-        <div class="alert {% if message.tags == 'success' %}alert-success{% endif %}
-                      {% if message.tags == 'info' %}alert-info{% endif %}
-                      {% if message.tags == 'warning' %}alert-warning{% endif %}
-                      {% if message.tags == 'error' %}alert-danger{% endif %} alert-dismissible fade show" role="alert">
-          {{ message }}
-          <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
-        </div>
-      {% endfor %}
-    </div>
-  {% endif %}  
 
     <!-- Main content -->
-    <main class="mt-3 my-md-4">
-      {% block main %}
+    <main class="bg-dark-subtle bg-gradient">
+      <div id="content" class="container py-4">
+        <!-- Display mesagges -->
+        {% if messages %}
+          <div class="container">
+            {% for message in messages %}
+              <div class="alert {% if message.tags == 'success' %}
 
-      {% endblock %}
+                {% elif message.tags == 'info' %}
+
+                {% elif message.tags == 'warning' %}
+
+                {% elif message.tags == 'error' %}
+
+                {% endif %}"
+                role="alert">
+                {{ message }}
+                <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
+              </div>
+            {% endfor %}
+          </div>
+        {% endif %}
+        <!-- Content block -->
+        {% block main %}
+
+        {% endblock %}
+      </div>
     </main>
     <footer class="bg-body-secondary">
       <div class="container py-4 py-md-5 px-4 px-md-3">
         <div class="row">
           <div class="col-lg-3 mb-3">
             <a class="d-inline-flex align-items-center mb-2 text-body-emphasis text-decoration-none" href="/" aria-label="Bootstrap">
-              <svg xmlns="http://www.w3.org/2000/svg" width="40" height="32" class="d-block me-2" viewBox="0 0 118 94" role="img">
-                <title>Bootstrap</title>
-                <path fill-rule="evenodd" clip-rule="evenodd" d="M24.509 0c-6.733 0-11.715 5.893-11.492 12.284.214 6.14-.064 14.092-2.066 20.577C8.943 39.365 5.547 43.485 0 44.014v5.972c5.547.529 8.943 4.649 10.951 11.153 2.002 6.485 2.28 14.437 2.066 20.577C12.794 88.106 17.776 94 24.51 94H93.5c6.733 0 11.714-5.893 11.491-12.284-.214-6.14.064-14.092 2.066-20.577 2.009-6.504 5.396-10.624 10.943-11.153v-5.972c-5.547-.529-8.934-4.649-10.943-11.153-2.002-6.484-2.28-14.437-2.066-20.577C105.214 5.894 100.233 0 93.5 0H24.508zM80 57.863C80 66.663 73.436 72 62.543 72H44a2 2 0 01-2-2V24a2 2 0 012-2h18.437c9.083 0 15.044 4.92 15.044 12.474 0 5.302-4.01 10.049-9.119 10.88v.277C75.317 46.394 80 51.21 80 57.863zM60.521 28.34H49.948v14.934h8.905c6.884 0 10.68-2.772 10.68-7.727 0-4.643-3.264-7.207-9.012-7.207zM49.948 49.2v16.458H60.91c7.167 0 10.964-2.876 10.964-8.281 0-5.406-3.903-8.178-11.425-8.178H49.948z" fill="currentColor"></path>
+              <svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" fill="currentColor" class="bi bi-calculator me-2" viewBox="0 0 16 16">
+                <path d="M12 1a1 1 0 0 1 1 1v12a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V2a1 1 0 0 1 1-1zM4 0a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h8a2 2 0 0 0 2-2V2a2 2 0 0 0-2-2z" />
+                <path d="M4 2.5a.5.5 0 0 1 .5-.5h7a.5.5 0 0 1 .5.5v2a.5.5 0 0 1-.5.5h-7a.5.5 0 0 1-.5-.5zm0 4a.5.5 0 0 1 .5-.5h1a.5.5 0 0 1 .5.5v1a.5.5 0 0 1-.5.5h-1a.5.5 0 0 1-.5-.5zm0 3a.5.5 0 0 1 .5-.5h1a.5.5 0 0 1 .5.5v1a.5.5 0 0 1-.5.5h-1a.5.5 0 0 1-.5-.5zm0 3a.5.5 0 0 1 .5-.5h1a.5.5 0 0 1 .5.5v1a.5.5 0 0 1-.5.5h-1a.5.5 0 0 1-.5-.5zm3-6a.5.5 0 0 1 .5-.5h1a.5.5 0 0 1 .5.5v1a.5.5 0 0 1-.5.5h-1a.5.5 0 0 1-.5-.5zm0 3a.5.5 0 0 1 .5-.5h1a.5.5 0 0 1 .5.5v1a.5.5 0 0 1-.5.5h-1a.5.5 0 0 1-.5-.5zm0 3a.5.5 0 0 1 .5-.5h1a.5.5 0 0 1 .5.5v1a.5.5 0 0 1-.5.5h-1a.5.5 0 0 1-.5-.5zm3-6a.5.5 0 0 1 .5-.5h1a.5.5 0 0 1 .5.5v1a.5.5 0 0 1-.5.5h-1a.5.5 0 0 1-.5-.5zm0 3a.5.5 0 0 1 .5-.5h1a.5.5 0 0 1 .5.5v4a.5.5 0 0 1-.5.5h-1a.5.5 0 0 1-.5-.5z" />
               </svg>
               <span class="fs-5">ChemicAlly</span>
             </a>
             <ul class="list-unstyled small">
               <li class="mb-2">
-                {% lorem 5 w random %}
-              </li>
-              <li class="mb-2">
-                Code licensed with the <a href="https://github.com/Freston1605/chemic-ally/blob/main/LICENSE" target="_blank" rel="license noopener">GNU General Public License</a>.
+                Code available for all purposes under the <a href="https://github.com/Freston1605/chemic-ally/blob/main/LICENSE" target="_blank" rel="license noopener">GNU General Public License</a>.
               </li>
             </ul>
           </div>
-          <div class="col-6 col-lg-2 offset-lg-1 mb-3">
+          <div class="col-6 col-lg-3 offset-lg-1 mb-3">
             <h5>Links</h5>
             <ul class="list-unstyled">
               <li class="mb-2">
@@ -102,12 +101,29 @@
               </li>
             </ul>
           </div>
+          <div class="col-6 col-lg-3 offset-lg-1 mb-3">
+            <h5>Powered By</h5>
+            <ul class="list-unstyled">
+              <li class="mb-2">
+                <a href="https://www.djangoproject.com/">Django</a>
+              </li>
+              <li class="mb-2">
+                <a href="https://getbootstrap.com/">Bootstrap</a>
+              </li>
+              <li class="mb-2">
+                <a href="https://www.pythonanywhere.com/">Python Anywhere</a>
+              </li>
+              <li class="mb-2">
+                <a href="https://www.mathjax.org/">MathJax</a>
+              </li>
+              <li><a href="https://pypi.org/project/chempy/">ChemPy</a></li>
+            </ul>
+          </div>
         </div>
       </div>
     </footer>
     <!-- Bootstrap JavaScript Libraries -->
     <script src="https://cdn.jsdelivr.net/npm/@popperjs/core@2.11.8/dist/umd/popper.min.js" integrity="sha384-I7E8VVD/ismYTF4hNIPjVp/Zjvgyol6VFvRkX/vR+Vc4jQkC+hVqc2pM8ODewa9r" crossorigin="anonymous"></script>
-
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.min.js" integrity="sha384-BBtl+eGJRgqQAUMxJ7pMwbEyER4l1g+O15P+16Ep7Q9Q+zqX6gSbd85u4mG4QzX+" crossorigin="anonymous"></script>
   </body>
 </html>

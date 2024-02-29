@@ -7,22 +7,22 @@ class MolecularFormulaForm(forms.Form):
     A Django form for capturing a molecular formula.
 
     Parameters:
-    - formula (CharField): A character field for the molecular formula.
+    - formula (CharField): A character field for the molecular formula of one or more molecules.
                           The maximum length is set to 100 characters.
 
     Example usage:
-    >>> form_class = MoleculeFormulaForm(data={'formula': 'H2O'})
+    >>> form_class = MoleculeFormulaForm(data={'formula': 'NH4+ CO2 H2O'})
     >>> form.is_valid()
     True
     >>> form.cleaned_data
-    {'formula': 'H2O'}
+    {'formula': 'NH4+ CO2 H2O'}
     """
 
     formula = forms.CharField(
         max_length=100,
         label="Chemical Formula",
-        help_text="Enter the chemical formula of the desired substance.",
-        widget=forms.TextInput(attrs={"placeholder": "NH4+"}),
+        help_text="Enter the chemical formula of all desired substances separated by a white space.",
+        widget=forms.TextInput(attrs={"placeholder": "NH4+ CO2 H2O"}),
         required=True,
     )
 
@@ -127,23 +127,30 @@ class SolutionForm(forms.Form):
                 initial and final concentrations.
 
     """
-
+    
+    # Prefix values for units
+    BASE = 1e0
+    MILLI = 1e-3
+    MICRO = 1e-6
+    NANO = 1e-9
+    PICO = 1e-12
+    
     # Define choices for concentration units
     CONCENTRATION_CHOICES = [
-        ("mol/L", "Molar", 1e0),
-        ("mmol/L", "Millimolar", 1e-3),
-        ("umol/L", "Micromolar", 1e-6),
-        ("nmol/L", "Nanomolar", 1e-9),
-        ("pmol/L", "Picomolar", 1e-12),
+        (BASE, "mol/L"),
+        (MILLI, "mmol/L"),
+        (MICRO, "μmol/L"),
+        (NANO, "nmol/L"),
+        (PICO, "pmol/L"),
     ]
 
     # Define choices for volume units
     VOLUME_CHOICES = [
-        ("L", "Liters", 1e0),
-        ("mL", "Milliliters", 1e-3),
-        ("μL", "Microliters", 1e-6),
-        ("nL", "Nanoliters", 1e-9),
-        ("pL", "Picoliters", 1e-12),
+        (BASE, "L"),
+        (MILLI, "mL"),
+        (MICRO, "μL"),
+        (NANO, "nL"),
+        (PICO, "pL"),
     ]
 
     solute = forms.CharField(
@@ -158,113 +165,57 @@ class SolutionForm(forms.Form):
         help_text="Optional: Enter the chemical formula of the solvent.",
         widget=forms.TextInput(attrs={"placeholder": "H2O"}),
     )
-    conc_inital = forms.FloatField(
+    c1 = forms.FloatField(
         min_value=0,
-        label="Initial concentration of the solution.",
+        label="Initial concentration of the solute.",
         required=False,
-        help_text="Enter the concentration of the initial solution.",
+        help_text="Enter the concentration of the initial solute in the solution and choose  the corresponding concentration unit prefix the menu.",
     )
 
-    vol_initial = forms.FloatField(
+    v1 = forms.FloatField(
         min_value=0,
-        label="Initial volume of the solution.",
+        label="Initial volume of the solute.",
         required=False,
-        help_text="Enter the volume of the initial solution.",
+        help_text="Enter the volume of the initial solution and choose the corresponding volume unit prefix in the menu.",
     )
-    conc_final = forms.FloatField(
+    c2 = forms.FloatField(
         min_value=0,
         label="Final concentration of the solution.",
-        required=True,
+        required=False,
         help_text="Enter the concentration of the final solution.",
     )
-    vol_final = forms.FloatField(
+    v2 = forms.FloatField(
         min_value=0,
         label="Final volume of the solution.",
-        required=True,
+        required=False,
         help_text="Enter the volume of the final solution.",
     )
-    conc_initial_unit = forms.ChoiceField(
+    c1_unit = forms.ChoiceField(
         required=False,
         choices=CONCENTRATION_CHOICES,
         label="Initial concentration scale unit.",
         initial="mol/L",
         help_text="Choose a concentration unit for the initial concentration of the solute in the solution.",
     )
-    conc_final_unit = forms.ChoiceField(
+    c2_unit = forms.ChoiceField(
         required=False,
         choices=CONCENTRATION_CHOICES,
         label="Final concentration scale unit.",
         initial="mol/L",
         help_text="Choose a concentration unit for the final concentration of the solute in the solution.",
     )
-    vol_initial_unit = forms.ChoiceField(
+    v1_unit = forms.ChoiceField(
         required=False,
         choices=VOLUME_CHOICES,
         label="Initial volume scale unit.",
         initial="mL",
         help_text="Choose a volume unit for the initial volume of the solution.",
     )
-    vol_final_unit = forms.ChoiceField(
+    v2_unit = forms.ChoiceField(
         required=False,
         choices=VOLUME_CHOICES,
         label="Final volume scale unit",
         initial="mL",
         help_text="Choose a volume unit for the final volume of the solution.",
     )
-
-    def clean(self):
-        """
-        Clean and validate form data.
-
-        This method performs additional validation on the form data, including checks
-        for the relationship between initial and final concentrations.
-
-        Raises:
-            forms.ValidationError: Raised if validation fails, with details on the error.
-
-        Returns:
-            dict: Cleaned and validated form data.
-
-        Example:
-            Usage in a Django form view:
-
-            >>> form = SolutionForm(request.POST)
-            >>> if form.is_valid():
-            >>>     # Process the cleaned and validated data
-            >>>     cleaned_data = form.cleaned_data
-        """
-
-        cleaned_data = super().clean()
-        # Get the initial and final concentration
-        concentration_initial = cleaned_data.get("concentration_initial")
-        # concentration_final = cleaned_data.get("concentration_final")
-
-        # Get the initial and final volume
-        volume_initial = cleaned_data.get("volume_initial")
-        # volume_final = cleaned_data.get("volume_final")
-
-        # Check if either concentration_intial of volume_initial are provided, but not both
-        if concentration_initial is not None and volume_initial is not None:
-            raise forms.ValidationError(
-                "Please provide either the initial concentration or the initial volume, but not both."
-            )
-
-        # # Get the initial and final concentration units
-        # concentration_initial_unit = cleaned_data.get("concentration_initial_unit")[2]
-        # concentration_final_unit = cleaned_data.get("concentration_final_unit")[2]
-
-        # # Multiply values by their units
-        # concentration_initial = self.multiply_by_unit(
-        #     concentration_initial, concentration_initial_unit
-        # )
-        # concentration_final = self.multiply_by_unit(
-        #     concentration_final, concentration_final_unit
-        # )
-
-        # # Check if the final volume is greater than the initial volume
-        # if concentration_initial is not None and concentration_final is not None:
-        #         if concentration_final > concentration_initial:
-        #             raise forms.ValidationError(
-        #                 "Final concentration cannot exceed initial concentration."
-        #             )
-        return cleaned_data
+   

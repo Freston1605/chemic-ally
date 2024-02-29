@@ -1,5 +1,6 @@
 from abc import ABC, abstractmethod
 from django.contrib import messages
+from django.core.exceptions import ValidationError
 from django.http import HttpResponse
 from django.views.generic.edit import FormView
 from django.views.generic import TemplateView
@@ -78,10 +79,26 @@ class BaseCalculateView(FormView, ABC):
 
 class CalculateMolecularWeightView(BaseCalculateView):
     """
-    Concrete view class for calculating the molecular weight based on a submitted molecular formula.
+    Concrete view class for calculating molecular weights based on a submitted molecular formula.
+
+    This view calculates the molecular weight for each molecular formula submitted via a form,
+    parsing the input string and looping over each formula to calculate its molecular weight.
+
+    Attributes:
+        template_name (str): The name of the template to render.
+        form_class (Type[Form]): The form class to use for input validation and submission.
+
+    Methods:
+        process_calculation(form: MolecularFormulaForm) -> dict:
+            Calculate the molecular weight based on the submitted molecular formula.
+            Parses the string containing one or more molecular formulas separated by whitespace,
+            calculates the molecular weight for each formula, and returns a dictionary
+            with each formula as key and its corresponding molecular weight as value.
 
     Args:
-    - BaseCalculateView (Type[BaseCalculateView]): Base class for views that involve form submissions and custom calculations.
+        BaseCalculateView (Type[BaseCalculateView]): Base class for views that involve form submissions
+            and custom calculations.
+
     """
 
     template_name = "chemic_ally/calculator/molecular_weight.html"
@@ -92,14 +109,26 @@ class CalculateMolecularWeightView(BaseCalculateView):
         Calculate the molecular weight based on the submitted molecular formula.
 
         Parameters:
-        - form (MolecularFormulaForm): The form instance containing the molecular formula.
+            form (MolecularFormulaForm): The form instance containing the molecular formula.
 
         Returns:
-        - dict: The result of the molecular weight calculation, formula, and molecular weight.
+            dict: A dictionary containing each molecular formula and its corresponding calculated
+                molecular weight.
         """
-        molecule = form.cleaned_data
-        molecular_weight = calculations.calculate_molecular_weight(molecule["formula"])
-        result = {"formula": molecule["formula"], "molecular_weight": molecular_weight}
+
+        # Obtain the molecular formulas from the form and parse them into a list
+        molecules = [x.strip() for x in form.cleaned_data["formula"].split()]
+        result = {}
+        # Loop over the molecules list
+        for molecule in molecules:
+            # Calculate the molecular weight
+            molecular_weight = calculations.calculate_molecular_weight(molecule)
+
+            # Check if the molecular weight is valid
+            if molecular_weight is not None:
+                # Add the molecule:molecular_weight pair to the result dictionary
+                result[molecule] = molecular_weight
+                
         return result
 
 
@@ -130,10 +159,6 @@ class BalanceChemicalReaction(BaseCalculateView):
 
         Returns:
             str: A string representation of the balanced chemical reaction equation.
-
-        Example:
-            Given a form with reactants {'H2', 'O2'}, products {'H2O'}, and reversible=False,
-            the method may return "2H2O + O2 -> 2H2O" representing the balanced reaction.
         """
         try:
             # Clean the input to obtain the data
@@ -143,8 +168,8 @@ class BalanceChemicalReaction(BaseCalculateView):
             reversible = reaction["reversible"]
 
             # Parse the fields 'reactant' and 'product' to obtain individual molecules
-            reactancts = [x.strip() for x in reaction["reactant"].split(" ")]
-            products = [x.strip() for x in reaction["product"].split(" ")]
+            reactancts = [x.strip() for x in reaction["reactant"].split()]
+            products = [x.strip() for x in reaction["product"].split()]
 
             # Make a dictionary with only the molecules' molecular formulas as the keys
             reactancts_dict = {reactant for reactant in reactancts}
@@ -167,7 +192,6 @@ class BalanceChemicalReaction(BaseCalculateView):
         except Exception as e:
             # Handles the exception to be displayed as an error message to the user trough django.messages
             messages.error(self.request, f"Error: {str(e)}")
-            return {"error": str(e)}
 
 
 class CalculateDilutionView(BaseCalculateView):
@@ -181,61 +205,148 @@ class CalculateDilutionView(BaseCalculateView):
 
     def process_calculation(self, form: form_class) -> dict:
         """
-        Processes the calculation based on user input from the form.
+        Processes the calculation based on user input from the form to calculate a simple dilution.
+        
+
+        This function performs the following steps:
+        1. Obtains cleaned data from the provided form, including initial and final concentrations, volumes, and their respective unit prefixes.
+        2. Converts unit prefixes to floating-point values and retrieves corresponding unit labels.
+        3. Validates the provided data:
+        - Ensures that exactly three out of the four properties (initial concentration, initial volume, final concentration, final volume) are provided.
+        - Checks that all provided values are greater than zero.
+        4. Checks consistency between initial and final volumes and concentrations.
+        5. Calculates the missing property using the provided data.
+        6. Converts the calculated value back to its original unit.
+        7. Constructs a dictionary containing the missing property, its calculated value, and its corresponding unit label.
+        8. Returns the result dictionary.
 
         Args:
-            form (SolutionForm): The form containing user input data.
+            form (form_class): The form containing user input data.
+
+        Raises:
+            ValidationError: If validation fails due to incorrect or insufficient input.
+            ValidationError: If consistency checks between initial and final volumes/concentrations fail.
+            Exception: If any other unexpected error occurs during the calculation.
 
         Returns:
-            dict: A dictionary containing the results of the calculation.
+            dict: A dictionary containing the result of the calculation, including the missing property, its calculated value, and its unit label.
         """
+
 
         try:
             # Get the cleaned data from the form
             solution = form.cleaned_data
 
-            # Get the initial state values
-            conc_initial = solution.get("conc_initial")
-            conc_initial_unit = solution.get("conc_initial_unit", [])[2]
-            vol_initial = solution.get("vol_initial")
-            vol_initial_unit = solution.get("vol_initial_unit", [])[2]
+            # Solution properties
+            c1 = solution["c1"]
+            v1 = solution["v1"]
+            c2 = solution["c2"]
+            v2 = solution["v2"]
 
-            # Get the final state values
-            conc_final = solution.get("conc_final")
-            conc_final_unit = solution.get("conc_final_unit", [])[2]
-            vol_final = solution.get("vol_final")
-            vol_final_unit = solution.get("vol_final_unit", [])[2]
+            # Store and convert to a float the  value of the unit prefixes for every property
+            c1_unit = float(solution["c1_unit"])
+            v1_unit = float(solution["v1_unit"])
+            c2_unit = float(solution["c2_unit"])
+            v2_unit = float(solution["v2_unit"])
+            
+            print("Test")
 
-            # Convert volumes and concentrations to standard units (liters and molar)
-            vol_initial_liters = calculations.multiply_by_unit(
-                vol_initial, vol_initial_unit
-            )
-            vol_final_liters = calculations.multiply_by_unit(vol_final, vol_final_unit)
-            conc_initial_molar = calculations.multiply_by_unit(
-                conc_initial, conc_initial_unit
-            )
-            conc_final_molar = calculations.multiply_by_unit(
-                conc_final, conc_final_unit
-            )
+            # Get the selected unit labels from the form's cleaned data
+            c1_unit_label = dict(form.fields["c1_unit"].choices)[c1_unit]
+            v1_unit_label = dict(form.fields["v1_unit"].choices)[v1_unit]
+            c2_unit_label = dict(form.fields["c2_unit"].choices)[c2_unit]
+            v2_unit_label = dict(form.fields["v2_unit"].choices)[v2_unit]
+            
+            print("Test 2")
 
-            # Check if the final volume is greater than the initial volume
-            if vol_final_liters > vol_initial_liters:
-                raise ValueError("Final volume cannot be greater than initial volume.")
-
-            # Perform the dilution calculation here
-
-            # Construct a dictionary containing the results
-            result = {
-                "conc_initial": conc_initial,
-                "conc_final": conc_final,
-                "vol_initial": vol_initial,
-                "vol_final": vol_final,
-                # Add other relevant results here
+            properties = {
+                "c1": (c1, c1_unit, "Initial Concentration", c1_unit_label),
+                "v1": (v1, v1_unit, "Initial Volume", v1_unit_label),
+                "c2": (c2, c2_unit, "Final Concentration", c2_unit_label),
+                "v2": (v2, v2_unit, "Final Volume", v2_unit_label),
             }
+            
+            # Print every variable for debugging
+            for key, value in properties.items():
+                print(f"{key}: {value}")
+            
+            # Count the number of non-None values
+            non_none_count = sum(
+                1 for value, _, _, _ in properties.values() if value is not None
+            )
 
+            # Check if the count of provided values is exactly three
+            if non_none_count != 3:
+                raise ValidationError(
+                    "Exactly three values among Initial Concentration, Initial Volume, Final Concentration, and Final Volume must be provided.",
+                    code="invalid",
+                )
+
+            # Loop over the properties dictionary
+            for prop, (value, unit, label, unit_label) in properties.items():
+                # Check if the current value of the property is not None
+                if value is not None:
+                    # Check if the current value is higher than zero, raise a ValidationError if True
+                    if value <= 0:
+                        raise ValidationError(
+                            f"The {label.lower()} cannot be equal or lower than zero.",
+                            code="invalid",
+                        )
+                    # Else, multiply the value by its unit to obtain standard units in Liters and Molar
+                    locals()[prop] *= unit
+                else:
+                    # If the value is None, store it and its unit as the missing propery to calculate
+                    # This only stores one label and unit, as the previous code enforces that only one property is missing
+                    missing_property = label
+                    missing_unit_value = unit
+                    missing_unit_label = unit_label
+                    
+                    print("Missing property", missing_property)
+                    print("Unit value", missing_unit_value)
+                    print("Unit label", missing_unit_label)
+
+            # Check for consistency in concentration and volume
+            # The final states of the solution must have either lower concentration or higher volume than its initial state
+
+            # Check if initial volume v1 is greater or equal than final volume v2
+            if properties["v1"][0] is not None and properties["v2"][0] is not None:
+                if properties["v1"][0] >= properties["v2"][0]:
+                    # Raise a ValidationError if True
+                    raise ValidationError(
+                        "Initial volume cannot be greater or equal than final volume.",
+                        code="invalid",
+                    )
+                missing_value = calculations.calculate_dilution(
+                    *[properties[prop][0] for prop in ["c1", "v1", "c2", "v2"]]
+                )
+
+            # Check if initial concentration c1 is greater than final concentration c2
+            elif properties["c1"][0] is not None and properties["c2"][0] is not None:
+                if properties["c1"][0] < properties["c2"][0]:
+                    raise ValidationError(
+                        "Initial concentration cannot be lesser than final concentration.",
+                        code="invalid",
+                    )
+                missing_value = calculations.calculate_dilution(
+                    *[properties[prop][0] for prop in ["c1", "v1", "c2", "v2"]]
+                )
+            else:
+                raise ValidationError(
+                    "Either the initial and final volume or the initial and final concentration must be provided.",
+                    code="required",
+                )
+
+            # Convert back into the original unit
+            missing_value = missing_value / missing_unit_value
+
+            # Return the corresponding property and its value
+            result = {
+                "property": missing_property,
+                "value": missing_value,
+                "unit": missing_unit_label,
+            }
             return result
 
         except Exception as e:
-            # Handle any exceptions that occur during the calculation
-            error_message = f"An error occurred during the calculation: {str(e)}"
-            return {"error": error_message}
+            # Handles the exception to be displayed as an error message to the user trough django.messages
+            messages.error(self.request, f"Error: {e}")

@@ -3,7 +3,7 @@ from .views import LandingPage, CalculateMolecularWeightView, BalanceChemicalRea
 
 urlpatterns = [
     path('', LandingPage.as_view(), name='landing'),
-    path('calculate/molecular_weight', CalculateMolecularWeightView.as_view(), name='calculate_molecular_weight'),
+    path('calculate/molecular_weight', CalculateMolecularWeightView.as_view(), name='molecular_weight'),
     path('calculate/reaction_balancer', BalanceChemicalReaction.as_view(), name='reaction_balancer'),
-    path('calculate/dilution', CalculateDilutionView.as_view(), name="calculate_dilution"),
+    path('calculate/dilution', CalculateDilutionView.as_view(), name="dilution"),
 ]

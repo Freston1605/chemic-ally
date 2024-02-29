@@ -92,34 +92,62 @@ def balance_chemical_reaction_to_latex(reactants, products, reversible=True):
 
     return latex_reaction
 
-def calculate_dilution(c1, v1, c2, v2):
-    """Calculates the desired concentration (c1) or volume (v1) of an aliquot for a final dilution.
+
+def calculate_dilution(c1=None, v1=None, c2=None, v2=None):
+    """Calculates the dilution of a solution in a chemistry context.
+    
+    Takes 4 arguments, c1, v1, c2, and v2, one of which must be None and calculates and returns said missing value.
+    Returns None if there is more than one None value or if all arguments are not None.
+    This function expects all values to be in the same units: Liters and Molar, 
+    although it also works if every unit is under the same prefix: milli, micro, nano, pico, etc.
+    
 
     Args:
-        c1 (float, optional): The desired concentration of the aliquot.
-        v1 (float, optional): The desired volume of the aliquot.
-        c2 (float): The concentration of the final diluted solution.
-        v2 (float): The volume of the final diluted solution.
-
-    Raises:
-        ValueError: Raised if there is no specified desired concentration or volume.
+        c1 (float or None): The initial concentration of the solute in the solution. 
+                            Must be higher than the final concentration c2. 
+                            Defaults to None.
+        v1 (float or None): The initial volume of the solution. 
+                            Must be lower than the final volume v2. 
+                            Defaults to None.
+        c2 (float or None): The final concentration of the solute in the solution. 
+                            Must be lower than the initial concentration c1. 
+                            Defaults to None.
+        v2 (float or None): The final volume of the solution. 
+                            Must be higher than the initial volume v1.
+                            Defaults to None
 
     Returns:
-        float: The calculated desired concentration (c1) or volume (v1) based on the input.
+        float or None: The missing value as a float, None if there is not enough data to compute.
     """
-    # Check for invalid input
-    if not (c1 and v1):
-        raise ValueError("There needs to be either a desired concentration or volume for the solution.")
+    if c1 is not None and v1 is not None and c2 is not None and v2 is not None:
+        # All values are provided, no missing value to calculate
+        return None
 
-    # Calculate the desired concentration
-    if not c1 and v1:
-        c1 = c2 * v2 / v1
-        return c1
+    provided_values = sum(1 for value in (c1, v1, c2, v2) if value is not None)
 
-    # Calculate the desired volume
-    if c1 and not v1:
-        v1 = c2 / c1 * v2
-        return v1
+    # Case 1: Three values provided, one missing
+    if provided_values == 3:
+        if c1 is None:
+            return v1 * c2 / v2
+        elif v1 is None:
+            return v2 * c2 / c1
+        elif c2 is None:
+            return v2 * c1 / v1
+        elif v2 is None:
+            return v1 * c1 / c2
+
+    # Case 2: Two values provided, two missing
+    elif provided_values == 2:
+        return None  # Not enough information to calculate
+
+    # Case 3: One value provided, three missing
+    elif provided_values == 1:
+        return None  # Not enough information to calculate
+
+    # Case 4: No value provided
+    elif provided_values == 0:
+        return None  # Not enough information to calculate
+
 
 def convert_volume(value, source_unit, target_unit):
     """
@@ -160,6 +188,7 @@ def convert_volume(value, source_unit, target_unit):
     converted_value = value * conversion_factor
 
     return converted_value
+
 
 def multiply_by_unit(self, value, unit):
     """
