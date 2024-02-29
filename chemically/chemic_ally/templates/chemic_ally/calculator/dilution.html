@@ -1,0 +1,117 @@
+{% extends 'chemic_ally/base.html' %}
+{% block main %}
+  <div class="container my-3">
+    <div class="row justify-content-center">
+      <div class="col-lg-6 col-md-8 col-sm-10">
+        <div class="card">
+          <div class="card-body">
+            <h3 class="mb-4">Dilution Calculator</h3>
+            <form method="post" id="dilution_form" action="{% url 'dilution' %}">
+              {% csrf_token %}
+              {% comment %}Initial Concentration c1{% endcomment %}
+              <div class="row align-items-top">
+                <div class="col-8">
+                  <div class="mb-3">
+                    <label for="{{ form.c1.id_for_label }}" class="form-label">{{ form.c1.label_tag }}</label>
+                    <input type="number" step="any" min="0" name="{{ form.c1.name }}" id="{{ form.c1.id_for_label }}" class="form-control" placeholder="{{ form.c1.field.widget.attrs.placeholder }}" aria-describedby="helpId" value="" title="{{ form.c1.help_text }}" />
+                  </div>
+                </div>
+                <div class="col-4">
+                  <div class="mb-3">
+                    <label for="{{ form.c1_unit.name }}" class="form-label">Unit</label>
+                    <select class="form-select" name="{{ form.c1_unit.name }}" id="{{ form.c1_unit.name }}" title="{{ form.c1_unit.help_text }}">
+                      {% for choice_value, choice_label in form.c1_unit.field.choices %}
+                        <option value="{{ choice_value }}">{{ choice_label }}</option>
+                      {% endfor %}
+                    </select>
+                  </div>
+                </div>
+              </div>
+
+              {% comment %}Initial Volume v1{% endcomment %}
+              <div class="row align-items-top">
+                <div class="col-8">
+                  <div class="mb-3">
+                    <label for="{{ form.v1.id_for_label }}" class="form-label">{{ form.v1.label_tag }}</label>
+                    <input type="number" step="any" min="0" name="{{ form.v1.name }}" id="{{ form.v1.id_for_label }}" class="form-control" placeholder="{{ form.v1.field.widget.attrs.placeholder }}" aria-describedby="helpId" value="" title="{{ form.v1.help_text }}" />
+                  </div>
+                </div>
+                <div class="col-4">
+                  <div class="mb-3">
+                    <label for="{{ form.v1_unit.name }}" class="form-label">Unit</label>
+                    <select class="form-select" name="{{ form.v1_unit.name }}" id="{{ form.v1_unit.name }}" title="{{ form.v1_unit.help_text }}">
+                      {% for choice_value, choice_label in form.v1_unit.field.choices %}
+                        <option value="{{ choice_value }}">{{ choice_label }}</option>
+                      {% endfor %}
+                    </select>
+                  </div>
+                </div>
+              </div>
+
+              {% comment %}Final Concentration c2{% endcomment %}
+              <div class="row align-items-top">
+                <div class="col-8">
+                  <div class="mb-3">
+                    <label for="{{ form.c2.id_for_label }}" class="form-label">{{ form.c2.label_tag }}</label>
+                    <input type="number" step="any" min="0" name="{{ form.c2.name }}" id="{{ form.c2.id_for_label }}" class="form-control" placeholder="{{ form.c2.field.widget.attrs.placeholder }}" aria-describedby="helpId" value="" title="{{ form.c2.help_text }}" />
+                  </div>
+                </div>
+                <div class="col-4">
+                  <div class="mb-3">
+                    <label for="{{ form.c2_unit.name }}" class="form-label">Unit</label>
+                    <select class="form-select" name="{{ form.c2_unit.name }}" id="{{ form.c2_unit.name }}" title="{{ form.c2_unit.help_text }}">
+                      {% for choice_value, choice_label in form.c2_unit.field.choices %}
+                        <option value="{{ choice_value }}">{{ choice_label }}</option>
+                      {% endfor %}
+                    </select>
+                  </div>
+                </div>
+              </div>
+
+              {% comment %}Final Volume v2{% endcomment %}
+              <div class="row align-items-top">
+                <div class="col-8">
+                  <div class="mb-3">
+                    <label for="{{ form.v2.id_for_label }}" class="form-label">{{ form.v2.label_tag }}</label>
+                    <input type="number" step="any" min="0" name="{{ form.v2.name }}" id="{{ form.v2.id_for_label }}" class="form-control" placeholder="{{ form.v2.field.widget.attrs.placeholder }}" aria-describedby="helpId" value="" title="{{ form.v2.help_text }}" />
+                  </div>
+                </div>
+                <div class="col-4">
+                  <div class="mb-3">
+                    <label for="{{ form.v2_unit.name }}" class="form-label">Unit</label>
+                    <select class="form-select" name="{{ form.v2_unit.name }}" id="{{ form.v2_unit.name }}" title="{{ form.v2_unit.help_text }}">
+                      {% for choice_value, choice_label in form.v2_unit.field.choices %}
+                        <option value="{{ choice_value }}">{{ choice_label }}</option>
+                      {% endfor %}
+                    </select>
+                  </div>
+                </div>
+              </div>
+              <button type="submit" class="btn btn-primary">Calculate</button>
+            </form>
+            <!-- Results -->
+            {% if result %}
+            <h4>Results:</h4>
+              <table class="table table-striped">
+                <thead>
+                  <tr>
+                    <th scope="col">Property</th>
+                    <th scope="col">Value</th>
+                    <th scope="col">Unit</th>
+                  </tr>
+                </thead>
+                <tbody>
+                    <tr>
+                      <td>{{ result.property }}</td>
+                      <td>{{ result.value }}</td>
+                      <td>{{ result.unit }}</td>
+                    </tr>
+                </tbody>
+              </table>
+            {% endif %}
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+{% endblock %}

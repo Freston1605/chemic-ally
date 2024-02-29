@@ -1,0 +1,48 @@
+{% extends 'chemic_ally/base.html' %}
+{% block main %}
+  <div class="container my-3">
+    <div class="row justify-content-center">
+      <div class="col-lg-6 col-md-8 col-sm-10">
+        <div class="card">
+          <div class="card-body">
+            <h3 class="mb-4">Molecular Weight Calculator</h3>
+            <form method="post" action="{% url 'molecular_weight' %}">
+              {% csrf_token %}
+              {% for field in form %}
+                <div class="mb-4">
+                  <label for="{{ field.id_for_label }}" class="form-label">{{ field.label_tag }}</label>
+                  {% if field.widget.input_type == 'textarea' %}
+                    <textarea name="{{ field.name }}" id="{{ field.id_for_label }}" class="form-control" placeholder="{{ field.field.widget.attrs.placeholder }}" aria-describedby="helpId"></textarea>
+                  {% else %}
+                    <input type="{{ field.field.widget.input_type }}" name="{{ field.name }}" id="{{ field.id_for_label }}" class="form-control" placeholder="{{ field.field.widget.attrs.placeholder }}" aria-describedby="helpId" value="" />
+                  {% endif %}
+                  <small id="helpId" class="text-muted">{{ field.help_text }}</small>
+                </div>
+              {% endfor %}
+              <button type="submit" class="btn btn-primary mb-4">Calculate</button>
+            </form>
+            {% if result %}
+              <h4>Results:</h4>
+              <table class="table table-striped">
+                <thead>
+                  <tr>
+                    <th scope="col">Molecule</th>
+                    <th scope="col">Molecular Weight (g/mol)</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {% for formula, weight in result.items %}
+                    <tr>
+                      <td>{{ formula }}</td>
+                      <td>{{ weight }}</td>
+                    </tr>
+                  {% endfor %}
+                </tbody>
+              </table>
+            {% endif %}
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+{% endblock %}

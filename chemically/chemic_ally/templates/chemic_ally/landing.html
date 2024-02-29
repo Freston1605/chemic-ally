@@ -1,0 +1,53 @@
+{% extends 'chemic_ally/base.html' %}
+
+{% block header %}
+
+{% endblock %}
+
+{% block main %}
+  <!-- Jumbotron -->
+  <div id="jumbotron" class="p-5 mb-4 bg-body-tertiary rounded-3">
+    <div class="container-fluid py-5">
+      <h1 class="display-5 fw-bold">ChemicAlly</h1>
+      <p class="col-md-8 fs-4">Empowering professionals with tools for rapid calculations for chemistry and beyond.</p>
+      <a class="btn btn-primary btn-lg" href="#tool_grid" role="button">See Tools</a>
+    </div>
+  </div>
+
+  <!-- Tool Grid -->
+  <div id="tool_grid">
+    <div class="container-fluoid py-5">
+      <div class="p5">
+        <div class="row pb-3">
+          <div class="col-12 col-md-6 col-lg-4 pb-3">
+            <div class="card">
+              <div class="card-body mx-2">
+                <h3 class="card-title mx">Molecular Weight Calculator</h3>
+                <p class="card-text text-justify">Calculate the molecular weight of any molecule by entering its molecular formula.</p>
+                <a name="" id="" class="btn btn-primary" href="{% url 'molecular_weight' %}" role="button">Enter</a>
+              </div>
+            </div>
+          </div>
+          <div class="col-12 col-md-6 col-lg-4 pb-3">
+            <div class="card">
+              <div class="card-body mx-2">
+                <h3 class="card-title">Chemical Reaction Balancer</h3>
+                <p class="card-text text-justify">Balances the stoichiometry of a chemical reaction and displays it using LaTeX through MathJax.</p>
+                <a name="" id="" class="btn btn-primary" href="{% url 'reaction_balancer' %}" role="button">Enter</a>
+              </div>
+            </div>
+          </div>
+          <div class="col-12 col-md-6 col-lg-4 pb-3">
+            <div class="card">
+              <div class="card-body">
+                <h3 class="card-title">Dilution Calculator</h3>
+                <p class="card-text">Calculates the concentration or volume of a solution in its initial or final state.</p>
+                <a name="" id="" class="btn btn-primary" href="{% url 'dilution' %}" role="button">Enter</a>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+{% endblock %}
