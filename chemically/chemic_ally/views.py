@@ -3,7 +3,7 @@ from django.contrib import messages
 from django.http import HttpResponse
 from django.views.generic.edit import FormView
 from django.views.generic import TemplateView
-from .forms import MolecularFormulaForm, ChemicalReaction
+from .forms import MolecularFormulaForm, ChemicalReactionForm, SolutionForm
 from .utils import calculations
 
 
@@ -15,7 +15,7 @@ class LandingPage(TemplateView):
         TemplateView (Class): Class Based Django View
     """
 
-    template_name = "landing.html"
+    template_name = "chemic_ally/landing.html"
 
 
 class BaseCalculateView(FormView, ABC):
@@ -84,7 +84,7 @@ class CalculateMolecularWeightView(BaseCalculateView):
     - BaseCalculateView (Type[BaseCalculateView]): Base class for views that involve form submissions and custom calculations.
     """
 
-    template_name = "calculator/molecular_weight.html"
+    template_name = "chemic_ally/calculator/molecular_weight.html"
     form_class = MolecularFormulaForm
 
     def process_calculation(self, form: MolecularFormulaForm) -> dict:
@@ -112,8 +112,8 @@ class BalanceChemicalReaction(BaseCalculateView):
         - BaseCalculateView (Type[BaseCalculateView]): Base class for views that involve form submissions and custom calculations.
     """
 
-    template_name = "calculator/reaction_balancer.html"
-    form_class = ChemicalReaction
+    template_name = "chemic_ally/calculator/reaction_balancer.html"
+    form_class = ChemicalReactionForm
 
     def process_calculation(self, form: form_class) -> str:
         """
@@ -133,7 +133,7 @@ class BalanceChemicalReaction(BaseCalculateView):
 
         Example:
             Given a form with reactants {'H2', 'O2'}, products {'H2O'}, and reversible=False,
-            the method may return "2H2 + O2 -> 2H2O" representing the balanced reaction.
+            the method may return "2H2O + O2 -> 2H2O" representing the balanced reaction.
         """
         try:
             # Clean the input to obtain the data
@@ -143,8 +143,8 @@ class BalanceChemicalReaction(BaseCalculateView):
             reversible = reaction["reversible"]
 
             # Parse the fields 'reactant' and 'product' to obtain individual molecules
-            reactancts = [x.strip() for x in reaction["reactant"].split("+")]
-            products = [x.strip() for x in reaction["product"].split("+")]
+            reactancts = [x.strip() for x in reaction["reactant"].split(" ")]
+            products = [x.strip() for x in reaction["product"].split(" ")]
 
             # Make a dictionary with only the molecules' molecular formulas as the keys
             reactancts_dict = {reactant for reactant in reactancts}
@@ -168,3 +168,74 @@ class BalanceChemicalReaction(BaseCalculateView):
             # Handles the exception to be displayed as an error message to the user trough django.messages
             messages.error(self.request, f"Error: {str(e)}")
             return {"error": str(e)}
+
+
+class CalculateDilutionView(BaseCalculateView):
+    """
+    A view for calculating dilutions in chemistry.
+    Inherits from BaseCalculateView.
+    """
+
+    template_name = "chemic_ally/calculator/dilution.html"
+    form_class = SolutionForm
+
+    def process_calculation(self, form: form_class) -> dict:
+        """
+        Processes the calculation based on user input from the form.
+
+        Args:
+            form (SolutionForm): The form containing user input data.
+
+        Returns:
+            dict: A dictionary containing the results of the calculation.
+        """
+
+        try:
+            # Get the cleaned data from the form
+            solution = form.cleaned_data
+
+            # Get the initial state values
+            conc_initial = solution.get("conc_initial")
+            conc_initial_unit = solution.get("conc_initial_unit", [])[2]
+            vol_initial = solution.get("vol_initial")
+            vol_initial_unit = solution.get("vol_initial_unit", [])[2]
+
+            # Get the final state values
+            conc_final = solution.get("conc_final")
+            conc_final_unit = solution.get("conc_final_unit", [])[2]
+            vol_final = solution.get("vol_final")
+            vol_final_unit = solution.get("vol_final_unit", [])[2]
+
+            # Convert volumes and concentrations to standard units (liters and molar)
+            vol_initial_liters = calculations.multiply_by_unit(
+                vol_initial, vol_initial_unit
+            )
+            vol_final_liters = calculations.multiply_by_unit(vol_final, vol_final_unit)
+            conc_initial_molar = calculations.multiply_by_unit(
+                conc_initial, conc_initial_unit
+            )
+            conc_final_molar = calculations.multiply_by_unit(
+                conc_final, conc_final_unit
+            )
+
+            # Check if the final volume is greater than the initial volume
+            if vol_final_liters > vol_initial_liters:
+                raise ValueError("Final volume cannot be greater than initial volume.")
+
+            # Perform the dilution calculation here
+
+            # Construct a dictionary containing the results
+            result = {
+                "conc_initial": conc_initial,
+                "conc_final": conc_final,
+                "vol_initial": vol_initial,
+                "vol_final": vol_final,
+                # Add other relevant results here
+            }
+
+            return result
+
+        except Exception as e:
+            # Handle any exceptions that occur during the calculation
+            error_message = f"An error occurred during the calculation: {str(e)}"
+            return {"error": error_message}

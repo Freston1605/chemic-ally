@@ -91,3 +91,85 @@ def balance_chemical_reaction_to_latex(reactants, products, reversible=True):
     latex_reaction = f"$$ \\ce{{{reactants_str} {reaction_arrow} {products_str}}} $$"
 
     return latex_reaction
+
+def calculate_dilution(c1, v1, c2, v2):
+    """Calculates the desired concentration (c1) or volume (v1) of an aliquot for a final dilution.
+
+    Args:
+        c1 (float, optional): The desired concentration of the aliquot.
+        v1 (float, optional): The desired volume of the aliquot.
+        c2 (float): The concentration of the final diluted solution.
+        v2 (float): The volume of the final diluted solution.
+
+    Raises:
+        ValueError: Raised if there is no specified desired concentration or volume.
+
+    Returns:
+        float: The calculated desired concentration (c1) or volume (v1) based on the input.
+    """
+    # Check for invalid input
+    if not (c1 and v1):
+        raise ValueError("There needs to be either a desired concentration or volume for the solution.")
+
+    # Calculate the desired concentration
+    if not c1 and v1:
+        c1 = c2 * v2 / v1
+        return c1
+
+    # Calculate the desired volume
+    if c1 and not v1:
+        v1 = c2 / c1 * v2
+        return v1
+
+def convert_volume(value, source_unit, target_unit):
+    """
+    Convert volume from one unit to another.
+
+    Parameters:
+    - value (float): The volume value to be converted.
+    - source_unit (str): The source unit of volume (e.g., "L", "mL", "μL").
+    - target_unit (str): The target unit of volume (e.g., "L", "mL", "μL").
+
+    Returns:
+    - float: The converted volume value in the target unit.
+    """
+    # Define conversion factors
+    conversion_factors = {
+        "L_to_mL": 1000.0,
+        "L_to_μL": 1e6,
+        "mL_to_L": 1 / 1000.0,
+        "mL_to_μL": 1000.0,
+        "μL_to_L": 1 / 1e6,
+        "μL_to_mL": 1 / 1000.0,
+    }
+
+    # Check if the units are valid
+    valid_units = {"L", "mL", "μL"}
+    if source_unit not in valid_units or target_unit not in valid_units:
+        raise ValueError("Invalid source or target unit")
+
+    # Generate conversion key
+    conversion_key = f"{source_unit}_to_{target_unit}"
+
+    # Check if conversion factor is defined
+    if conversion_key not in conversion_factors:
+        raise ValueError("Unsupported unit conversion")
+
+    # Perform the conversion
+    conversion_factor = conversion_factors[conversion_key]
+    converted_value = value * conversion_factor
+
+    return converted_value
+
+def multiply_by_unit(self, value, unit):
+    """
+    Helper method to multiply a value by its corresponding unit.
+
+    Parameters:
+    - value (float): The numerical value.
+    - unit (float): The unit multiplier.
+
+    Returns:
+    float: The result of the multiplication.
+    """
+    return value * unit
