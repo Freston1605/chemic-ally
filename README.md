@@ -43,7 +43,7 @@ To run a Django project on your machine, follow these general steps. Note that s
 
 1. **Clone the Repository:**
    ```bash
-   git clone https://github.com/your-username/ChemicAlly.git
+   git clone https://github.com/Freston1605/chemic-ally
    cd ChemicAlly
    ```
 
