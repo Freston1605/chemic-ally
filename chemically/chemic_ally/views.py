@@ -1,11 +1,17 @@
 from abc import ABC, abstractmethod
+
 from django.contrib import messages
 from django.core.exceptions import ValidationError
 from django.http import HttpResponse
-from django.views.generic.edit import FormView
 from django.views.generic import TemplateView
-from .forms import MolecularFormulaForm, ChemicalReactionForm, SolutionForm
-from .utils import calculations
+from django.views.generic.edit import FormView
+
+from .calculations.base import (
+    DilutionCalculator,
+    MolecularWeightCalculator,
+    ReactionBalancer,
+)
+from .forms import ChemicalReactionForm, MolecularFormulaForm, SolutionForm
 
 
 class LandingPage(TemplateView):
@@ -119,16 +125,17 @@ class CalculateMolecularWeightView(BaseCalculateView):
         # Obtain the molecular formulas from the form and parse them into a list
         molecules = [x.strip() for x in form.cleaned_data["formula"].split()]
         result = {}
+        calculator = MolecularWeightCalculator()
         # Loop over the molecules list
         for molecule in molecules:
             # Calculate the molecular weight
-            molecular_weight = calculations.calculate_molecular_weight(molecule)
+            molecular_weight = calculator.calculate(molecule)
 
             # Check if the molecular weight is valid
             if molecular_weight is not None:
                 # Add the molecule:molecular_weight pair to the result dictionary
                 result[molecule] = molecular_weight
-                
+
         return result
 
 
@@ -161,36 +168,22 @@ class BalanceChemicalReaction(BaseCalculateView):
             str: A string representation of the balanced chemical reaction equation.
         """
         try:
-            # Clean the input to obtain the data
             reaction = form.cleaned_data
-
-            # Extract reversible attribute
             reversible = reaction["reversible"]
-
-            # Parse the fields 'reactant' and 'product' to obtain individual molecules
             reactancts = [x.strip() for x in reaction["reactant"].split()]
             products = [x.strip() for x in reaction["product"].split()]
-
-            # Make a dictionary with only the molecules' molecular formulas as the keys
             reactancts_dict = {reactant for reactant in reactancts}
             products_dict = {product for product in products}
-
-            # Balance the reaction with chempy.balance_chemical_reaction in utils.py
+            calculator = ReactionBalancer()
             (
                 reactancts_balanced,
                 products_balanced,
-            ) = calculations.balance_chemical_reaction(
-                reactants=reactancts_dict, products=products_dict
-            )
-
-            # Transform the output of balance_chemical_reaction to a string representing the equation
-            result = calculations.balance_chemical_reaction_to_latex(
+            ) = calculator.calculate(reactants=reactancts_dict, products=products_dict)
+            result = ReactionBalancer.to_latex(
                 reactancts_balanced, products_balanced, reversible
             )
-
             return result
         except Exception as e:
-            # Handles the exception to be displayed as an error message to the user trough django.messages
             messages.error(self.request, f"Error: {str(e)}")
 
 
@@ -206,7 +199,7 @@ class CalculateDilutionView(BaseCalculateView):
     def process_calculation(self, form: form_class) -> dict:
         """
         Processes the calculation based on user input from the form to calculate a simple dilution.
-        
+
 
         This function performs the following steps:
         1. Obtains cleaned data from the provided form, including initial and final concentrations, volumes, and their respective unit prefixes.
@@ -232,7 +225,6 @@ class CalculateDilutionView(BaseCalculateView):
             dict: A dictionary containing the result of the calculation, including the missing property, its calculated value, and its unit label.
         """
 
-
         try:
             # Get the cleaned data from the form
             solution = form.cleaned_data
@@ -248,16 +240,12 @@ class CalculateDilutionView(BaseCalculateView):
             v1_unit = float(solution["v1_unit"])
             c2_unit = float(solution["c2_unit"])
             v2_unit = float(solution["v2_unit"])
-            
-            print("Test")
 
             # Get the selected unit labels from the form's cleaned data
             c1_unit_label = dict(form.fields["c1_unit"].choices)[c1_unit]
             v1_unit_label = dict(form.fields["v1_unit"].choices)[v1_unit]
             c2_unit_label = dict(form.fields["c2_unit"].choices)[c2_unit]
             v2_unit_label = dict(form.fields["v2_unit"].choices)[v2_unit]
-            
-            print("Test 2")
 
             properties = {
                 "c1": (c1, c1_unit, "Initial Concentration", c1_unit_label),
@@ -265,12 +253,6 @@ class CalculateDilutionView(BaseCalculateView):
                 "c2": (c2, c2_unit, "Final Concentration", c2_unit_label),
                 "v2": (v2, v2_unit, "Final Volume", v2_unit_label),
             }
-            
-            # Print every variable for debugging
-            for key, value in properties.items():
-                print(f"{key}: {value}")
-            
-            # Count the number of non-None values
             non_none_count = sum(
                 1 for value, _, _, _ in properties.values() if value is not None
             )
@@ -300,7 +282,7 @@ class CalculateDilutionView(BaseCalculateView):
                     missing_property = label
                     missing_unit_value = unit
                     missing_unit_label = unit_label
-                    
+
                     print("Missing property", missing_property)
                     print("Unit value", missing_unit_value)
                     print("Unit label", missing_unit_label)
@@ -316,7 +298,8 @@ class CalculateDilutionView(BaseCalculateView):
                         "Initial volume cannot be greater or equal than final volume.",
                         code="invalid",
                     )
-                missing_value = calculations.calculate_dilution(
+                calculator = DilutionCalculator()
+                missing_value = calculator.calculate(
                     *[properties[prop][0] for prop in ["c1", "v1", "c2", "v2"]]
                 )
 
@@ -327,7 +310,8 @@ class CalculateDilutionView(BaseCalculateView):
                         "Initial concentration cannot be lesser than final concentration.",
                         code="invalid",
                     )
-                missing_value = calculations.calculate_dilution(
+                calculator = DilutionCalculator()
+                missing_value = calculator.calculate(
                     *[properties[prop][0] for prop in ["c1", "v1", "c2", "v2"]]
                 )
             else:

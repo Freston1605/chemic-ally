@@ -2,6 +2,10 @@ from chempy import Substance, balance_stoichiometry
 from pyparsing import ParseException
 
 
+# Deprecated: All calculation logic has been refactored into calculations/base.py
+# Functions below are kept for backward compatibility and will be removed after refactor is complete.
+
+
 def calculate_molecular_weight(formula):
     """
     Calculate the molecular weight of a chemical compound.
