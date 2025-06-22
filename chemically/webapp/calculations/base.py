@@ -7,7 +7,7 @@ from typing import Any, Dict, Optional, Tuple, Union
 
 from chempy import Substance, balance_stoichiometry
 from pyparsing import ParseException
-from utils.units import Q_, ureg
+from ..utils.units import Q_, ureg
 
 
 # --- Substance Wrapper ---

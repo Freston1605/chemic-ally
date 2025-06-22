@@ -104,7 +104,7 @@ class CalculateMolecularWeightView(BaseCalculateView):
 
     """
 
-    template_name = "chemic_ally/calculator/molecular_weight.html"
+    template_name = "webapp/calculator/molecular_weight.html"
     form_class = MolecularFormulaForm
 
     def process_calculation(self, form: MolecularFormulaForm) -> dict:
@@ -145,7 +145,7 @@ class BalanceChemicalReaction(BaseCalculateView):
         - BaseCalculateView (Type[BaseCalculateView]): Base class for views that involve form submissions and custom calculations.
     """
 
-    template_name = "chemic_ally/calculator/reaction_balancer.html"
+    template_name = "webapp/calculator/reaction_balancer.html"
     form_class = ChemicalReactionForm
 
     def process_calculation(self, form: form_class) -> str:
