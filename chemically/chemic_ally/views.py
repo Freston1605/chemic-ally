@@ -6,11 +6,8 @@ from django.http import HttpResponse
 from django.views.generic import TemplateView
 from django.views.generic.edit import FormView
 
-from .calculations.base import (
-    DilutionCalculator,
-    MolecularWeightCalculator,
-    ReactionBalancer,
-)
+from .calculations.base import (DilutionCalculator, MolecularWeightCalculator,
+                                ReactionBalancer)
 from .forms import ChemicalReactionForm, MolecularFormulaForm, SolutionForm
 
 
@@ -196,141 +193,135 @@ class CalculateDilutionView(BaseCalculateView):
     template_name = "chemic_ally/calculator/dilution.html"
     form_class = SolutionForm
 
-    def process_calculation(self, form: form_class) -> dict:
+    def process_calculation(self, form: SolutionForm):
         """
-        Processes the calculation based on user input from the form to calculate a simple dilution.
+        Processes the calculation based on user input from the form to calculate a simple dilution
+        with full error handling and compatibility for Pint-based logic.
 
-
-        This function performs the following steps:
-        1. Obtains cleaned data from the provided form, including initial and final concentrations, volumes, and their respective unit prefixes.
-        2. Converts unit prefixes to floating-point values and retrieves corresponding unit labels.
-        3. Validates the provided data:
-        - Ensures that exactly three out of the four properties (initial concentration, initial volume, final concentration, final volume) are provided.
-        - Checks that all provided values are greater than zero.
-        4. Checks consistency between initial and final volumes and concentrations.
-        5. Calculates the missing property using the provided data.
-        6. Converts the calculated value back to its original unit.
-        7. Constructs a dictionary containing the missing property, its calculated value, and its corresponding unit label.
-        8. Returns the result dictionary.
-
-        Args:
-            form (form_class): The form containing user input data.
-
-        Raises:
-            ValidationError: If validation fails due to incorrect or insufficient input.
-            ValidationError: If consistency checks between initial and final volumes/concentrations fail.
-            Exception: If any other unexpected error occurs during the calculation.
-
-        Returns:
-            dict: A dictionary containing the result of the calculation, including the missing property, its calculated value, and its unit label.
+        Returns a result dict with the missing property, its value, and its unit label.
+        Handles ValidationError for user input issues and general Exception for all other cases,
+        showing errors via Django's messages framework.
         """
-
         try:
-            # Get the cleaned data from the form
-            solution = form.cleaned_data
+            cd = form.cleaned_data
 
-            # Solution properties
-            c1 = solution["c1"]
-            v1 = solution["v1"]
-            c2 = solution["c2"]
-            v2 = solution["v2"]
+            # Get all values and their unit strings
+            c1, c1_unit = cd.get("c1"), cd.get("c1_unit")
+            v1, v1_unit = cd.get("v1"), cd.get("v1_unit")
+            c2, c2_unit = cd.get("c2"), cd.get("c2_unit")
+            v2, v2_unit = cd.get("v2"), cd.get("v2_unit")
+            molecular_weight = cd.get("molecular_weight")
+            solute_formula = cd.get("solute")
 
-            # Store and convert to a float the  value of the unit prefixes for every property
-            c1_unit = float(solution["c1_unit"])
-            v1_unit = float(solution["v1_unit"])
-            c2_unit = float(solution["c2_unit"])
-            v2_unit = float(solution["v2_unit"])
+            # Count non-None entries for dilution values
+            values = [c1, v1, c2, v2]
+            non_none_count = sum(x is not None for x in values)
 
-            # Get the selected unit labels from the form's cleaned data
-            c1_unit_label = dict(form.fields["c1_unit"].choices)[c1_unit]
-            v1_unit_label = dict(form.fields["v1_unit"].choices)[v1_unit]
-            c2_unit_label = dict(form.fields["c2_unit"].choices)[c2_unit]
-            v2_unit_label = dict(form.fields["v2_unit"].choices)[v2_unit]
-
-            properties = {
-                "c1": (c1, c1_unit, "Initial Concentration", c1_unit_label),
-                "v1": (v1, v1_unit, "Initial Volume", v1_unit_label),
-                "c2": (c2, c2_unit, "Final Concentration", c2_unit_label),
-                "v2": (v2, v2_unit, "Final Volume", v2_unit_label),
-            }
-            non_none_count = sum(
-                1 for value, _, _, _ in properties.values() if value is not None
-            )
-
-            # Check if the count of provided values is exactly three
             if non_none_count != 3:
                 raise ValidationError(
                     "Exactly three values among Initial Concentration, Initial Volume, Final Concentration, and Final Volume must be provided.",
                     code="invalid",
                 )
 
-            # Loop over the properties dictionary
-            for prop, (value, unit, label, unit_label) in properties.items():
-                # Check if the current value of the property is not None
-                if value is not None:
-                    # Check if the current value is higher than zero, raise a ValidationError if True
-                    if value <= 0:
-                        raise ValidationError(
-                            f"The {label.lower()} cannot be equal or lower than zero.",
-                            code="invalid",
-                        )
-                    # Else, multiply the value by its unit to obtain standard units in Liters and Molar
-                    locals()[prop] *= unit
-                else:
-                    # If the value is None, store it and its unit as the missing propery to calculate
-                    # This only stores one label and unit, as the previous code enforces that only one property is missing
-                    missing_property = label
-                    missing_unit_value = unit
-                    missing_unit_label = unit_label
+            # Check that provided values are all positive
+            labels = [
+                "Initial Concentration",
+                "Initial Volume",
+                "Final Concentration",
+                "Final Volume",
+            ]
+            for value, label in zip(values, labels):
+                if value is not None and value <= 0:
+                    raise ValidationError(
+                        f"The {label.lower()} cannot be equal or lower than zero.",
+                        code="invalid",
+                    )
 
-                    print("Missing property", missing_property)
-                    print("Unit value", missing_unit_value)
-                    print("Unit label", missing_unit_label)
+            # Use Pint for units
+            from utils.units import \
+                Q_  # or wherever you define your UnitRegistry
 
-            # Check for consistency in concentration and volume
-            # The final states of the solution must have either lower concentration or higher volume than its initial state
+            unit_map = {"c1": c1_unit, "v1": v1_unit, "c2": c2_unit, "v2": v2_unit}
+            quantity_map = {}
+            for k, v in zip(["c1", "v1", "c2", "v2"], [c1, v1, c2, v2]):
+                if v is not None and unit_map[k]:
+                    quantity_map[k] = Q_(v, unit_map[k])
 
-            # Check if initial volume v1 is greater or equal than final volume v2
-            if properties["v1"][0] is not None and properties["v2"][0] is not None:
-                if properties["v1"][0] >= properties["v2"][0]:
-                    # Raise a ValidationError if True
+            # Consistency checks as before (raise early if inconsistency found)
+            if quantity_map.get("v1") and quantity_map.get("v2"):
+                if (
+                    quantity_map["v1"].to("liter").magnitude
+                    >= quantity_map["v2"].to("liter").magnitude
+                ):
                     raise ValidationError(
                         "Initial volume cannot be greater or equal than final volume.",
                         code="invalid",
                     )
-                calculator = DilutionCalculator()
-                missing_value = calculator.calculate(
-                    *[properties[prop][0] for prop in ["c1", "v1", "c2", "v2"]]
-                )
-
-            # Check if initial concentration c1 is greater than final concentration c2
-            elif properties["c1"][0] is not None and properties["c2"][0] is not None:
-                if properties["c1"][0] < properties["c2"][0]:
+            if quantity_map.get("c1") and quantity_map.get("c2"):
+                if (
+                    quantity_map["c1"].to("mol/liter").magnitude
+                    < quantity_map["c2"].to("mol/liter").magnitude
+                ):
                     raise ValidationError(
                         "Initial concentration cannot be lesser than final concentration.",
                         code="invalid",
                     )
-                calculator = DilutionCalculator()
-                missing_value = calculator.calculate(
-                    *[properties[prop][0] for prop in ["c1", "v1", "c2", "v2"]]
-                )
-            else:
-                raise ValidationError(
-                    "Either the initial and final volume or the initial and final concentration must be provided.",
-                    code="required",
-                )
 
-            # Convert back into the original unit
-            missing_value = missing_value / missing_unit_value
+            # Identify missing property and call the calculator
+            missing_prop = next(
+                k for k in ["c1", "v1", "c2", "v2"] if k not in quantity_map
+            )
+            calculator = DilutionCalculator()
+            result = calculator.calculate(
+                c1=quantity_map.get("c1"),
+                c1_unit=c1_unit,
+                v1=quantity_map.get("v1"),
+                v1_unit=v1_unit,
+                c2=quantity_map.get("c2"),
+                c2_unit=c2_unit,
+                v2=quantity_map.get("v2"),
+                v2_unit=v2_unit,
+                molecular_weight=molecular_weight,
+                solute_formula=solute_formula,
+            )
 
-            # Return the corresponding property and its value
-            result = {
-                "property": missing_property,
-                "value": missing_value,
-                "unit": missing_unit_label,
+            # Extract missing value and preferred output unit
+            if result is None or "missing_value" not in result:
+                raise ValidationError("Calculation failed. Please check your input.")
+
+            missing_value = result["missing_value"]
+            if hasattr(missing_value, "to_compact"):
+                missing_value = missing_value.to_compact()
+
+            # Use original unit for the missing property (for display)
+            unit_label_map = {
+                "c1": dict(form.fields["c1_unit"].choices)[c1_unit],
+                "v1": dict(form.fields["v1_unit"].choices)[v1_unit],
+                "c2": dict(form.fields["c2_unit"].choices)[c2_unit],
+                "v2": dict(form.fields["v2_unit"].choices)[v2_unit],
             }
-            return result
+            result_dict = {
+                "property": labels[["c1", "v1", "c2", "v2"].index(missing_prop)],
+                "value": (
+                    float(missing_value.magnitude)
+                    if hasattr(missing_value, "magnitude")
+                    else float(missing_value)
+                ),
+                "unit": unit_label_map[missing_prop],
+            }
 
+            # Include mass of solute if available
+            if "mass_g" in result and result["mass_g"] is not None:
+                result_dict["solute_mass_g"] = float(result["mass_g"])
+
+            return result_dict
+
+        except ValidationError as ve:
+            messages.error(self.request, f"Validation error: {ve}")
+            return None
         except Exception as e:
-            # Handles the exception to be displayed as an error message to the user trough django.messages
-            messages.error(self.request, f"Error: {e}")
+            import logging
+
+            logging.exception("Dilution calculation failed:")
+            messages.error(self.request, f"Calculation error: {str(e)}")
+            return None
