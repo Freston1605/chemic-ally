@@ -19,7 +19,7 @@ class LandingPage(TemplateView):
         TemplateView (Class): Class Based Django View
     """
 
-    template_name = "chemic_ally/landing.html"
+    template_name = "webapp/landing.html"
 
 
 class BaseCalculateView(FormView, ABC):

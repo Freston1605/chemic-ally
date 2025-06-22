@@ -1,5 +1,5 @@
 from django.test import TestCase
-from chemic_ally.utils.calculations import calculate_molecular_weight, balance_chemical_reaction
+from webapp.utils.calculations import calculate_molecular_weight, balance_chemical_reaction
 
 
 class TestUtils(TestCase):
