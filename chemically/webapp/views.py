@@ -190,7 +190,7 @@ class CalculateDilutionView(BaseCalculateView):
     Inherits from BaseCalculateView.
     """
 
-    template_name = "chemic_ally/calculator/dilution.html"
+    template_name = "webapp/calculator/dilution.html"
     form_class = SolutionForm
 
     def process_calculation(self, form: SolutionForm):
