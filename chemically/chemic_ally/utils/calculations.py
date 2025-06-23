@@ -128,13 +128,13 @@ def calculate_dilution(c1=None, v1=None, c2=None, v2=None):
     # Case 1: Three values provided, one missing
     if provided_values == 3:
         if c1 is None:
-            return v1 * c2 / v2
+            return c2 * v2 / v1
         elif v1 is None:
-            return v2 * c2 / c1
+            return c2 * v2 / c1
         elif c2 is None:
-            return v2 * c1 / v1
+            return c1 * v1 / v2
         elif v2 is None:
-            return v1 * c1 / c2
+            return c1 * v1 / c2
 
     # Case 2: Two values provided, two missing
     elif provided_values == 2:
