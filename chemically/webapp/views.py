@@ -5,10 +5,13 @@ from django.core.exceptions import ValidationError
 from django.http import HttpResponse
 from django.views.generic import TemplateView
 from django.views.generic.edit import FormView
+from django.views import View
+from django.shortcuts import render, redirect
 
 from .calculations.base import (DilutionCalculator, MolecularWeightCalculator,
                                 ReactionBalancer)
 from .forms import ChemicalReactionForm, MolecularFormulaForm, SolutionForm
+import pint
 
 
 class LandingPage(TemplateView):
@@ -325,3 +328,97 @@ class CalculateDilutionView(BaseCalculateView):
             logging.exception("Dilution calculation failed:")
             messages.error(self.request, f"Calculation error: {str(e)}")
             return None
+
+
+def make_json_safe(obj):
+    if isinstance(obj, pint.Quantity):
+        return float(obj.magnitude)
+    if isinstance(obj, dict):
+        return {k: make_json_safe(v) for k, v in obj.items()}
+    if isinstance(obj, list):
+        return [make_json_safe(x) for x in obj]
+    return obj
+
+
+class DashboardView(View):
+    template_name = "webapp/dashboard.html"
+
+    def get(self, request):
+        # Render the dashboard with any session-persisted data
+        context = request.session.get('dashboard_context', {})
+        return render(request, self.template_name, context)
+
+    def post(self, request):
+        context = {}
+        action = request.POST.get('action')
+        # Always repopulate fields
+        context['formula'] = request.POST.get('formula', '')
+        context['c1'] = request.POST.get('c1', '')
+        context['c1_unit'] = request.POST.get('c1_unit', 'mol/L')
+        context['v1'] = request.POST.get('v1', '')
+        context['v1_unit'] = request.POST.get('v1_unit', 'L')
+        context['c2'] = request.POST.get('c2', '')
+        context['c2_unit'] = request.POST.get('c2_unit', 'mol/L')
+        context['v2'] = request.POST.get('v2', '')
+        context['v2_unit'] = request.POST.get('v2_unit', 'L')
+        context['molecular_weight'] = request.POST.get('molecular_weight', '')
+        context['solute'] = request.POST.get('solute', '')
+        context['reactant'] = request.POST.get('reactant', '')
+        context['product'] = request.POST.get('product', '')
+        context['reversible'] = bool(request.POST.get('reversible'))
+
+        if action == 'calc_mw':
+            formula = context['formula']
+            mw_result = None
+            if formula:
+                calculator = MolecularWeightCalculator()
+                mw_result = calculator.calculate(formula)
+            context['mw_result'] = mw_result
+        elif action == 'use_mw':
+            formula = context['formula']
+            calculator = MolecularWeightCalculator()
+            mw_result = calculator.calculate(formula)
+            context['molecular_weight'] = mw_result
+            context['mw_result'] = mw_result
+        elif action == 'calc_dilution':
+            try:
+                calculator = DilutionCalculator()
+                result = calculator.calculate(
+                    c1=float(context['c1']) if context['c1'] else None,
+                    c1_unit=context['c1_unit'],
+                    v1=float(context['v1']) if context['v1'] else None,
+                    v1_unit=context['v1_unit'],
+                    c2=float(context['c2']) if context['c2'] else None,
+                    c2_unit=context['c2_unit'],
+                    v2=float(context['v2']) if context['v2'] else None,
+                    v2_unit=context['v2_unit'],
+                    molecular_weight=float(context['molecular_weight']) if context['molecular_weight'] else None,
+                    solute_formula=context['solute']
+                )
+                context['dilution_result'] = make_json_safe(result)
+            except Exception as e:
+                context['dilution_result'] = {'property': 'Error', 'value': str(e), 'unit': ''}
+        elif action == 'balance_reaction':
+            try:
+                reactants = [x.strip() for x in context['reactant'].split()] if context['reactant'] else []
+                products = [x.strip() for x in context['product'].split()] if context['product'] else []
+                calculator = ReactionBalancer()
+                balanced = calculator.calculate(reactants=reactants, products=products)
+                if balanced:
+                    reactants_balanced, products_balanced = balanced
+                    result = ReactionBalancer.to_latex(
+                        reactants_balanced, products_balanced, context['reversible']
+                    )
+                    context['reaction_result'] = result
+                else:
+                    context['reaction_result'] = 'Could not balance reaction.'
+            except Exception as e:
+                context['reaction_result'] = f'Error: {e}'
+        elif action == 'reset':
+            request.session['dashboard_context'] = {}
+            return redirect('dashboard')
+
+        # Save context for persistence, making it JSON-safe
+        safe_context = make_json_safe(context)
+        request.session['dashboard_context'] = safe_context
+        return render(request, self.template_name, context)

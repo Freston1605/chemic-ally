@@ -1,0 +1,99 @@
+<!-- Unified Scientific Calculator Dashboard Wireframe -->
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>ChemicAlly Unified Calculator</title>
+    <link rel="stylesheet" href="/static/css/style.css">
+    <style>
+        .dashboard-section { border: 1px solid #ccc; margin-bottom: 1.5em; padding: 1em; border-radius: 8px; }
+        .dashboard-section h2 { margin-top: 0; }
+        .dashboard-row { display: flex; gap: 1em; }
+        .dashboard-label { min-width: 120px; display: inline-block; }
+        .dashboard-result { background: #f8f8f8; padding: 0.5em 1em; border-radius: 4px; margin-top: 0.5em; }
+        .dashboard-actions { margin-top: 1em; }
+    </style>
+</head>
+<body>
+    <h1>ChemicAlly Unified Calculator</h1>
+    <form method="post">
+        {% csrf_token %}
+        <!-- Molecular Weight Section -->
+        <div class="dashboard-section">
+            <h2>Molecular Weight</h2>
+            <div class="dashboard-row">
+                <label class="dashboard-label">Molecular Formula:</label>
+                <input type="text" name="formula" value="{{ formula|default:'' }}" required>
+                <button name="action" value="calc_mw">Calculate MW</button>
+            </div>
+            {% if mw_result %}
+            <div class="dashboard-result">
+                <strong>Result:</strong> {{ mw_result }} g/mol
+                <button name="action" value="use_mw">Use in Dilution</button>
+            </div>
+            {% endif %}
+        </div>
+
+        <!-- Dilution Section -->
+        <div class="dashboard-section">
+            <h2>Dilution Calculator</h2>
+            <div class="dashboard-row">
+                <label class="dashboard-label">C1:</label>
+                <input type="number" step="any" name="c1" value="{{ c1|default:'' }}">
+                <input type="text" name="c1_unit" value="{{ c1_unit|default:'mol/L' }}" style="width: 70px;">
+                <label class="dashboard-label">V1:</label>
+                <input type="number" step="any" name="v1" value="{{ v1|default:'' }}">
+                <input type="text" name="v1_unit" value="{{ v1_unit|default:'L' }}" style="width: 70px;">
+            </div>
+            <div class="dashboard-row">
+                <label class="dashboard-label">C2:</label>
+                <input type="number" step="any" name="c2" value="{{ c2|default:'' }}">
+                <input type="text" name="c2_unit" value="{{ c2_unit|default:'mol/L' }}" style="width: 70px;">
+                <label class="dashboard-label">V2:</label>
+                <input type="number" step="any" name="v2" value="{{ v2|default:'' }}">
+                <input type="text" name="v2_unit" value="{{ v2_unit|default:'L' }}" style="width: 70px;">
+            </div>
+            <div class="dashboard-row">
+                <label class="dashboard-label">Molecular Weight:</label>
+                <input type="number" step="any" name="molecular_weight" value="{{ molecular_weight|default:'' }}">
+                <span>g/mol</span>
+                <label class="dashboard-label">Solute Formula:</label>
+                <input type="text" name="solute" value="{{ solute|default:'' }}">
+            </div>
+            <div class="dashboard-actions">
+                <button name="action" value="calc_dilution">Calculate Dilution</button>
+            </div>
+            {% if dilution_result %}
+            <div class="dashboard-result">
+                <strong>Result:</strong> {{ dilution_result.property }} = {{ dilution_result.value }} {{ dilution_result.unit }}
+                {% if dilution_result.solute_mass_g %}<br>Solute mass: {{ dilution_result.solute_mass_g }} g{% endif %}
+            </div>
+            {% endif %}
+        </div>
+
+        <!-- Reaction Balancer Section -->
+        <div class="dashboard-section">
+            <h2>Reaction Balancer</h2>
+            <div class="dashboard-row">
+                <label class="dashboard-label">Reactants:</label>
+                <input type="text" name="reactant" value="{{ reactant|default:'' }}">
+                <label class="dashboard-label">Products:</label>
+                <input type="text" name="product" value="{{ product|default:'' }}">
+                <label><input type="checkbox" name="reversible" {% if reversible %}checked{% endif %}> Reversible</label>
+            </div>
+            <div class="dashboard-actions">
+                <button name="action" value="balance_reaction">Balance Reaction</button>
+            </div>
+            {% if reaction_result %}
+            <div class="dashboard-result">
+                <strong>Result:</strong> {{ reaction_result|safe }}
+            </div>
+            {% endif %}
+        </div>
+
+        <div class="dashboard-actions">
+            <button name="action" value="reset">Reset All</button>
+        </div>
+    </form>
+</body>
+</html>
