@@ -11,30 +11,26 @@ from ..utils.units import Q_, ureg
 
 
 # --- Substance Wrapper ---
+
 class SubstanceWrapper:
     """
     Wraps a chempy Substance for reusability across multiple calculations.
     """
-
     def __init__(self, formula: str):
-        try:
-            self.substance = Substance.from_formula(formula)
-            self.error = None
-        except Exception as e:
-            self.substance = None
-            self.error = str(e)
+        self._substance = Substance.from_formula(formula)
         self.formula = formula
 
-    @property
-    def mass(self) -> Optional[float]:
-        return getattr(self.substance, "mass", None)
+    def __getattr__(self, attr):
+        return getattr(self._substance, attr)
 
-    @property
-    def composition(self) -> Optional[Dict[str, float]]:
-        return getattr(self.substance, "composition", None)
-
-    # More properties/methods (e.g., as_dict, elements, etc.) can be added here.
-
+    def __dir__(self):
+        # Start with the default attributes for this instance
+        base_dir = set(super().__dir__())
+        # Add attributes/methods from the wrapped Substance instance
+        substance_dir = set(dir(self._substance))
+        # Optionally, add any other dynamic or custom attributes you want
+        # Return the sorted, combined set
+        return sorted(base_dir | substance_dir)
 
 # --- Calculation Base ---
 class CalculationBase:
