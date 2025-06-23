@@ -1,7 +1,5 @@
 # ChemicAlly
 
-**Note: this is not production ready as of yet, it's just a mockup.**
-
 ChemicAlly is a web platform designed to facilitate quick and efficient calculations in the field of chemistry and related disciplines. The platform serves chemists and other professionals, providing tools for essential calculations in various chemical procedures. ChemicAlly acts as a client for the Chempy library, leveraging its capabilities to deliver precise and reliable solutions.
 
 ## Features
@@ -99,14 +97,34 @@ ChemicAlly expects certain configuration values to be supplied via environment v
 
 You can copy `.env.example` to `.env` and fill in your own values.
 
-## Deployment
+## Deploying to AWS
 
-For deployment on platforms that use a `Procfile`, this repository includes a
-simple configuration to launch the app with **gunicorn**. The `Procfile` at the
-project root contains:
+A basic AWS deployment follows the same steps as local setup but using environment variables provided by the hosting service. Ensure the values from `.env.example` are configured in your instance or container.
+
+1. Install dependencies:
 
 ```bash
-web: gunicorn chemically.wsgi
+pip install -r requirements.txt
 ```
 
-Make sure `gunicorn` is installed via `requirements.txt` before deploying.
+2. Run migrations:
+
+```bash
+python manage.py migrate
+```
+
+3. Collect static files:
+
+```bash
+python manage.py collectstatic --noinput
+```
+
+4. Start the application with `gunicorn`:
+
+```bash
+gunicorn chemically.wsgi --bind 0.0.0.0:8000
+```
+
+## Continuous Integration
+
+Automated Django tests run via GitHub Actions. The workflow in `.github/workflows/tests.yml` executes the test suite on pushes and pull requests to `main`.
