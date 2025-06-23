@@ -102,7 +102,8 @@ Keep in mind that these are general steps, and you might need to adjust them bas
 ChemicAlly expects certain configuration values to be supplied via environment variables. These values can be stored in a `.env` file at the project root. The following keys are required:
 
 - `SECRET_KEY` &ndash; Django's secret key used for cryptographic signing.
-- `DEBUG` &ndash; set to `True` to enable debug mode, otherwise `False`.
+- `DEBUG` &ndash; set to `"True"` to enable debug mode, otherwise `"False"`. The value is parsed as a boolean.
+- `ALLOWED_HOSTS` &ndash; space-separated list of hosts the application can serve.
 
 You can copy `.env.example` to `.env` and fill in your own values.
 
