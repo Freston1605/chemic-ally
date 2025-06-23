@@ -1,8 +1,4 @@
 from django import forms
-
-from .utils.calculations import convert_volume
-
-
 class MolecularFormulaForm(forms.Form):
     """
     A Django form for capturing a molecular formula.
