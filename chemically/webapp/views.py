@@ -138,11 +138,15 @@ class CalculateMolecularWeightView(BaseCalculateView):
 
 class BalanceChemicalReaction(BaseCalculateView):
     """
-    Concrete view class for handling a chemical reaction from the django form ChemicalReaction.
-    It is intended to be used in the context of stoichiomtetric coefficient balancing for a particular chemical reaction.
+    Concrete view for balancing chemical reactions.
+
+    Part of the new class-based calculator framework, this view delegates the
+    actual stoichiometric balancing to :class:`ReactionBalancer` defined in
+    ``webapp.calculations.base``.
 
     Args:
-        - BaseCalculateView (Type[BaseCalculateView]): Base class for views that involve form submissions and custom calculations.
+        - BaseCalculateView (Type[BaseCalculateView]): Base class for form-driven
+          calculations.
     """
 
     template_name = "webapp/calculator/reaction_balancer.html"
@@ -150,13 +154,11 @@ class BalanceChemicalReaction(BaseCalculateView):
 
     def process_calculation(self, form: form_class) -> str:
         """
-        Process a chemical reaction calculation based on the input form.
+        Perform stoichiometric balancing for the submitted reaction.
 
-        This method takes a Django form instance as input, extracts the necessary data, and performs the following steps:
-        1. Extracts the cleaned data from the form, including reactants, products, and the reversible attribute for the chemical reaction.
-        2. Parses the reactants and products to obtain individual molecules.
-        3. Balances the chemical reaction using the ReactionBalancer calculator.
-        4. Transforms the balanced reaction into a string representation of the chemical equation.
+        The cleaned form data is parsed into lists of reactant and product
+        formulas and passed to the :class:`ReactionBalancer` calculator from the
+        class-based API. The balanced equation is returned as a LaTeX string.
 
         Args:
             form (form_class): A Django form instance representing the user input for a chemical reaction.
