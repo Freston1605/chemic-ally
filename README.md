@@ -82,7 +82,16 @@ To run a Django project on your machine, follow these general steps. Note that s
 - **Static Files and Media:**
   - If your project involves static files or media uploads, configure your development server to serve these files. In a production environment, you would use a web server like Nginx or Apache to handle this.
 
-- **Environment Variables:**
-  - Set any necessary environment variables if your project relies on them.
+ - **Environment Variables:**
+   - See the **Environment Variables** section below for required keys.
 
 Keep in mind that these are general steps, and you might need to adjust them based on your specific Django project setup and requirements. Always refer to your project's documentation or README for any project-specific instructions.
+
+## Environment Variables
+
+ChemicAlly expects certain configuration values to be supplied via environment variables. These values can be stored in a `.env` file at the project root. The following keys are required:
+
+- `SECRET_KEY` &ndash; Django's secret key used for cryptographic signing.
+- `DEBUG` &ndash; set to `True` to enable debug mode, otherwise `False`.
+
+You can copy `.env.example` to `.env` and fill in your own values.
