@@ -155,7 +155,7 @@ class BalanceChemicalReaction(BaseCalculateView):
         This method takes a Django form instance as input, extracts the necessary data, and performs the following steps:
         1. Extracts the cleaned data from the form, including reactants, products, and the reversible attribute for the chemical reaction.
         2. Parses the reactants and products to obtain individual molecules.
-        3. Balances the chemical reaction using chempy.balance_chemical_reaction method in utils.py.
+        3. Balances the chemical reaction using the ReactionBalancer calculator.
         4. Transforms the balanced reaction into a string representation of the chemical equation.
 
         Args:
