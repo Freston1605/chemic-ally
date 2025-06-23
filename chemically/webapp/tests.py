@@ -107,10 +107,6 @@ class FormTests(SimpleTestCase):
 class ViewTests(TestCase):
     def setUp(self):
         self.client = Client()
-        import sys
-        from webapp import utils as utils_pkg
-        sys.modules.setdefault("utils", utils_pkg)
-        sys.modules.setdefault("utils.units", utils_pkg.units)
 
     def test_molecular_weight_view_get(self):
         response = self.client.get(reverse("molecular_weight"))
