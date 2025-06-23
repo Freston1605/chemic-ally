@@ -243,8 +243,7 @@ class CalculateDilutionView(BaseCalculateView):
                     )
 
             # Use Pint for units
-            from utils.units import \
-                Q_  # or wherever you define your UnitRegistry
+            from .utils.units import Q_  # use the package-local units helper
 
             unit_map = {"c1": c1_unit, "v1": v1_unit, "c2": c2_unit, "v2": v2_unit}
             quantity_map = {}
