@@ -16,30 +16,35 @@ ChemicAlly is a web platform designed to facilitate quick and efficient calculat
 
 To run a Django project on your machine, follow these general steps. Note that specific details might vary based on your project structure, Django version, and dependencies.
 
-### Prerequisites:
+### Prerequisites
 
 1. **Python Installation:**
    - Ensure Python is installed on your machine. You can download it from [Python's official website](https://www.python.org/downloads/).
 
 2. **Virtual Environment (Optional but Recommended):**
    - Create a virtual environment to isolate project dependencies. Navigate to your project directory in the terminal and run:
+
      ```bash
      python -m venv venv
      ```
 
    - Activate the virtual environment:
      - On Windows:
+
        ```bash
        .\venv\Scripts\activate
        ```
+
      - On Unix or MacOS:
+
        ```bash
        source venv/bin/activate
        ```
 
-### Running the Django Project:
+### Running the Django Project
 
 1. **Clone the Repository:**
+
    ```bash
    git clone https://github.com/Freston1605/chemic-ally
    cd ChemicAlly
@@ -47,32 +52,36 @@ To run a Django project on your machine, follow these general steps. Note that s
 
 2. **Install Dependencies:**
    - Install the required Python packages:
+
      ```bash
      pip install -r requirements.txt
      ```
 
 3. **Run Database Migrations:**
    - Apply the database migrations to set up the database:
+
      ```bash
      python manage.py migrate
      ```
 
 4. **Create a Superuser (Optional):**
    - If your Django project includes the Django Admin, you might want to create a superuser account:
+
      ```bash
      python manage.py createsuperuser
      ```
 
 5. **Run the Development Server:**
    - Start the Django development server:
+
      ```bash
      python manage.py runserver
      ```
 
 6. **Access the Application:**
-   - Open your web browser and go to http://localhost:8000 or the address provided in the terminal.
+   - Open your web browser and go to <http://localhost:8000> or the address provided in the terminal.
 
-### Additional Steps:
+### Additional Steps
 
 - **Django Settings:**
   - Ensure your `settings.py` file is correctly configured, including database settings, static files, and other Django configurations.
@@ -83,8 +92,8 @@ To run a Django project on your machine, follow these general steps. Note that s
 - **Collect Static Files:**
   - Run `python manage.py collectstatic` to gather static assets into the directory specified by `STATIC_ROOT`.
 
- - **Environment Variables:**
-   - See the **Environment Variables** section below for required keys.
+- **Environment Variables:**
+  - See the **Environment Variables** section below for required keys.
 
 Keep in mind that these are general steps, and you might need to adjust them based on your specific Django project setup and requirements. Always refer to your project's documentation or README for any project-specific instructions.
 
