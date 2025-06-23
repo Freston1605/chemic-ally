@@ -47,7 +47,7 @@ To run a Django project on your machine, follow these general steps. Note that s
 
    ```bash
    git clone https://github.com/Freston1605/chemic-ally
-   cd ChemicAlly
+   cd chemic-ally
    ```
 
 2. **Install Dependencies:**
