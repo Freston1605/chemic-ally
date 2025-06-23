@@ -80,6 +80,9 @@ To run a Django project on your machine, follow these general steps. Note that s
 - **Static Files and Media:**
   - If your project involves static files or media uploads, configure your development server to serve these files. In a production environment, you would use a web server like Nginx or Apache to handle this.
 
+- **Collect Static Files:**
+  - Run `python manage.py collectstatic` to gather static assets into the directory specified by `STATIC_ROOT`.
+
  - **Environment Variables:**
    - See the **Environment Variables** section below for required keys.
 
@@ -125,4 +128,3 @@ gunicorn chemically.wsgi --bind 0.0.0.0:8000
 ## Continuous Integration
 
 Automated Django tests run via GitHub Actions. The workflow in `.github/workflows/tests.yml` executes the test suite on pushes and pull requests to `main`.
-
