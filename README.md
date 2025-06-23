@@ -98,3 +98,15 @@ ChemicAlly expects certain configuration values to be supplied via environment v
 - `DEBUG` &ndash; set to `True` to enable debug mode, otherwise `False`.
 
 You can copy `.env.example` to `.env` and fill in your own values.
+
+## Deployment
+
+For deployment on platforms that use a `Procfile`, this repository includes a
+simple configuration to launch the app with **gunicorn**. The `Procfile` at the
+project root contains:
+
+```bash
+web: gunicorn chemically.wsgi
+```
+
+Make sure `gunicorn` is installed via `requirements.txt` before deploying.
