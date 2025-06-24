@@ -1,7 +1,4 @@
 from django import forms
-from .utils.calculations import convert_volume
-
-
 class MolecularFormulaForm(forms.Form):
     """
     A Django form for capturing a molecular formula.
@@ -127,30 +124,21 @@ class SolutionForm(forms.Form):
                 initial and final concentrations.
 
     """
-    
-    # Prefix values for units
-    BASE = 1e0
-    MILLI = 1e-3
-    MICRO = 1e-6
-    NANO = 1e-9
-    PICO = 1e-12
-    
-    # Define choices for concentration units
+
     CONCENTRATION_CHOICES = [
-        (BASE, "mol/L"),
-        (MILLI, "mmol/L"),
-        (MICRO, "μmol/L"),
-        (NANO, "nmol/L"),
-        (PICO, "pmol/L"),
+        ("mol/L", "mol/L"),
+        ("mmol/L", "mmol/L"),
+        ("μmol/L", "μmol/L"),
+        ("nmol/L", "nmol/L"),
+        ("pmol/L", "pmol/L"),
     ]
 
-    # Define choices for volume units
     VOLUME_CHOICES = [
-        (BASE, "L"),
-        (MILLI, "mL"),
-        (MICRO, "μL"),
-        (NANO, "nL"),
-        (PICO, "pL"),
+        ("L", "L"),
+        ("mL", "mL"),
+        ("μL", "μL"),
+        ("nL", "nL"),
+        ("pL", "pL"),
     ]
 
     solute = forms.CharField(
@@ -218,4 +206,3 @@ class SolutionForm(forms.Form):
         initial="mL",
         help_text="Choose a volume unit for the final volume of the solution.",
     )
-   
