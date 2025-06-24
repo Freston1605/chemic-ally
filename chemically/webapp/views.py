@@ -11,6 +11,7 @@ from django.shortcuts import render, redirect
 from .calculations.base import (DilutionCalculator, MolecularWeightCalculator,
                                 ReactionBalancer)
 from .forms import ChemicalReactionForm, MolecularFormulaForm, SolutionForm
+from .utils import add_previous_substances
 import pint
 
 
@@ -135,6 +136,8 @@ class CalculateMolecularWeightView(BaseCalculateView):
             if molecular_weight is not None:
                 # Add the molecule:molecular_weight pair to the result dictionary
                 result[molecule] = molecular_weight
+        if result:
+            add_previous_substances(self.request, result.keys())
 
         return result
 
@@ -184,6 +187,7 @@ class BalanceChemicalReaction(BaseCalculateView):
             result = ReactionBalancer.to_latex(
                 reactancts_balanced, products_balanced, reversible
             )
+            add_previous_substances(self.request, reactancts + products)
             return result
         except Exception as e:
             messages.error(self.request, f"Error: {str(e)}")
@@ -317,6 +321,9 @@ class CalculateDilutionView(BaseCalculateView):
             # Include mass of solute if available
             if "mass_g" in result and result["mass_g"] is not None:
                 result_dict["solute_mass_g"] = float(result["mass_g"])
+
+            if solute_formula:
+                add_previous_substances(self.request, [solute_formula])
 
             return result_dict
 

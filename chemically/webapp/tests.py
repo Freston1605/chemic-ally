@@ -137,3 +137,19 @@ class ViewTests(TestCase):
         response = self.client.post(reverse("dilution"), data)
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.context["result"]["property"], "Initial Volume")
+
+class ContextProcessorTests(TestCase):
+    def setUp(self):
+        self.client = Client()
+        session = self.client.session
+        session['previous_substances'] = ['H2O']
+        session.save()
+
+    def test_context_available(self):
+        response = self.client.get(reverse('molecular_weight'))
+        self.assertEqual(response.context['previous_substances'], ['H2O'])
+
+    def test_session_updated_on_calculation(self):
+        self.client.post(reverse('molecular_weight'), {'formula': 'CO2'})
+        session = self.client.session
+        self.assertIn('CO2', session['previous_substances'])

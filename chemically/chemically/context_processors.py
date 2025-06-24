@@ -1,6 +1,8 @@
 from typing import Dict, List
 from django.http import HttpRequest
 
+__all__ = ["previous_substances"]
+
 
 def previous_substances(request: HttpRequest) -> Dict[str, List[str]]:
     """Return previously viewed substances stored in the session.
