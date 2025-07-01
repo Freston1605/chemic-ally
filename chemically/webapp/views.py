@@ -175,19 +175,19 @@ class BalanceChemicalReaction(BaseCalculateView):
         try:
             reaction = form.cleaned_data
             reversible = reaction["reversible"]
-            reactancts = [x.strip() for x in reaction["reactant"].split()]
+            reactants = [x.strip() for x in reaction["reactant"].split()]
             products = [x.strip() for x in reaction["product"].split()]
-            reactancts_dict = {reactant for reactant in reactancts}
+            reactants_dict = {reactant for reactant in reactants}
             products_dict = {product for product in products}
             calculator = ReactionBalancer()
             (
-                reactancts_balanced,
+                reactants_balanced,
                 products_balanced,
-            ) = calculator.calculate(reactants=reactancts_dict, products=products_dict)
+            ) = calculator.calculate(reactants=reactants_dict, products=products_dict)
             result = ReactionBalancer.to_latex(
-                reactancts_balanced, products_balanced, reversible
+                reactants_balanced, products_balanced, reversible
             )
-            add_previous_substances(self.request, reactancts + products)
+            add_previous_substances(self.request, reactants + products)
             return result
         except Exception as e:
             messages.error(self.request, f"Error: {str(e)}")

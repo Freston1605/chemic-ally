@@ -6,8 +6,7 @@ Each calculation type implements a `calculate` method, with unified handling of 
 from typing import Any, Dict, Optional, Tuple, Union
 
 from chempy import Substance, balance_stoichiometry
-from pyparsing import ParseException
-from ..utils.units import Q_, ureg
+from ..utils.units import Q_
 
 # --- Calculation Base ---
 class CalculationBase:
