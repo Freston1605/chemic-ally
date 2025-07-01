@@ -1,17 +1,16 @@
-import os
 from django.test import SimpleTestCase, TestCase, Client
 from django.urls import reverse
 from django.conf import settings
 
 settings.SECRET_KEY = "test"
 
-from .calculations.base import (
+from ..calculations.base import (
     MolecularWeightCalculator,
     ReactionBalancer,
     DilutionCalculator,
 )
 from chempy import Substance
-from .forms import MolecularFormulaForm, ChemicalReactionForm, SolutionForm
+from ..forms import MolecularFormulaForm, ChemicalReactionForm, SolutionForm
 
 
 class CalculatorTests(SimpleTestCase):
