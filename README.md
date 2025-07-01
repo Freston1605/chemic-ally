@@ -54,7 +54,7 @@ To run a Django project on your machine, follow these general steps. Note that s
    - Install the required Python packages:
 
      ```bash
-     pip install -r requirements.txt
+     pip install -r requirements/development.txt
      ```
 
 3. **Run Database Migrations:**
@@ -117,7 +117,7 @@ A basic AWS deployment follows the same steps as local setup but using environme
 1. Install dependencies:
 
 ```bash
-pip install -r requirements.txt
+pip install -r requirements/development.txt
 ```
 
 2. Run migrations:
@@ -135,7 +135,7 @@ python manage.py collectstatic --noinput
 4. Start the application with `gunicorn`:
 
 ```bash
-gunicorn chemically.wsgi --bind 0.0.0.0:8000
+gunicorn config.wsgi --bind 0.0.0.0:8000
 ```
 
 ## Continuous Integration
