@@ -3,12 +3,12 @@ from django.urls import reverse
 from django.conf import settings
 from chempy import Substance
 
-from ..calculations.base import (
+from webapp.calculations.base import (
     MolecularWeightCalculator,
     ReactionBalancer,
     DilutionCalculator,
 )
-from ..forms import MolecularFormulaForm, ChemicalReactionForm, SolutionForm
+from webapp.forms import MolecularFormulaForm, ChemicalReactionForm, SolutionForm
 
 settings.SECRET_KEY = "test"
 

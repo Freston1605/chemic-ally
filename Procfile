@@ -1,2 +1,2 @@
-web: gunicorn chemically.wsgi
+web: gunicorn config.wsgi
 
