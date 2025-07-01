@@ -1,7 +1,6 @@
 from abc import ABC, abstractmethod
 
 from django.contrib import messages
-from django.core.exceptions import ValidationError
 from django.http import HttpResponse
 from django.views.generic import TemplateView
 from django.views.generic.edit import FormView
