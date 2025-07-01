@@ -1,16 +1,16 @@
 from django.test import SimpleTestCase, TestCase, Client
 from django.urls import reverse
 from django.conf import settings
-
-settings.SECRET_KEY = "test"
+from chempy import Substance
 
 from ..calculations.base import (
     MolecularWeightCalculator,
     ReactionBalancer,
     DilutionCalculator,
 )
-from chempy import Substance
 from ..forms import MolecularFormulaForm, ChemicalReactionForm, SolutionForm
+
+settings.SECRET_KEY = "test"
 
 
 class CalculatorTests(SimpleTestCase):
@@ -100,13 +100,18 @@ class FormTests(SimpleTestCase):
         self.assertFalse(form.is_valid())
 
     def test_chemical_reaction_form_valid(self):
-        form = ChemicalReactionForm({"reactant": "H2 O2", "product": "H2O", "reversible": True})
+        form = ChemicalReactionForm(
+            {"reactant": "H2 O2", "product": "H2O", "reversible": True}
+        )
         self.assertTrue(form.is_valid())
 
     def test_chemical_reaction_form_missing(self):
         form = ChemicalReactionForm({"reactant": "", "product": "", "reversible": True})
         self.assertFalse(form.is_valid())
-        self.assertIn("Reactant and product must be provided.", form.errors["__all__"][0])
+        self.assertIn(
+            "Reactant and product must be provided.",
+            form.errors["__all__"][0],
+        )
 
     def test_solution_form_valid(self):
         form = SolutionForm({
@@ -126,7 +131,17 @@ class FormTests(SimpleTestCase):
         self.assertFalse(form.is_valid())
 
     def test_solution_form_zero(self):
-        form = SolutionForm({"v1": "0", "v1_unit": "L", "c1": "1", "c1_unit": "mol/L", "c2": "", "v2": "2", "v2_unit": "L"})
+        form = SolutionForm(
+            {
+                "v1": "0",
+                "v1_unit": "L",
+                "c1": "1",
+                "c1_unit": "mol/L",
+                "c2": "",
+                "v2": "2",
+                "v2_unit": "L",
+            }
+        )
         self.assertFalse(form.is_valid())
 
     def test_solution_form_wrong_field_count(self):
@@ -178,12 +193,18 @@ class ViewTests(TestCase):
         self.assertEqual(response.status_code, 200)
 
     def test_molecular_weight_view_post(self):
-        response = self.client.post(reverse("molecular_weight"), {"formula": "H2O"})
+        response = self.client.post(
+            reverse("molecular_weight"), {"formula": "H2O"}
+        )
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.context["result"], {"H2O": 18.015})
 
     def test_reaction_balancer_view_post(self):
-        data = {"reactant": "H2 O2", "product": "H2O", "reversible": True}
+        data = {
+            "reactant": "H2 O2",
+            "product": "H2O",
+            "reversible": True,
+        }
         response = self.client.post(reverse("reaction_balancer"), data)
         self.assertEqual(response.status_code, 200)
         self.assertIn("\\ce", response.context["result"])
@@ -201,7 +222,10 @@ class ViewTests(TestCase):
         }
         response = self.client.post(reverse("dilution"), data)
         self.assertEqual(response.status_code, 200)
-        self.assertEqual(response.context["result"]["property"], "Initial Volume")
+        self.assertEqual(
+            response.context["result"]["property"], "Initial Volume"
+        )
+
 
 class ContextProcessorTests(TestCase):
     def setUp(self):
