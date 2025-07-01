@@ -242,3 +242,11 @@ class ContextProcessorTests(TestCase):
         self.client.post(reverse('molecular_weight'), {'formula': 'CO2'})
         session = self.client.session
         self.assertIn('CO2', session['previous_substances'])
+
+
+class LoggingConfigTests(SimpleTestCase):
+    def test_logging_file_handler_path(self):
+        """Ensure LOGGING writes to the expected file."""
+        file_handler = settings.LOGGING['handlers']['file']
+        expected_path = settings.BASE_DIR / 'django.log'
+        self.assertEqual(file_handler['filename'], expected_path)
