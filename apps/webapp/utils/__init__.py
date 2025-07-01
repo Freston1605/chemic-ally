@@ -11,3 +11,5 @@ def add_previous_substances(request: HttpRequest, substances: Iterable[str]) -> 
         if substance and substance not in prev:
             prev.append(substance)
     request.session["previous_substances"] = prev
+
+from .formula import smiles_to_formula

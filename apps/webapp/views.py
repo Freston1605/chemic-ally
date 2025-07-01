@@ -133,8 +133,8 @@ class CalculateMolecularWeightView(BaseCalculateView):
             weight.
         """
 
-        # Obtain the molecular formulas from the form and parse them into a list
-        molecules = [x.strip() for x in form.cleaned_data["formula"].split()]
+        # Obtain the list of molecular formulas from the form
+        molecules = form.cleaned_data["formula"]
         result = {}
         calculator = MolecularWeightCalculator()
         # Loop over the molecules list
@@ -187,8 +187,8 @@ class BalanceChemicalReaction(BaseCalculateView):
         try:
             reaction = form.cleaned_data
             reversible = reaction["reversible"]
-            reactants = [x.strip() for x in reaction["reactant"].split()]
-            products = [x.strip() for x in reaction["product"].split()]
+            reactants = reaction["reactant"]
+            products = reaction["product"]
             reactants_dict = {reactant for reactant in reactants}
             products_dict = {product for product in products}
             calculator = ReactionBalancer()
@@ -229,7 +229,8 @@ class CalculateDilutionView(BaseCalculateView):
 
         try:
             molecular_weight = cd.get("molecular_weight")
-            solute_formula = cd.get("solute")
+            solute_list = cd.get("solute")
+            solute_formula = solute_list[0] if solute_list else None
 
             from .utils.units import Q_
 
