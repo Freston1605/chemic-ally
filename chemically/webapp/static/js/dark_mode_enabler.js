@@ -1,13 +1,15 @@
 document.addEventListener('DOMContentLoaded', function () {
-        const currentTheme = localStorage.getItem('theme') || 'light';
+        let currentTheme = localStorage.getItem('theme') || 'light';
 
         // Apply the current theme on page load
         applyTheme(currentTheme);
 
         // Toggle theme on click
+        // When the user clicks the theme text, toggle between light and dark
         document.getElementById('bd-theme-text').addEventListener('click', function () {
             const newTheme = currentTheme === 'light' ? 'dark' : 'light';
             applyTheme(newTheme);
+            currentTheme = newTheme;
             localStorage.setItem('theme', newTheme);
         });
 
