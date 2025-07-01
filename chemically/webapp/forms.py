@@ -1,11 +1,14 @@
 from django import forms
+
+
 class MolecularFormulaForm(forms.Form):
     """
     A Django form for capturing a molecular formula.
 
     Parameters:
-    - formula (CharField): A character field for the molecular formula of one or more molecules.
-                          The maximum length is set to 100 characters.
+    - formula (CharField):
+        A character field for the molecular formula of one or more molecules.
+        The maximum length is set to 100 characters.
 
     Example usage:
     >>> form_class = MoleculeFormulaForm(data={'formula': 'NH4+ CO2 H2O'})
@@ -18,7 +21,10 @@ class MolecularFormulaForm(forms.Form):
     formula = forms.CharField(
         max_length=100,
         label="Chemical Formula",
-        help_text="Enter the chemical formula of all desired substances separated by a white space.",
+        help_text=(
+            "Enter the chemical formula of all desired substances separated "
+            "by a white space."
+        ),
         widget=forms.TextInput(attrs={"placeholder": "NH4+ CO2 H2O"}),
         required=True,
     )
@@ -30,29 +36,35 @@ class ChemicalReactionForm(forms.Form):
     Products and reactants are meant to be separated with a whitespace.
 
     Attributes:
-        reactant (CharField): A field for capturing the reactants in the chemical reaction.
-                             Max length is set to 100 characters.
-                             Example: 'H2 O2'.
+        reactant (CharField):
+            Field for capturing the reactants in the chemical reaction.
+            Max length is set to 100 characters. Example: 'H2 O2'.
 
-        product (CharField): A field for capturing the products in the chemical reaction.
-                             Max length is set to 100 characters.
-                             Example: 'H2O'.
+        product (CharField):
+            Field for capturing the products in the chemical reaction.
+            Max length is set to 100 characters. Example: 'H2O'.
 
-        reversible (BooleanField): A checkbox indicating whether the chemical reaction is reversible.
-                                   Defaults to True (reversible).
-                                   Example: Checked (Reversible) or Unchecked (Non-reversible).
+        reversible (BooleanField):
+            Checkbox indicating whether the reaction is reversible.
+            Defaults to True (reversible). Example: Checked or unchecked.
     """
 
     reactant = forms.CharField(
         max_length=100,
         label="Reactant(s)",
-        help_text="Enter the chemical formula for all of the reactants in this input box separated by a whitespace.",
+        help_text=(
+            "Enter the chemical formula for all reactants separated "
+            "by a whitespace."
+        ),
         widget=forms.TextInput(attrs={"placeholder": "H2 O2"}),
     )
     product = forms.CharField(
         max_length=100,
         label="Product(s)",
-        help_text="Enter the chemical formula for all of the reactants in this input box separated by a whitespace.",
+        help_text=(
+            "Enter the chemical formula for all reactants separated "
+            "by a whitespace."
+        ),
         widget=forms.TextInput(attrs={"placeholder": "H2O"}),
     )
     reversible = forms.BooleanField(
@@ -106,22 +118,28 @@ class SolutionForm(forms.Form):
 
         >>> form = SolutionForm(request.POST)
         >>> if form.is_valid():
-        >>>     # Process the cleaned and validated data
+        >>>     # Process cleaned and validated data
         >>>     cleaned_data = form.cleaned_data
 
     Attributes:
         CONCENTRATION_CHOICES (tuple): Choices for concentration units.
         VOLUME_CHOICES (tuple): Choices for volume units.
-        solute(CharField): A field for capturing the chemical formula solute of the solution. Optional.
-        solvent(CharFiled): A field for capturing the chemical formula of the solvent of the solution. Optional.
-        concentration_initial(FloatField): A field for capturing the initial concentration of the solution. Optional.
-        volume_initial(Floatfiled): A field for capturing the initial volume of the solution. Optional.
+        solute(CharField):
+            Field for the chemical formula of the solute. Optional.
+        solvent(CharFiled):
+            Field for the chemical formula of the solvent. Optional.
+        concentration_initial(FloatField):
+            Initial concentration of the solution. Optional.
+        volume_initial(Floatfiled):
+            Initial volume of the solution. Optional.
 
 
     Methods:
-        multiply_by_unit(value, unit): Helper method to multiply a value by its corresponding unit.
-        clean(): Clean and validate form data, including checks for the relationship between
-                initial and final concentrations.
+        multiply_by_unit(value, unit):
+            Helper to multiply a value by its unit.
+        clean():
+            Validate form data, including the relationship between the
+            initial and final concentrations.
 
     """
 
@@ -144,7 +162,9 @@ class SolutionForm(forms.Form):
     solute = forms.CharField(
         max_length=100,
         required=False,
-        help_text="Optional: Enter the chemical formula of the solute.",
+        help_text=(
+            "Optional: Enter the chemical formula of the solute."
+        ),
         widget=forms.TextInput(attrs={"placeholder": "NaOH"}),
     )
     solvent = forms.CharField(
@@ -157,14 +177,20 @@ class SolutionForm(forms.Form):
         min_value=0,
         label="Initial concentration of the solute.",
         required=False,
-        help_text="Enter the concentration of the initial solute in the solution and choose  the corresponding concentration unit prefix the menu.",
+        help_text=(
+            "Enter the concentration of the initial solute in the solution "
+            "and choose the corresponding unit prefix."
+        ),
     )
 
     v1 = forms.FloatField(
         min_value=0,
         label="Initial volume of the solute.",
         required=False,
-        help_text="Enter the volume of the initial solution and choose the corresponding volume unit prefix in the menu.",
+        help_text=(
+            "Enter the volume of the initial solution and choose the "
+            "corresponding volume unit prefix."
+        ),
     )
     c2 = forms.FloatField(
         min_value=0,
@@ -183,14 +209,20 @@ class SolutionForm(forms.Form):
         choices=CONCENTRATION_CHOICES,
         label="Initial concentration scale unit.",
         initial="mol/L",
-        help_text="Choose a concentration unit for the initial concentration of the solute in the solution.",
+        help_text=(
+            "Choose a concentration unit for the initial concentration of "
+            "the solute."
+        ),
     )
     c2_unit = forms.ChoiceField(
         required=False,
         choices=CONCENTRATION_CHOICES,
         label="Final concentration scale unit.",
         initial="mol/L",
-        help_text="Choose a concentration unit for the final concentration of the solute in the solution.",
+        help_text=(
+            "Choose a concentration unit for the final concentration of the "
+            "solute."
+        ),
     )
     v1_unit = forms.ChoiceField(
         required=False,
@@ -218,7 +250,9 @@ class SolutionForm(forms.Form):
         values = [c1, v1, c2, v2]
         if sum(v is not None for v in values) != 3:
             raise forms.ValidationError(
-                "Exactly three values among Initial Concentration, Initial Volume, Final Concentration, and Final Volume must be provided."
+                "Exactly three values among Initial Concentration, "
+                "Initial Volume, Final Concentration, and Final Volume "
+                "must be provided."
             )
 
         labels = [

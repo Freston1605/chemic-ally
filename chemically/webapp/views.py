@@ -1,15 +1,17 @@
 from abc import ABC, abstractmethod
 
 from django.contrib import messages
-from django.core.exceptions import ValidationError
 from django.http import HttpResponse
 from django.views.generic import TemplateView
 from django.views.generic.edit import FormView
 from django.views import View
 from django.shortcuts import render, redirect
 
-from .calculations.base import (DilutionCalculator, MolecularWeightCalculator,
-                                ReactionBalancer)
+from .calculations.base import (
+    DilutionCalculator,
+    MolecularWeightCalculator,
+    ReactionBalancer,
+)
 from .forms import ChemicalReactionForm, MolecularFormulaForm, SolutionForm
 from .utils import add_previous_substances
 import pint
@@ -36,19 +38,23 @@ class BaseCalculateView(FormView, ABC):
     - success_url (str): The URL to redirect to after a successful form submission.
 
     Methods:
-    - form_valid(form: Form) -> HttpResponse: Overrides the FormView method to handle a valid form submission.
-    - process_calculation(form: Form) -> dict: Abstract method to be implemented by subclasses for custom logic.
+    - form_valid(form: Form) -> HttpResponse:
+        Overrides the FormView method to handle a valid form submission.
+    - process_calculation(form: Form) -> dict:
+        Abstract method implemented by subclasses for custom logic.
 
     Example usage:
     1. Inherit from this class in a concrete view class.
     2. Implement the `process_calculation` method for custom logic.
     3. Add the concrete view class to your `urls.py`.
 
-    This class provides a structure for views that involve form submissions and custom calculations.
+    This class provides a structure for views that involve form submissions and
+    custom calculations.
 
     Args:
-    - FormView (Type[FormView]): Django's generic view class for handling form submissions.
-      Inherits from FormView to utilize form handling functionality.
+    - FormView (Type[FormView]): Django's generic view class for handling form
+      submissions. Inherits from FormView to utilize form handling
+      functionality.
     - ABC (Type[ABC]): Abstract Base Class from the 'abc' module.
       Inherits from ABC to define an abstract method, process_calculation,
       which must be implemented by subclasses.
@@ -86,25 +92,28 @@ class BaseCalculateView(FormView, ABC):
 
 class CalculateMolecularWeightView(BaseCalculateView):
     """
-    Concrete view class for calculating molecular weights based on a submitted molecular formula.
+    Concrete view class for calculating molecular weights from a submitted
+    molecular formula.
 
-    This view calculates the molecular weight for each molecular formula submitted via a form,
-    parsing the input string and looping over each formula to calculate its molecular weight.
+    This view calculates the molecular weight for each formula submitted via a
+    form, parsing the input string and looping over each molecule.
 
     Attributes:
         template_name (str): The name of the template to render.
-        form_class (Type[Form]): The form class to use for input validation and submission.
+        form_class (Type[Form]): The form class used for input validation and
+        submission.
 
     Methods:
         process_calculation(form: MolecularFormulaForm) -> dict:
-            Calculate the molecular weight based on the submitted molecular formula.
-            Parses the string containing one or more molecular formulas separated by whitespace,
-            calculates the molecular weight for each formula, and returns a dictionary
-            with each formula as key and its corresponding molecular weight as value.
+            Calculate the molecular weight based on the submitted formula.
+            Parses the string containing one or more formulas separated by
+            whitespace and returns a dictionary with each formula mapped to its
+            molecular weight.
 
     Args:
-        BaseCalculateView (Type[BaseCalculateView]): Base class for views that involve form submissions
-            and custom calculations.
+        BaseCalculateView (Type[BaseCalculateView]):
+            Base class for views that involve form submissions and custom
+            calculations.
 
     """
 
@@ -116,11 +125,12 @@ class CalculateMolecularWeightView(BaseCalculateView):
         Calculate the molecular weight based on the submitted molecular formula.
 
         Parameters:
-            form (MolecularFormulaForm): The form instance containing the molecular formula.
+            form (MolecularFormulaForm): The form instance containing the
+            molecular formula.
 
         Returns:
-            dict: A dictionary containing each molecular formula and its corresponding calculated
-                molecular weight.
+            dict: A dictionary mapping each formula to its calculated molecular
+            weight.
         """
 
         # Obtain the molecular formulas from the form and parse them into a list
@@ -163,11 +173,13 @@ class BalanceChemicalReaction(BaseCalculateView):
         Perform stoichiometric balancing for the submitted reaction.
 
         The cleaned form data is parsed into lists of reactant and product
-        formulas and passed to the :class:`ReactionBalancer` calculator from the
-        class-based API. The balanced equation is returned as a LaTeX string.
+        formulas. It is passed to the :class:`ReactionBalancer` calculator from
+        the class-based API. The balanced equation is returned as a LaTeX string.
 
         Args:
-            form (form_class): A Django form instance representing the user input for a chemical reaction.
+            form (form_class):
+                A Django form instance representing the user input for a
+                chemical reaction.
 
         Returns:
             str: A string representation of the balanced chemical reaction equation.
@@ -204,50 +216,58 @@ class CalculateDilutionView(BaseCalculateView):
 
     def process_calculation(self, form: SolutionForm):
         """
-        Processes the calculation based on user input from the form to calculate a simple dilution
-        with full error handling and compatibility for Pint-based logic.
+        Processes the calculation based on user input from the form to calculate
+        a simple dilution with full error handling and compatibility for
+        Pint-based logic.
 
-        Returns a result dict with the missing property, its value, and its unit label.
-        Handles ValidationError for user input issues and general Exception for all other cases,
-        showing errors via Django's messages framework.
+        Returns a result dict with the missing property, its value, and its
+        unit label. Handles ValidationError for user input issues and general
+        Exception for all other cases, showing errors via Django's messages
+        framework.
         """
         cd = form.cleaned_data
 
         try:
-            c1, c1_unit = cd.get("c1"), cd.get("c1_unit")
-            v1, v1_unit = cd.get("v1"), cd.get("v1_unit")
-            c2, c2_unit = cd.get("c2"), cd.get("c2_unit")
-            v2, v2_unit = cd.get("v2"), cd.get("v2_unit")
             molecular_weight = cd.get("molecular_weight")
             solute_formula = cd.get("solute")
 
             from .utils.units import Q_
 
-            unit_map = {"c1": c1_unit, "v1": v1_unit, "c2": c2_unit, "v2": v2_unit}
+            unit_map = {
+                "c1": cd.get("c1_unit"),
+                "v1": cd.get("v1_unit"),
+                "c2": cd.get("c2_unit"),
+                "v2": cd.get("v2_unit"),
+            }
             quantity_map = {
                 k: Q_(cd[k], unit_map[k])
                 for k in ["c1", "v1", "c2", "v2"]
                 if cd.get(k) is not None
             }
 
-            missing_prop = next(k for k in ["c1", "v1", "c2", "v2"] if cd.get(k) is None)
+            missing_prop = next(
+                k for k in ["c1", "v1", "c2", "v2"] if cd.get(k) is None
+            )
 
             calculator = DilutionCalculator()
             result = calculator.calculate(
                 c1=quantity_map.get("c1"),
-                c1_unit=c1_unit,
+                c1_unit=unit_map["c1"],
                 v1=quantity_map.get("v1"),
-                v1_unit=v1_unit,
+                v1_unit=unit_map["v1"],
                 c2=quantity_map.get("c2"),
-                c2_unit=c2_unit,
+                c2_unit=unit_map["c2"],
                 v2=quantity_map.get("v2"),
-                v2_unit=v2_unit,
+                v2_unit=unit_map["v2"],
                 molecular_weight=molecular_weight,
                 solute_formula=solute_formula,
             )
 
             if result is None or "missing_value" not in result:
-                messages.error(self.request, "Calculation failed. Please check your input.")
+                messages.error(
+                    self.request,
+                    "Calculation failed. Please check your input.",
+                )
                 return None
 
             missing_value = result["missing_value"]
@@ -261,10 +281,10 @@ class CalculateDilutionView(BaseCalculateView):
                 "Final Volume",
             ]
             unit_label_map = {
-                "c1": dict(form.fields["c1_unit"].choices)[c1_unit],
-                "v1": dict(form.fields["v1_unit"].choices)[v1_unit],
-                "c2": dict(form.fields["c2_unit"].choices)[c2_unit],
-                "v2": dict(form.fields["v2_unit"].choices)[v2_unit],
+                "c1": dict(form.fields["c1_unit"].choices)[unit_map["c1"]],
+                "v1": dict(form.fields["v1_unit"].choices)[unit_map["v1"]],
+                "c2": dict(form.fields["c2_unit"].choices)[unit_map["c2"]],
+                "v2": dict(form.fields["v2_unit"].choices)[unit_map["v2"]],
             }
             result_dict = {
                 "property": labels[["c1", "v1", "c2", "v2"].index(missing_prop)],
@@ -354,22 +374,43 @@ class DashboardView(View):
                     c2_unit=context['c2_unit'],
                     v2=float(context['v2']) if context['v2'] else None,
                     v2_unit=context['v2_unit'],
-                    molecular_weight=float(context['molecular_weight']) if context['molecular_weight'] else None,
-                    solute_formula=context['solute']
+                    molecular_weight=(
+                        float(context['molecular_weight'])
+                        if context['molecular_weight']
+                        else None
+                    ),
+                    solute_formula=context['solute'],
                 )
                 context['dilution_result'] = make_json_safe(result)
             except Exception as e:
-                context['dilution_result'] = {'property': 'Error', 'value': str(e), 'unit': ''}
+                context['dilution_result'] = {
+                    'property': 'Error',
+                    'value': str(e),
+                    'unit': '',
+                }
         elif action == 'balance_reaction':
             try:
-                reactants = [x.strip() for x in context['reactant'].split()] if context['reactant'] else []
-                products = [x.strip() for x in context['product'].split()] if context['product'] else []
+                reactants = (
+                    [x.strip() for x in context['reactant'].split()]
+                    if context['reactant']
+                    else []
+                )
+                products = (
+                    [x.strip() for x in context['product'].split()]
+                    if context['product']
+                    else []
+                )
                 calculator = ReactionBalancer()
-                balanced = calculator.calculate(reactants=reactants, products=products)
+                balanced = calculator.calculate(
+                    reactants=reactants,
+                    products=products,
+                )
                 if balanced:
                     reactants_balanced, products_balanced = balanced
                     result = ReactionBalancer.to_latex(
-                        reactants_balanced, products_balanced, context['reversible']
+                        reactants_balanced,
+                        products_balanced,
+                        context['reversible'],
                     )
                     context['reaction_result'] = result
                 else:

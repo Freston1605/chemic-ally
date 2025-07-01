@@ -1,17 +1,19 @@
-"""
-Class-based calculation logic for ChemicAlly (refactored).
-Each calculation type implements a `calculate` method, with unified handling of chempy objects.
-"""
+"""Calculation helpers for ChemicAlly."""
+
+# Each calculation type implements a ``calculate`` method with unified handling
+# of chempy objects.
 
 from typing import Any, Dict, Optional, Tuple, Union
 
 from chempy import Substance, balance_stoichiometry
 from ..utils.units import Q_
 
+
 # --- Calculation Base ---
 class CalculationBase:
     """
-    Base class for chemical calculations. Defines input/output and documentation metadata.
+    Base class for chemical calculations. Defines input/output and
+    documentation metadata.
     Subclasses must implement the `calculate` method.
     """
 
@@ -65,7 +67,7 @@ class ReactionBalancer(CalculationBase):
                 reactants=reactants, products=products
             )
             return reactants_balanced, products_balanced
-        except Exception as e:
+        except Exception:
             # Log or handle error more gracefully if needed
             return None
 
@@ -88,7 +90,10 @@ class ReactionBalancer(CalculationBase):
 
 # --- Dilution Calculator ---
 class DilutionCalculator(CalculationBase):
-    description = "Performs dilution calculations (C1V1 = C2V2). Given three values, computes the fourth. Unit-safe with Pint."
+    description = (
+        "Performs dilution calculations (C1V1 = C2V2). "
+        "Given three values, computes the fourth. Unit-safe with Pint."
+    )
     input_spec = {
         "c1": float,
         "c1_unit": str,
@@ -119,8 +124,9 @@ class DilutionCalculator(CalculationBase):
         solute_formula: Optional[str] = None,
     ) -> dict:
         """
-        Calculate missing value in dilution, and mass if possible, all unit-safe with Pint.
-        All inputs must provide both value and unit string (e.g., 10, 'mmol/L').
+        Calculate the missing value in a dilution. Mass is computed if
+        possible, all handled safely with Pint. All inputs must provide both
+        value and unit string (e.g., ``10`` and ``"mmol/L"``).
         """
         values = {
             "c1": (c1, c1_unit),
@@ -128,7 +134,9 @@ class DilutionCalculator(CalculationBase):
             "c2": (c2, c2_unit),
             "v2": (v2, v2_unit),
         }
-        provided = {k: Q_(v, u) for k, (v, u) in values.items() if v is not None}
+        provided = {
+            k: Q_(v, u) for k, (v, u) in values.items() if v is not None
+        }
         missing_key = [k for k in values if values[k][0] is None]
         if len(missing_key) != 1:
             raise ValueError("Exactly one value among c1, v1, c2, v2 must be missing")

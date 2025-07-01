@@ -1,6 +1,3 @@
-from django.db import models
+"""Webapp models placeholder."""
 
-# class Substance(models.Model):
-#     "Class for any atom or molecule."
-#     molecular_formula = models.CharField()
-    
+# Add models here when needed.
