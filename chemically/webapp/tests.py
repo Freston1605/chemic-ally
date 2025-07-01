@@ -103,6 +103,49 @@ class FormTests(SimpleTestCase):
         form = SolutionForm({"c1": "-1", "c1_unit": "mol/L"})
         self.assertFalse(form.is_valid())
 
+    def test_solution_form_zero(self):
+        form = SolutionForm({"v1": "0", "v1_unit": "L", "c1": "1", "c1_unit": "mol/L", "c2": "", "v2": "2", "v2_unit": "L"})
+        self.assertFalse(form.is_valid())
+
+    def test_solution_form_wrong_field_count(self):
+        form = SolutionForm({
+            "c1": "1",
+            "c1_unit": "mol/L",
+            "v1": "1",
+            "v1_unit": "L",
+            "c2": "0.5",
+            "c2_unit": "mol/L",
+            "v2": "2",
+            "v2_unit": "L",
+        })
+        self.assertFalse(form.is_valid())
+
+    def test_solution_form_final_volume_lt_initial(self):
+        form = SolutionForm({
+            "c1": "1",
+            "c1_unit": "mol/L",
+            "v1": "5",
+            "v1_unit": "L",
+            "c2": "",
+            "c2_unit": "mol/L",
+            "v2": "2",
+            "v2_unit": "L",
+        })
+        self.assertFalse(form.is_valid())
+
+    def test_solution_form_final_concentration_gt_initial(self):
+        form = SolutionForm({
+            "c1": "1",
+            "c1_unit": "mol/L",
+            "v1": "1",
+            "v1_unit": "L",
+            "c2": "2",
+            "c2_unit": "mol/L",
+            "v2": "",
+            "v2_unit": "L",
+        })
+        self.assertFalse(form.is_valid())
+
 
 class ViewTests(TestCase):
     def setUp(self):
