@@ -1,10 +1,8 @@
 from django.test import SimpleTestCase, TestCase, Client
 from django.urls import reverse
 from django.conf import settings
-import os
 
 settings.SECRET_KEY = "test"
-os.makedirs('/var/log/django', exist_ok=True)
 
 from ..calculations.base import (
     MolecularWeightCalculator,
@@ -226,4 +224,5 @@ class LoggingConfigTests(SimpleTestCase):
     def test_logging_file_handler_path(self):
         """Ensure LOGGING writes to the expected file."""
         file_handler = settings.LOGGING['handlers']['file']
-        self.assertEqual(file_handler['filename'], '/var/log/django/django.log')
+        expected_path = settings.BASE_DIR / 'django.log'
+        self.assertEqual(file_handler['filename'], expected_path)

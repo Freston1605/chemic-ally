@@ -94,9 +94,9 @@ To run a Django project on your machine, follow these general steps. Note that s
 
 - **Environment Variables:**
   - See the **Environment Variables** section below for required keys.
-- **Logging Directory:**
-  - Create `/var/log/django` and ensure the application can write to it. Logs
-    are stored at `/var/log/django/django.log`.
+- **Logging File:**
+  - Logs are written to `django.log` in the project directory. Ensure the
+    application has write permissions there.
 
 Keep in mind that these are general steps, and you might need to adjust them based on your specific Django project setup and requirements. Always refer to your project's documentation or README for any project-specific instructions.
 

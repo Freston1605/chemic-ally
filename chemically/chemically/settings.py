@@ -131,8 +131,10 @@ STATIC_ROOT = BASE_DIR / "staticfiles"
 DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
 
 # Logging configuration
-# Matches the example from Agents.md. Logs are written to
-# /var/log/django/django.log using a verbose formatter.
+# Uses a file handler with a verbose formatter. The log file
+# is stored in the project directory to avoid missing-path
+# errors during testing and in environments where /var/log may
+# not be writable.
 LOGGING = {
     'version': 1,
     'disable_existing_loggers': False,
@@ -146,7 +148,7 @@ LOGGING = {
         'file': {
             'level': 'INFO',
             'class': 'logging.FileHandler',
-            'filename': '/var/log/django/django.log',
+            'filename': BASE_DIR / 'django.log',
             'formatter': 'verbose',
         },
     },
