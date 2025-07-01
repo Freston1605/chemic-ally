@@ -9,29 +9,6 @@ from chempy import Substance, balance_stoichiometry
 from pyparsing import ParseException
 from ..utils.units import Q_, ureg
 
-
-# --- Substance Wrapper ---
-
-class SubstanceWrapper:
-    """
-    Wraps a chempy Substance for reusability across multiple calculations.
-    """
-    def __init__(self, formula: str):
-        self._substance = Substance.from_formula(formula)
-        self.formula = formula
-
-    def __getattr__(self, attr):
-        return getattr(self._substance, attr)
-
-    def __dir__(self):
-        # Start with the default attributes for this instance
-        base_dir = set(super().__dir__())
-        # Add attributes/methods from the wrapped Substance instance
-        substance_dir = set(dir(self._substance))
-        # Optionally, add any other dynamic or custom attributes you want
-        # Return the sorted, combined set
-        return sorted(base_dir | substance_dir)
-
 # --- Calculation Base ---
 class CalculationBase:
     """
@@ -56,21 +33,17 @@ class MolecularWeightCalculator(CalculationBase):
     output_spec = {"molecular_weight": float}
 
     def calculate(
-        self, substance_or_formula: Union[str, Substance, SubstanceWrapper]
+        self, substance_or_formula: Union[str, Substance]
     ) -> Optional[float]:
         """
         Calculates the molar mass of a chemical compound given its formula or Substance.
         Args:
-            substance_or_formula: Formula string, Substance, or SubstanceWrapper.
+            substance_or_formula: Formula string or ``chempy.Substance`` instance.
         Returns:
             float or None: The molar mass if valid, else None.
         """
         try:
-            if isinstance(substance_or_formula, SubstanceWrapper):
-                if substance_or_formula.error:
-                    return None
-                substance = substance_or_formula.substance
-            elif isinstance(substance_or_formula, Substance):
+            if isinstance(substance_or_formula, Substance):
                 substance = substance_or_formula
             else:
                 substance = Substance.from_formula(substance_or_formula)
@@ -179,11 +152,13 @@ class DilutionCalculator(CalculationBase):
         result = {"missing_property": miss, "missing_value": missing.to_compact()}
 
         # Mass calculation if possible
-        # Try formula via SubstanceWrapper if molecular_weight not given
+        # Derive molecular weight from formula if not provided
         mw = molecular_weight
         if not mw and solute_formula:
-            wrapper = SubstanceWrapper(solute_formula)
-            mw = wrapper.mass
+            try:
+                mw = Substance.from_formula(solute_formula).mass
+            except Exception:
+                mw = None
         if mw and all(x in provided for x in ["c2", "v2"]):
             # Convert c2 to mol/L, v2 to L
             c2_mol_L = provided["c2"].to("mol/l")

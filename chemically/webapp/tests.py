@@ -10,6 +10,7 @@ from .calculations.base import (
     ReactionBalancer,
     DilutionCalculator,
 )
+from chempy import Substance
 from .forms import MolecularFormulaForm, ChemicalReactionForm, SolutionForm
 
 
@@ -66,6 +67,28 @@ class CalculatorTests(SimpleTestCase):
         self.assertEqual(res["missing_property"], "c1")
         self.assertIn("mass_g", res)
         self.assertAlmostEqual(res["mass_g"], 58.44, places=2)
+
+    def test_dilution_mass_from_formula(self):
+        calc = DilutionCalculator()
+        res = calc.calculate(
+            c1=None,
+            c1_unit="mol/L",
+            v1=1.0,
+            v1_unit="L",
+            c2=0.5,
+            c2_unit="mol/L",
+            v2=2.0,
+            v2_unit="L",
+            molecular_weight=None,
+            solute_formula="NaCl",
+        )
+        self.assertEqual(res["missing_property"], "c1")
+        self.assertIn("mass_g", res)
+
+    def test_molecular_weight_with_substance(self):
+        calc = MolecularWeightCalculator()
+        h2o = Substance.from_formula("H2O")
+        self.assertAlmostEqual(calc.calculate(h2o), 18.015, places=3)
 
 
 class FormTests(SimpleTestCase):
