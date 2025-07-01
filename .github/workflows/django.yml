@@ -33,10 +33,10 @@ jobs:
         EOF
         )
         cat <<EOF > .env
-SECRET_KEY=$SECRET_KEY
-DEBUG=False
-ALLOWED_HOSTS=localhost 127.0.0.1
-EOF
+          SECRET_KEY=$SECRET_KEY
+          DEBUG=False
+          ALLOWED_HOSTS=localhost 127.0.0.1
+          EOF
     - name: Run Tests
       run: |
         python -m py_compile $(git ls-files '*.py')
