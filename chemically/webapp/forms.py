@@ -206,3 +206,49 @@ class SolutionForm(forms.Form):
         initial="mL",
         help_text="Choose a volume unit for the final volume of the solution.",
     )
+
+    def clean(self):
+        """Validate dilution form fields."""
+        cleaned_data = super().clean()
+        c1 = cleaned_data.get("c1")
+        v1 = cleaned_data.get("v1")
+        c2 = cleaned_data.get("c2")
+        v2 = cleaned_data.get("v2")
+
+        values = [c1, v1, c2, v2]
+        if sum(v is not None for v in values) != 3:
+            raise forms.ValidationError(
+                "Exactly three values among Initial Concentration, Initial Volume, Final Concentration, and Final Volume must be provided."
+            )
+
+        labels = [
+            "Initial Concentration",
+            "Initial Volume",
+            "Final Concentration",
+            "Final Volume",
+        ]
+        for value, label in zip(values, labels):
+            if value is not None and value <= 0:
+                raise forms.ValidationError(
+                    f"The {label.lower()} cannot be equal or lower than zero."
+                )
+
+        from .utils.units import Q_
+
+        if v1 is not None and v2 is not None:
+            v1_q = Q_(v1, cleaned_data.get("v1_unit"))
+            v2_q = Q_(v2, cleaned_data.get("v2_unit"))
+            if v1_q.to("liter").magnitude >= v2_q.to("liter").magnitude:
+                raise forms.ValidationError(
+                    "Initial volume cannot be greater or equal than final volume."
+                )
+
+        if c1 is not None and c2 is not None:
+            c1_q = Q_(c1, cleaned_data.get("c1_unit"))
+            c2_q = Q_(c2, cleaned_data.get("c2_unit"))
+            if c1_q.to("mol/liter").magnitude < c2_q.to("mol/liter").magnitude:
+                raise forms.ValidationError(
+                    "Initial concentration cannot be lesser than final concentration."
+                )
+
+        return cleaned_data

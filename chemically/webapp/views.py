@@ -211,10 +211,9 @@ class CalculateDilutionView(BaseCalculateView):
         Handles ValidationError for user input issues and general Exception for all other cases,
         showing errors via Django's messages framework.
         """
-        try:
-            cd = form.cleaned_data
+        cd = form.cleaned_data
 
-            # Get all values and their unit strings
+        try:
             c1, c1_unit = cd.get("c1"), cd.get("c1_unit")
             v1, v1_unit = cd.get("v1"), cd.get("v1_unit")
             c2, c2_unit = cd.get("c2"), cd.get("c2_unit")
@@ -222,63 +221,17 @@ class CalculateDilutionView(BaseCalculateView):
             molecular_weight = cd.get("molecular_weight")
             solute_formula = cd.get("solute")
 
-            # Count non-None entries for dilution values
-            values = [c1, v1, c2, v2]
-            non_none_count = sum(x is not None for x in values)
-
-            if non_none_count != 3:
-                raise ValidationError(
-                    "Exactly three values among Initial Concentration, Initial Volume, Final Concentration, and Final Volume must be provided.",
-                    code="invalid",
-                )
-
-            # Check that provided values are all positive
-            labels = [
-                "Initial Concentration",
-                "Initial Volume",
-                "Final Concentration",
-                "Final Volume",
-            ]
-            for value, label in zip(values, labels):
-                if value is not None and value <= 0:
-                    raise ValidationError(
-                        f"The {label.lower()} cannot be equal or lower than zero.",
-                        code="invalid",
-                    )
-
-            # Use Pint for units
-            from .utils.units import Q_  # use the package-local units helper
+            from .utils.units import Q_
 
             unit_map = {"c1": c1_unit, "v1": v1_unit, "c2": c2_unit, "v2": v2_unit}
-            quantity_map = {}
-            for k, v in zip(["c1", "v1", "c2", "v2"], [c1, v1, c2, v2]):
-                if v is not None and unit_map[k]:
-                    quantity_map[k] = Q_(v, unit_map[k])
+            quantity_map = {
+                k: Q_(cd[k], unit_map[k])
+                for k in ["c1", "v1", "c2", "v2"]
+                if cd.get(k) is not None
+            }
 
-            # Consistency checks as before (raise early if inconsistency found)
-            if quantity_map.get("v1") and quantity_map.get("v2"):
-                if (
-                    quantity_map["v1"].to("liter").magnitude
-                    >= quantity_map["v2"].to("liter").magnitude
-                ):
-                    raise ValidationError(
-                        "Initial volume cannot be greater or equal than final volume.",
-                        code="invalid",
-                    )
-            if quantity_map.get("c1") and quantity_map.get("c2"):
-                if (
-                    quantity_map["c1"].to("mol/liter").magnitude
-                    < quantity_map["c2"].to("mol/liter").magnitude
-                ):
-                    raise ValidationError(
-                        "Initial concentration cannot be lesser than final concentration.",
-                        code="invalid",
-                    )
+            missing_prop = next(k for k in ["c1", "v1", "c2", "v2"] if cd.get(k) is None)
 
-            # Identify missing property and call the calculator
-            missing_prop = next(
-                k for k in ["c1", "v1", "c2", "v2"] if k not in quantity_map
-            )
             calculator = DilutionCalculator()
             result = calculator.calculate(
                 c1=quantity_map.get("c1"),
@@ -293,15 +246,20 @@ class CalculateDilutionView(BaseCalculateView):
                 solute_formula=solute_formula,
             )
 
-            # Extract missing value and preferred output unit
             if result is None or "missing_value" not in result:
-                raise ValidationError("Calculation failed. Please check your input.")
+                messages.error(self.request, "Calculation failed. Please check your input.")
+                return None
 
             missing_value = result["missing_value"]
             if hasattr(missing_value, "to_compact"):
                 missing_value = missing_value.to_compact()
 
-            # Use original unit for the missing property (for display)
+            labels = [
+                "Initial Concentration",
+                "Initial Volume",
+                "Final Concentration",
+                "Final Volume",
+            ]
             unit_label_map = {
                 "c1": dict(form.fields["c1_unit"].choices)[c1_unit],
                 "v1": dict(form.fields["v1_unit"].choices)[v1_unit],
@@ -318,7 +276,6 @@ class CalculateDilutionView(BaseCalculateView):
                 "unit": unit_label_map[missing_prop],
             }
 
-            # Include mass of solute if available
             if "mass_g" in result and result["mass_g"] is not None:
                 result_dict["solute_mass_g"] = float(result["mass_g"])
 
@@ -327,9 +284,6 @@ class CalculateDilutionView(BaseCalculateView):
 
             return result_dict
 
-        except ValidationError as ve:
-            messages.error(self.request, f"Validation error: {ve}")
-            return None
         except Exception as e:
             import logging
 
