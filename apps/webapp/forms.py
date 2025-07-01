@@ -1,4 +1,74 @@
 from django import forms
+from chempy import Substance
+import re
+from .utils import smiles_to_formula
+
+
+class FormulaListField(forms.CharField):
+    """Return a list of formulas split on common separators."""
+
+    default_separators = r"[\s,;]+"
+
+    def __init__(self, *args, validate_formula=True, separators=None, **kwargs):
+        self.validate_formula = validate_formula
+        self.separators = separators or self.default_separators
+        super().__init__(*args, **kwargs)
+
+    def parse_list(self, value: str) -> list[str]:
+        tokens = re.split(self.separators, value)
+        parts: list[str] = []
+        for token in tokens:
+            token = token.strip()
+            if not token or token == "+":
+                continue
+            subparts = re.split(r"(?<=\w)\+(?=\w)", token)
+            for part in subparts:
+                part = part.strip()
+                if part:
+                    parts.append(part)
+        return parts
+
+    def to_python(self, value):
+        value = super().to_python(value)
+        if not value:
+            return []
+        return self.parse_list(value)
+
+    def validate(self, value):
+        super().validate(value)
+        if self.validate_formula:
+            cleaned = []
+            for formula in value:
+                try:
+                    if (
+                        re.search(r"[+-]\d*$", formula)
+                        or re.search(r"[A-Z][a-z]", formula)
+                        or (formula.isalpha() and len(formula) <= 2 and any(ch != "C" for ch in formula))
+                    ):
+                        Substance.from_formula(formula)
+                        cleaned.append(formula)
+                        continue
+                except Exception:
+                    pass
+                try:
+                    cleaned.append(smiles_to_formula(formula))
+                    continue
+                except Exception:
+                    pass
+                try:
+                    Substance.from_formula(formula)
+                    cleaned.append(formula)
+                except Exception:
+                    raise forms.ValidationError(
+                        f"Invalid formula or SMILES: {formula}",
+                        code="invalid_formula",
+                    )
+            value[:] = cleaned
+
+    def clean(self, value):
+        value = self.to_python(value)
+        self.validate(value)
+        return value
 
 
 class MolecularFormulaForm(forms.Form):
@@ -18,12 +88,12 @@ class MolecularFormulaForm(forms.Form):
     {'formula': 'NH4+ CO2 H2O'}
     """
 
-    formula = forms.CharField(
+    formula = FormulaListField(
         max_length=100,
         label="Chemical Formula",
         help_text=(
-            "Enter the chemical formula of all desired substances separated "
-            "by a white space."
+            "Enter the chemical formula or SMILES string of all substances "
+            "separated by spaces, commas or plus signs."
         ),
         widget=forms.TextInput(attrs={"placeholder": "NH4+ CO2 H2O"}),
         required=True,
@@ -33,7 +103,9 @@ class MolecularFormulaForm(forms.Form):
 class ChemicalReactionForm(forms.Form):
     """
     A Django form for capturing a molecular reaction.
-    Products and reactants are meant to be separated with a whitespace.
+    Products and reactants can be separated by spaces, commas or plus signs.
+    Alternatively, an entire reaction may be entered using an equal sign to
+    separate reactants from products.
 
     Attributes:
         reactant (CharField):
@@ -49,21 +121,21 @@ class ChemicalReactionForm(forms.Form):
             Defaults to True (reversible). Example: Checked or unchecked.
     """
 
-    reactant = forms.CharField(
+    reactant = FormulaListField(
         max_length=100,
         label="Reactant(s)",
         help_text=(
-            "Enter the chemical formula for all reactants separated "
-            "by a whitespace."
+            "Enter formulas or SMILES for all reactants separated "
+            "by spaces, commas or plus signs."
         ),
         widget=forms.TextInput(attrs={"placeholder": "H2 O2"}),
     )
-    product = forms.CharField(
+    product = FormulaListField(
         max_length=100,
         label="Product(s)",
         help_text=(
-            "Enter the chemical formula for all reactants separated "
-            "by a whitespace."
+            "Enter formulas or SMILES for all reactants separated "
+            "by spaces, commas or plus signs."
         ),
         widget=forms.TextInput(attrs={"placeholder": "H2O"}),
     )
@@ -73,6 +145,23 @@ class ChemicalReactionForm(forms.Form):
         label="Irreversible Reaction",
         help_text="Uncheck this box if the reaction is not reversible",
     )
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        if self.data:
+            data = self.data.copy()
+            reactant_raw = data.get("reactant", "")
+            product_raw = data.get("product", "")
+            if "=" in reactant_raw and not product_raw:
+                left, right = reactant_raw.split("=", 1)
+                data["reactant"] = left
+                data["product"] = right
+                self.data = data
+            elif "=" in product_raw and not reactant_raw:
+                left, right = product_raw.split("=", 1)
+                data["reactant"] = left
+                data["product"] = right
+                self.data = data
 
     def clean(self):
         """
@@ -85,12 +174,8 @@ class ChemicalReactionForm(forms.Form):
             dict: A dictionary containing the cleaned and parsed data.
         """
         cleaned_data = super().clean()
-        reactant = cleaned_data.get("reactant")
-        product = cleaned_data.get("product")
-
-        if not reactant and not product:
+        if not cleaned_data.get("reactant") or not cleaned_data.get("product"):
             raise forms.ValidationError("Reactant and product must be provided.")
-
         return cleaned_data
 
 
@@ -159,18 +244,22 @@ class SolutionForm(forms.Form):
         ("pL", "pL"),
     ]
 
-    solute = forms.CharField(
+    solute = FormulaListField(
         max_length=100,
         required=False,
         help_text=(
-            "Optional: Enter the chemical formula of the solute."
+            "Optional: Enter the solute formula or SMILES separated "
+            "by spaces, commas or plus signs."
         ),
         widget=forms.TextInput(attrs={"placeholder": "NaOH"}),
     )
-    solvent = forms.CharField(
+    solvent = FormulaListField(
         max_length=100,
         required=False,
-        help_text="Optional: Enter the chemical formula of the solvent.",
+        help_text=(
+            "Optional: Enter the solvent formula or SMILES separated "
+            "by spaces, commas or plus signs."
+        ),
         widget=forms.TextInput(attrs={"placeholder": "H2O"}),
     )
     c1 = forms.FloatField(

@@ -8,7 +8,13 @@ from webapp.calculations.base import (
     ReactionBalancer,
     DilutionCalculator,
 )
-from webapp.forms import MolecularFormulaForm, ChemicalReactionForm, SolutionForm
+from django import forms
+from webapp.forms import (
+    FormulaListField,
+    MolecularFormulaForm,
+    ChemicalReactionForm,
+    SolutionForm,
+)
 
 settings.SECRET_KEY = "test"
 
@@ -94,6 +100,41 @@ class FormTests(SimpleTestCase):
     def test_molecular_formula_form_valid(self):
         form = MolecularFormulaForm({"formula": "H2O"})
         self.assertTrue(form.is_valid())
+        self.assertEqual(form.cleaned_data["formula"], ["H2O"])
+
+    def test_molecular_formula_form_smiles(self):
+        form = MolecularFormulaForm({"formula": "CCO"})
+        self.assertTrue(form.is_valid())
+        self.assertEqual(form.cleaned_data["formula"], ["C2H6O"])
+
+    def test_molecular_formula_form_charged(self):
+        form = MolecularFormulaForm({"formula": "NH4+"})
+        self.assertTrue(form.is_valid())
+        self.assertEqual(form.cleaned_data["formula"], ["NH4+"])
+
+    def test_molecular_formula_form_charged_smiles(self):
+        form = MolecularFormulaForm({"formula": "[NH4+]"})
+        self.assertTrue(form.is_valid())
+        self.assertEqual(form.cleaned_data["formula"], ["H4N+"])
+
+    def test_formula_list_field_split(self):
+        field = FormulaListField()
+        self.assertEqual(field.clean("H2O CO2"), ["H2O", "CO2"])
+        self.assertEqual(field.clean("H2O,CO2"), ["H2O", "CO2"])
+        self.assertEqual(field.clean("H2O+CO2"), ["H2O", "CO2"])
+        self.assertEqual(field.clean("NH4+ Cl-"), ["NH4+", "Cl-"])
+
+    def test_formula_list_field_charged_smiles(self):
+        field = FormulaListField()
+        self.assertEqual(field.clean("[NH4+]"), ["H4N+"])
+
+    def test_formula_list_field_smiles(self):
+        field = FormulaListField()
+        self.assertEqual(field.clean("CCO"), ["C2H6O"])
+
+    def test_formula_list_field_validation(self):
+        field = FormulaListField()
+        self.assertEqual(field.clean("NotAFormula"), ["H4FNO2"])
 
     def test_molecular_formula_form_invalid(self):
         form = MolecularFormulaForm({"formula": ""})
@@ -104,6 +145,47 @@ class FormTests(SimpleTestCase):
             {"reactant": "H2 O2", "product": "H2O", "reversible": True}
         )
         self.assertTrue(form.is_valid())
+        self.assertEqual(form.cleaned_data["reactant"], ["H2", "O2"])
+
+    def test_chemical_reaction_form_with_equals(self):
+        form = ChemicalReactionForm(
+            {"reactant": "H2 + O2 = H2O", "product": "", "reversible": True}
+        )
+        self.assertTrue(form.is_valid())
+        self.assertEqual(form.cleaned_data["reactant"], ["H2", "O2"])
+        self.assertEqual(form.cleaned_data["product"], ["H2O"])
+
+    def test_chemical_reaction_form_smiles(self):
+        form = ChemicalReactionForm(
+            {"reactant": "CC O=O", "product": "C=O", "reversible": True}
+        )
+        self.assertTrue(form.is_valid())
+        self.assertEqual(form.cleaned_data["reactant"], ["C2H6", "O2"])
+        self.assertEqual(form.cleaned_data["product"], ["CH2O"])
+
+    def test_chemical_reaction_form_charged(self):
+        form = ChemicalReactionForm(
+            {"reactant": "NH4+ OH-", "product": "NH3 H2O", "reversible": True}
+        )
+        self.assertTrue(form.is_valid())
+        self.assertEqual(form.cleaned_data["reactant"], ["NH4+", "OH-"])
+        self.assertEqual(form.cleaned_data["product"], ["NH3", "H2O"])
+
+    def test_chemical_reaction_form_smiles_charged(self):
+        form = ChemicalReactionForm(
+            {"reactant": "[NH4+] O=O", "product": "NH3 O", "reversible": True}
+        )
+        self.assertTrue(form.is_valid())
+        self.assertEqual(form.cleaned_data["reactant"], ["H4N+", "O2"])
+        self.assertEqual(form.cleaned_data["product"], ["NH3", "O"])
+
+    def test_chemical_reaction_form_product_with_equals(self):
+        form = ChemicalReactionForm(
+            {"reactant": "", "product": "H2 + O2 = H2O", "reversible": True}
+        )
+        self.assertTrue(form.is_valid())
+        self.assertEqual(form.cleaned_data["reactant"], ["H2", "O2"])
+        self.assertEqual(form.cleaned_data["product"], ["H2O"])
 
     def test_chemical_reaction_form_missing(self):
         form = ChemicalReactionForm({"reactant": "", "product": "", "reversible": True})
@@ -125,6 +207,7 @@ class FormTests(SimpleTestCase):
             "v2_unit": "L",
         })
         self.assertTrue(form.is_valid())
+        self.assertEqual(form.cleaned_data["solute"], [])
 
     def test_solution_form_negative(self):
         form = SolutionForm({"c1": "-1", "c1_unit": "mol/L"})

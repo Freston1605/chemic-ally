@@ -3,3 +3,5 @@ Django==5.2.3
 Pint==0.24.4
 pyparsing==3.2.3
 python-dotenv==1.1.0
+pysmiles==2.0.0
+networkx==3.5
