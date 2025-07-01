@@ -42,5 +42,7 @@ jobs:
         set +a
     - name: Run Tests
       run: |
+        python -m py_compile $(git ls-files '*.py')
         cd chemically
-        python manage.py test
+        python manage.py test webapp
+        pytest -q
