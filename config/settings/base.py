@@ -32,7 +32,7 @@ SECRET_KEY = os.environ.get("SECRET_KEY", "change-me")
 # Default debug settings overridden in environment modules
 DEBUG = False
 
-ALLOWED_HOSTS = ["chemically-env.eba-pze4vtrm.us-west-2.elasticbeanstalk.com"]
+ALLOWED_HOSTS = ["chemically-env.eba-2jnazst3.us-east-2.elasticbeanstalk.com"]
 
 
 # Application definition
