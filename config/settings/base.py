@@ -27,12 +27,12 @@ sys.path.insert(0, str(BASE_DIR / 'chemically'))
 # See https://docs.djangoproject.com/en/5.0/howto/deployment/checklist/
 
 # SECURITY WARNING: keep the secret key used in production secret!
-SECRET_KEY = os.environ.get("SECRET_KEY", "change-me")
+SECRET_KEY = os.environ.get("DJANGO_SECRET_KEY", "hg&fx+3xp@0sf2s^#(hi#tqrbim!q473umn#k+i!ov)55dv5v*")
 
 # Default debug settings overridden in environment modules
 DEBUG = False
 
-ALLOWED_HOSTS = ["chemically-env.eba-2jnazst3.us-east-2.elasticbeanstalk.com"]
+ALLOWED_HOSTS = ['eb-env.eba-2jnazst3.us-east-2.elasticbeanstalk.com', 'localhost', '127.0.0.1']
 
 
 # Application definition
