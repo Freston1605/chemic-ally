@@ -1,0 +1,17 @@
+{% extends 'webapp/base.html' %}
+
+{% block main %}
+  <div class="container my-3">
+    <div class="row justify-content-center">
+      <div class="col-xl-8 col-lg-9 col-md-10 col-sm-12">
+        <div class="card">
+          <div class="card-body">
+            <h3 class="mb-4">{% block calculator_title %}{% endblock %}</h3>
+            {% block calculator_form %}{% endblock %}
+            {% block calculator_result %}{% endblock %}
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+{% endblock %}
