@@ -20,9 +20,16 @@ DATABASES = {
 LOGGING = {
     'version': 1,
     'disable_existing_loggers': False,
+    'formatters': {
+        'verbose': {
+            'format': '{levelname} {asctime} {module} {message}',
+            'style': '{',
+        },
+    },
     'handlers': {
         'console': {
-            'class': 'logging.StreamHandler', # Switches from FileHandler to Console
+            'class': 'logging.StreamHandler', # Logs to the terminal/stdout
+            'formatter': 'verbose',
         },
     },
     'root': {
@@ -33,7 +40,7 @@ LOGGING = {
         'django': {
             'handlers': ['console'],
             'level': 'INFO',
-            'propagate': True,
+            'propagate': False,
         },
     },
 }
