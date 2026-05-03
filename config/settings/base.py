@@ -136,6 +136,8 @@ DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
 # is stored in the project directory to avoid missing-path
 # errors during testing and in environments where /var/log may
 # not be writable.
+# base.py
+
 LOGGING = {
     'version': 1,
     'disable_existing_loggers': False,
@@ -146,15 +148,14 @@ LOGGING = {
         },
     },
     'handlers': {
-        'file': {
+        'console': { # Changed from 'file' to 'console'
             'level': 'INFO',
-            'class': 'logging.FileHandler',
-            'filename': BASE_DIR / 'django.log',
+            'class': 'logging.StreamHandler', # Changed to StreamHandler
             'formatter': 'verbose',
         },
     },
     'root': {
-        'handlers': ['file'],
+        'handlers': ['console'], # Pointing to the new console handler
         'level': 'INFO',
     },
 }
