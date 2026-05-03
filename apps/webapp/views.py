@@ -271,8 +271,21 @@ class CalculateDilutionView(BaseCalculateView):
                 return None
 
             missing_value = result["missing_value"]
-            if hasattr(missing_value, "to_compact"):
-                missing_value = missing_value.to_compact()
+            unit_label_map = {
+                "c1": dict(form.fields["c1_unit"].choices)[unit_map["c1"]],
+                "v1": dict(form.fields["v1_unit"].choices)[unit_map["v1"]],
+                "c2": dict(form.fields["c2_unit"].choices)[unit_map["c2"]],
+                "v2": dict(form.fields["v2_unit"].choices)[unit_map["v2"]],
+            }
+            display_unit = unit_label_map[missing_prop]
+
+            if hasattr(missing_value, "to"):
+                desired_unit = unit_map[missing_prop]
+                try:
+                    missing_value = missing_value.to(desired_unit)
+                except Exception:
+                    missing_value = missing_value.to_compact()
+                    display_unit = str(missing_value.units)
 
             labels = [
                 "Initial Concentration",
@@ -280,12 +293,6 @@ class CalculateDilutionView(BaseCalculateView):
                 "Final Concentration",
                 "Final Volume",
             ]
-            unit_label_map = {
-                "c1": dict(form.fields["c1_unit"].choices)[unit_map["c1"]],
-                "v1": dict(form.fields["v1_unit"].choices)[unit_map["v1"]],
-                "c2": dict(form.fields["c2_unit"].choices)[unit_map["c2"]],
-                "v2": dict(form.fields["v2_unit"].choices)[unit_map["v2"]],
-            }
             result_dict = {
                 "property": labels[["c1", "v1", "c2", "v2"].index(missing_prop)],
                 "value": (
@@ -293,7 +300,7 @@ class CalculateDilutionView(BaseCalculateView):
                     if hasattr(missing_value, "magnitude")
                     else float(missing_value)
                 ),
-                "unit": unit_label_map[missing_prop],
+                "unit": display_unit,
             }
 
             if "mass_g" in result and result["mass_g"] is not None:
