@@ -2,7 +2,7 @@ from .base import *
 
 DEBUG = False
 ALLOWED_HOSTS = [
-    "http://chemically-env.eba-pyxp2kzs.us-east-2.elasticbeanstalk.com/",
+    "chemically-env.eba-pyxp2kzs.us-east-2.elasticbeanstalk.com/",
 ]
 SECRET_KEY = os.environ.get("SECRET_KEY")
 
@@ -17,3 +17,8 @@ DATABASES = {
         # "CONN_MAX_AGE": 600,
     }
 }
+
+CSRF_TRUSTED_ORIGINS = [
+    "http://chemically-env.eba-pyxp2kzs.us-east-2.elasticbeanstalk.com",
+    "https://chemically-env.eba-pyxp2kzs.us-east-2.elasticbeanstalk.com",
+]
