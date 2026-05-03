@@ -27,7 +27,8 @@ sys.path.insert(0, str(BASE_DIR / 'chemically'))
 # See https://docs.djangoproject.com/en/5.0/howto/deployment/checklist/
 
 # SECURITY WARNING: keep the secret key used in production secret!
-SECRET_KEY = os.environ.get("DJANGO_SECRET_KEY", "hg&fx+3xp@0sf2s^#(hi#tqrbim!q473umn#k+i!ov)55dv5v*")
+SECRET_KEY = os.environ.get("SECRET_KEY", "hg&fx+3xp@0sf2s^#(hi#tqrbim!q473umn#k+i!ov)55dv5v*")
+ALLOWED_HOSTS = []
 
 # Default debug settings overridden in environment modules
 DEBUG = False
@@ -133,7 +134,6 @@ DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
 # is stored in the project directory to avoid missing-path
 # errors during testing and in environments where /var/log may
 # not be writable.
-# base.py
 
 LOGGING = {
     'version': 1,

@@ -1,10 +1,11 @@
 from .base import *
 
 DEBUG = False
-ALLOWED_HOSTS = [
+ALLOWED_HOSTS = os.environ.get(
+    "ALLOWED_HOSTS",
     "chemically-env.eba-pyxp2kzs.us-east-2.elasticbeanstalk.com",
-]
-SECRET_KEY = os.environ.get("SECRET_KEY")
+).split()
+SECRET_KEY = os.environ["SECRET_KEY"]
 
 DATABASES = {
     "default": {
@@ -19,6 +20,5 @@ DATABASES = {
 }
 
 CSRF_TRUSTED_ORIGINS = [
-    "http://chemically-env.eba-pyxp2kzs.us-east-2.elasticbeanstalk.com",
     "https://chemically-env.eba-pyxp2kzs.us-east-2.elasticbeanstalk.com",
 ]
