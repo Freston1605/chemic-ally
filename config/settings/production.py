@@ -2,7 +2,7 @@ from .base import *
 
 DEBUG = False
 ALLOWED_HOSTS = [
-    "chemically-env.eba-pyxp2kzs.us-east-2.elasticbeanstalk.com/",
+    "chemically-env.eba-pyxp2kzs.us-east-2.elasticbeanstalk.com",
 ]
 SECRET_KEY = os.environ.get("SECRET_KEY")
 
