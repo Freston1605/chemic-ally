@@ -6,14 +6,28 @@
         <div class="card">
           <div class="card-body">
             <h3 class="mb-4">Dilution Calculator</h3>
+            <p class="text-muted small mb-4">
+              Enter three of the four values below. Leave exactly one field blank and the calculator will compute it.
+            </p>
             <form method="post" id="dilution_form" action="{% url 'dilution' %}">
               {% csrf_token %}
+              {% if form.non_field_errors %}
+                <div class="alert alert-danger">
+                  {% for error in form.non_field_errors %}
+                    <div>{{ error }}</div>
+                  {% endfor %}
+                </div>
+              {% endif %}
               {% comment %}Initial Concentration c1{% endcomment %}
               <div class="row align-items-top">
                 <div class="col-8">
                   <div class="mb-3">
                     <label for="{{ form.c1.id_for_label }}" class="form-label">{{ form.c1.label_tag }}</label>
-                    <input type="number" step="any" min="0" name="{{ form.c1.name }}" id="{{ form.c1.id_for_label }}" class="form-control" placeholder="{{ form.c1.field.widget.attrs.placeholder }}" aria-describedby="helpId" value="" title="{{ form.c1.help_text }}" />
+                    <input type="number" step="any" min="0" name="{{ form.c1.name }}" id="{{ form.c1.id_for_label }}" class="form-control" placeholder="{{ form.c1.field.widget.attrs.placeholder }}" aria-describedby="c1Help" value="{{ form.c1.value|default:'' }}" title="{{ form.c1.help_text }}" />
+                    {% for error in form.c1.errors %}
+                      <div class="form-text text-danger">{{ error }}</div>
+                    {% endfor %}
+                    <div id="c1Help" class="form-text">{{ form.c1.help_text }}</div>
                   </div>
                 </div>
                 <div class="col-4">
@@ -21,9 +35,10 @@
                     <label for="{{ form.c1_unit.name }}" class="form-label">Unit</label>
                     <select class="form-select" name="{{ form.c1_unit.name }}" id="{{ form.c1_unit.name }}" title="{{ form.c1_unit.help_text }}">
                       {% for choice_value, choice_label in form.c1_unit.field.choices %}
-                        <option value="{{ choice_value }}">{{ choice_label }}</option>
+                        <option value="{{ choice_value }}" {% if form.c1_unit.value == choice_value %}selected{% endif %}>{{ choice_label }}</option>
                       {% endfor %}
                     </select>
+                    <div class="form-text">{{ form.c1_unit.help_text }}</div>
                   </div>
                 </div>
               </div>
@@ -33,7 +48,11 @@
                 <div class="col-8">
                   <div class="mb-3">
                     <label for="{{ form.v1.id_for_label }}" class="form-label">{{ form.v1.label_tag }}</label>
-                    <input type="number" step="any" min="0" name="{{ form.v1.name }}" id="{{ form.v1.id_for_label }}" class="form-control" placeholder="{{ form.v1.field.widget.attrs.placeholder }}" aria-describedby="helpId" value="" title="{{ form.v1.help_text }}" />
+                    <input type="number" step="any" min="0" name="{{ form.v1.name }}" id="{{ form.v1.id_for_label }}" class="form-control" placeholder="{{ form.v1.field.widget.attrs.placeholder }}" aria-describedby="v1Help" value="{{ form.v1.value|default:'' }}" title="{{ form.v1.help_text }}" />
+                    {% for error in form.v1.errors %}
+                      <div class="form-text text-danger">{{ error }}</div>
+                    {% endfor %}
+                    <div id="v1Help" class="form-text">{{ form.v1.help_text }}</div>
                   </div>
                 </div>
                 <div class="col-4">
@@ -41,9 +60,10 @@
                     <label for="{{ form.v1_unit.name }}" class="form-label">Unit</label>
                     <select class="form-select" name="{{ form.v1_unit.name }}" id="{{ form.v1_unit.name }}" title="{{ form.v1_unit.help_text }}">
                       {% for choice_value, choice_label in form.v1_unit.field.choices %}
-                        <option value="{{ choice_value }}">{{ choice_label }}</option>
+                        <option value="{{ choice_value }}" {% if form.v1_unit.value == choice_value %}selected{% endif %}>{{ choice_label }}</option>
                       {% endfor %}
                     </select>
+                    <div class="form-text">{{ form.v1_unit.help_text }}</div>
                   </div>
                 </div>
               </div>
@@ -53,7 +73,11 @@
                 <div class="col-8">
                   <div class="mb-3">
                     <label for="{{ form.c2.id_for_label }}" class="form-label">{{ form.c2.label_tag }}</label>
-                    <input type="number" step="any" min="0" name="{{ form.c2.name }}" id="{{ form.c2.id_for_label }}" class="form-control" placeholder="{{ form.c2.field.widget.attrs.placeholder }}" aria-describedby="helpId" value="" title="{{ form.c2.help_text }}" />
+                    <input type="number" step="any" min="0" name="{{ form.c2.name }}" id="{{ form.c2.id_for_label }}" class="form-control" placeholder="{{ form.c2.field.widget.attrs.placeholder }}" aria-describedby="c2Help" value="{{ form.c2.value|default:'' }}" title="{{ form.c2.help_text }}" />
+                    {% for error in form.c2.errors %}
+                      <div class="form-text text-danger">{{ error }}</div>
+                    {% endfor %}
+                    <div id="c2Help" class="form-text">{{ form.c2.help_text }}</div>
                   </div>
                 </div>
                 <div class="col-4">
@@ -61,9 +85,10 @@
                     <label for="{{ form.c2_unit.name }}" class="form-label">Unit</label>
                     <select class="form-select" name="{{ form.c2_unit.name }}" id="{{ form.c2_unit.name }}" title="{{ form.c2_unit.help_text }}">
                       {% for choice_value, choice_label in form.c2_unit.field.choices %}
-                        <option value="{{ choice_value }}">{{ choice_label }}</option>
+                        <option value="{{ choice_value }}" {% if form.c2_unit.value == choice_value %}selected{% endif %}>{{ choice_label }}</option>
                       {% endfor %}
                     </select>
+                    <div class="form-text">{{ form.c2_unit.help_text }}</div>
                   </div>
                 </div>
               </div>
@@ -73,7 +98,11 @@
                 <div class="col-8">
                   <div class="mb-3">
                     <label for="{{ form.v2.id_for_label }}" class="form-label">{{ form.v2.label_tag }}</label>
-                    <input type="number" step="any" min="0" name="{{ form.v2.name }}" id="{{ form.v2.id_for_label }}" class="form-control" placeholder="{{ form.v2.field.widget.attrs.placeholder }}" aria-describedby="helpId" value="" title="{{ form.v2.help_text }}" />
+                    <input type="number" step="any" min="0" name="{{ form.v2.name }}" id="{{ form.v2.id_for_label }}" class="form-control" placeholder="{{ form.v2.field.widget.attrs.placeholder }}" aria-describedby="v2Help" value="{{ form.v2.value|default:'' }}" title="{{ form.v2.help_text }}" />
+                    {% for error in form.v2.errors %}
+                      <div class="form-text text-danger">{{ error }}</div>
+                    {% endfor %}
+                    <div id="v2Help" class="form-text">{{ form.v2.help_text }}</div>
                   </div>
                 </div>
                 <div class="col-4">
@@ -81,9 +110,10 @@
                     <label for="{{ form.v2_unit.name }}" class="form-label">Unit</label>
                     <select class="form-select" name="{{ form.v2_unit.name }}" id="{{ form.v2_unit.name }}" title="{{ form.v2_unit.help_text }}">
                       {% for choice_value, choice_label in form.v2_unit.field.choices %}
-                        <option value="{{ choice_value }}">{{ choice_label }}</option>
+                        <option value="{{ choice_value }}" {% if form.v2_unit.value == choice_value %}selected{% endif %}>{{ choice_label }}</option>
                       {% endfor %}
                     </select>
+                    <div class="form-text">{{ form.v2_unit.help_text }}</div>
                   </div>
                 </div>
               </div>

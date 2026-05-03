@@ -51,16 +51,7 @@
         {% if messages %}
           <div class="container">
             {% for message in messages %}
-              <div class="alert {% if message.tags == 'success' %}
-
-                {% elif message.tags == 'info' %}
-
-                {% elif message.tags == 'warning' %}
-
-                {% elif message.tags == 'error' %}
-
-                {% endif %}"
-                role="alert">
+              <div class="alert alert-dismissible fade show {% if 'success' in message.tags %}alert-success{% elif 'info' in message.tags %}alert-info{% elif 'warning' in message.tags %}alert-warning{% elif 'error' in message.tags or 'danger' in message.tags %}alert-danger{% else %}alert-secondary{% endif %}" role="alert">
                 {{ message }}
                 <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
               </div>
