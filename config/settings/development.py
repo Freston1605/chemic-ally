@@ -1,7 +1,7 @@
 from .base import *
 
 DEBUG = True
-ALLOWED_HOSTS = ["*"]
+ALLOWED_HOSTS = ["localhost", "127.0.0.1"]
 
 # Use SQLite for local development to avoid PostgreSQL latency and simplify setup.
 DATABASES = {

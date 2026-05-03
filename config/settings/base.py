@@ -32,9 +32,6 @@ SECRET_KEY = os.environ.get("DJANGO_SECRET_KEY", "hg&fx+3xp@0sf2s^#(hi#tqrbim!q4
 # Default debug settings overridden in environment modules
 DEBUG = False
 
-ALLOWED_HOSTS = ['eb-env.eba-2jnazst3.us-east-2.elasticbeanstalk.com', 'localhost', '127.0.0.1']
-
-
 # Application definition
 
 INSTALLED_APPS = [
