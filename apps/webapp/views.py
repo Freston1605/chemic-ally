@@ -214,6 +214,17 @@ class CalculateDilutionView(BaseCalculateView):
     template_name = "webapp/calculator/dilution.html"
     form_class = SolutionForm
 
+    def get_context_data(self, **kwargs):
+        context = super().get_context_data(**kwargs)
+        form = context.get("form") or self.get_form()
+        context["dilution_fields"] = [
+            {"field": form["c1"], "unit": form["c1_unit"]},
+            {"field": form["v1"], "unit": form["v1_unit"]},
+            {"field": form["c2"], "unit": form["c2_unit"]},
+            {"field": form["v2"], "unit": form["v2_unit"]},
+        ]
+        return context
+
     def process_calculation(self, form: SolutionForm):
         """
         Processes the calculation based on user input from the form to calculate
