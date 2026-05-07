@@ -23,7 +23,6 @@ class StaticStorage(S3Boto3Storage):
     """
 
     location = "static"
-    default_acl = "public-read"
     file_overwrite = False
     querystring_auth = False
     custom_domain = settings.AWS_S3_CUSTOM_DOMAIN or None
@@ -42,7 +41,6 @@ class MediaStorage(S3Boto3Storage):
     """
 
     location = "media"
-    default_acl = "private"
     file_overwrite = False
     querystring_auth = True
     querystring_expire = 3600  # 1 hour
@@ -51,3 +49,4 @@ class MediaStorage(S3Boto3Storage):
     def __init__(self, *args, **kwargs):
         kwargs.setdefault("object_parameters", {"CacheControl": "max-age=86400"})
         super().__init__(*args, **kwargs)
+        
