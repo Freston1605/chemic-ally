@@ -10,7 +10,10 @@ DATABASES = {
         "NAME": BASE_DIR / "db.sqlite3",
     }
 }
+
+
 SECRET_KEY = os.environ.get("SECRET_KEY", "dev-secret-key")
+
 
 # Set to True for local development to avoid slow static file lookups
 WHITENOISE_AUTOREFRESH = True
@@ -24,3 +27,14 @@ STATICFILES_DIRS = [BASE_DIR / 'static']
 
 MEDIA_URL = 'media/'
 MEDIA_ROOT = BASE_DIR / 'media'
+
+# STORAGES
+STORAGES = {
+    "default": {
+        "BACKEND": "django.core.files.storage.FileSystemStorage",
+    },
+    "staticfiles": {
+        "BACKEND": "django.contrib.staticfiles.storage.StaticFilesStorage",
+    },
+}
+

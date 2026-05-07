@@ -3,3 +3,5 @@ Django==5.2.3
 Pint==0.24.4
 pyparsing==3.2.3
 python-dotenv==1.1.0
+boto3==1.38.7
+django-storages==1.14.5
