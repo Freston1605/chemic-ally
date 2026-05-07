@@ -6,8 +6,9 @@
 
 {% block main %}
   <!-- Jumbotron -->
-  <div id="jumbotron" class="p-5 mb-4 bg-body-tertiary rounded-3">
-    <div class="container-fluid py-5">
+
+  <div id="jumbotron" class="d-flex align-items-center p-5 mb-4 bg-body-tertiary rounded-3">
+    <div class="container-fluid">
       <h1 class="display-5 fw-bold">ChemicAlly</h1>
       <p class="col-md-8 fs-4">Empowering professionals with tools for rapid calculations for chemistry and beyond.</p>
       <a class="btn btn-primary btn-lg" href="#tool_grid" role="button">See Tools</a>
@@ -16,32 +17,32 @@
 
   <!-- Tool Grid -->
   <div id="tool_grid">
-    <div class="container-fluoid py-5">
+    <div class="container-fluid py-5">
       <div class="p5">
         <div class="row pb-3">
           <div class="col-12 col-md-6 col-lg-4 pb-3">
-            <div class="card">
-              <div class="card-body mx-2">
+            <div class="card h-100">
+              <div class="card-body mx-2 d-flex flex-column">
                 <h3 class="card-title mx">Molecular Weight Calculator</h3>
-                <p class="card-text text-justify">Calculate the molecular weight of any molecule by entering its molecular formula.</p>
+                <p class="card-text text-justify flex-grow-1">Calculate the molecular weight of any molecule by entering its molecular formula.</p>
                 <a name="" id="" class="btn btn-primary" href="{% url 'molecular_weight' %}" role="button">Enter</a>
               </div>
             </div>
           </div>
           <div class="col-12 col-md-6 col-lg-4 pb-3">
-            <div class="card">
-              <div class="card-body mx-2">
+            <div class="card h-100">
+              <div class="card-body mx-2 d-flex flex-column">
                 <h3 class="card-title">Chemical Reaction Balancer</h3>
-                <p class="card-text text-justify">Balances the stoichiometry of a chemical reaction and displays it using LaTeX through MathJax.</p>
+                <p class="card-text text-justify flex-grow-1">Balances the stoichiometry of a chemical reaction and displays it using LaTeX through MathJax.</p>
                 <a name="" id="" class="btn btn-primary" href="{% url 'reaction_balancer' %}" role="button">Enter</a>
               </div>
             </div>
           </div>
           <div class="col-12 col-md-6 col-lg-4 pb-3">
-            <div class="card">
-              <div class="card-body">
+            <div class="card h-100">
+              <div class="card-body d-flex flex-column">
                 <h3 class="card-title">Dilution Calculator</h3>
-                <p class="card-text">Calculates the concentration or volume of a solution in its initial or final state.</p>
+                <p class="card-text flex-grow-1">Calculates the concentration or volume of a solution in its initial or final state.</p>
                 <a name="" id="" class="btn btn-primary" href="{% url 'dilution' %}" role="button">Enter</a>
               </div>
             </div>
