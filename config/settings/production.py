@@ -2,10 +2,17 @@ from .base import *
 
 DEBUG = False
 
-ALLOWED_HOSTS = os.environ.get(
-    "ALLOWED_HOSTS",
+ALLOWED_HOSTS = [
     "chemically-env.eba-pyxp2kzs.us-east-2.elasticbeanstalk.com",
-).split()
+    "localhost",
+    "127.0.0.1",
+    ".elasticbeanstalk.com",
+    "*",
+]
+# Override via env var (space-separated list) if set.
+_extra_hosts = os.environ.get("ALLOWED_HOSTS")
+if _extra_hosts:
+    ALLOWED_HOSTS = _extra_hosts.split()
 
 SECRET_KEY = os.environ["SECRET_KEY"]
 
