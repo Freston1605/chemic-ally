@@ -6,6 +6,7 @@ ALLOWED_HOSTS = [
     "chemically-env.eba-pyxp2kzs.us-east-2.elasticbeanstalk.com",
     "localhost",
     "127.0.0.1",
+    "16.58.151.186",
     ".elasticbeanstalk.com",
     "*",
 ]
