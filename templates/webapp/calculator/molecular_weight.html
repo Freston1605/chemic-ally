@@ -14,31 +14,37 @@
 
 {% block calculator_result %}
   {% if result %}
-    <h4>Results:</h4>
-    <div id="mw-result">
-      <table class="table table-striped">
-        <thead>
-          <tr>
-            <th scope="col">Molecule</th>
-            <th scope="col">Molecular Weight (g/mol)</th>
-          </tr>
-        </thead>
-        <tbody>
-          {% for formula, weight in result.items %}
-            <tr>
-              <td>{{ formula }}</td>
-              <td>{{ weight }}</td>
-            </tr>
-          {% endfor %}
-        </tbody>
-      </table>
+    <div class="col-xl-6 col-lg-6 col-md-12 mb-3">
+      <div class="card result-card h-100">
+        <div class="card-body">
+          <h4>Results:</h4>
+          <div id="mw-result">
+            <table class="table table-striped">
+              <thead>
+                <tr>
+                  <th scope="col">Molecule</th>
+                  <th scope="col">Molecular Weight (g/mol)</th>
+                </tr>
+              </thead>
+              <tbody>
+                {% for formula, weight in result.items %}
+                  <tr>
+                    <td>{{ formula }}</td>
+                    <td>{{ weight }}</td>
+                  </tr>
+                {% endfor %}
+              </tbody>
+            </table>
+          </div>
+          <button
+            type="button"
+            class="btn btn-outline-secondary btn-sm"
+            onclick="copyToClipboard('#mw-result', this)"
+          >
+            Copy to Clipboard
+          </button>
+        </div>
+      </div>
     </div>
-    <button
-      type="button"
-      class="btn btn-outline-secondary btn-sm"
-      onclick="copyToClipboard('#mw-result', this)"
-    >
-      Copy to Clipboard
-    </button>
   {% endif %}
 {% endblock %}

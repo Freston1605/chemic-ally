@@ -24,34 +24,40 @@
 
 {% block calculator_result %}
   {% if result %}
-    <h4>Results:</h4>
-    <div id="dilution-result">
-      <table class="table table-striped">
-        <thead>
-          <tr>
-            <th scope="col">Property</th>
-            <th scope="col">Value</th>
-            <th scope="col">Unit</th>
-          </tr>
-        </thead>
-        <tbody>
-          <tr>
-            <td>{{ result.property }}</td>
-            <td>{{ result.value }}</td>
-            <td>{{ result.unit }}</td>
-          </tr>
-        </tbody>
-      </table>
-      {% if result.solute_mass_g %}
-        <p class="mb-1">Solute mass: {{ result.solute_mass_g }} g</p>
-      {% endif %}
+    <div class="col-xl-6 col-lg-6 col-md-12 mb-3">
+      <div class="card result-card h-100">
+        <div class="card-body">
+          <h4>Results:</h4>
+          <div id="dilution-result">
+            <table class="table table-striped">
+              <thead>
+                <tr>
+                  <th scope="col">Property</th>
+                  <th scope="col">Value</th>
+                  <th scope="col">Unit</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr>
+                  <td>{{ result.property }}</td>
+                  <td>{{ result.value }}</td>
+                  <td>{{ result.unit }}</td>
+                </tr>
+              </tbody>
+            </table>
+            {% if result.solute_mass_g %}
+              <p class="mb-1">Solute mass: {{ result.solute_mass_g }} g</p>
+            {% endif %}
+          </div>
+          <button
+            type="button"
+            class="btn btn-outline-secondary btn-sm"
+            onclick="copyToClipboard('#dilution-result', this)"
+          >
+            Copy to Clipboard
+          </button>
+        </div>
+      </div>
     </div>
-    <button
-      type="button"
-      class="btn btn-outline-secondary btn-sm"
-      onclick="copyToClipboard('#dilution-result', this)"
-    >
-      Copy to Clipboard
-    </button>
   {% endif %}
 {% endblock %}
