@@ -15,21 +15,30 @@
 {% block calculator_result %}
   {% if result %}
     <h4>Results:</h4>
-    <table class="table table-striped">
-      <thead>
-        <tr>
-          <th scope="col">Molecule</th>
-          <th scope="col">Molecular Weight (g/mol)</th>
-        </tr>
-      </thead>
-      <tbody>
-        {% for formula, weight in result.items %}
+    <div id="mw-result">
+      <table class="table table-striped">
+        <thead>
           <tr>
-            <td>{{ formula }}</td>
-            <td>{{ weight }}</td>
+            <th scope="col">Molecule</th>
+            <th scope="col">Molecular Weight (g/mol)</th>
           </tr>
-        {% endfor %}
-      </tbody>
-    </table>
+        </thead>
+        <tbody>
+          {% for formula, weight in result.items %}
+            <tr>
+              <td>{{ formula }}</td>
+              <td>{{ weight }}</td>
+            </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    <button
+      type="button"
+      class="btn btn-outline-secondary btn-sm"
+      onclick="copyToClipboard('#mw-result', this)"
+    >
+      Copy to Clipboard
+    </button>
   {% endif %}
 {% endblock %}

@@ -25,21 +25,33 @@
 {% block calculator_result %}
   {% if result %}
     <h4>Results:</h4>
-    <table class="table table-striped">
-      <thead>
-        <tr>
-          <th scope="col">Property</th>
-          <th scope="col">Value</th>
-          <th scope="col">Unit</th>
-        </tr>
-      </thead>
-      <tbody>
-        <tr>
-          <td>{{ result.property }}</td>
-          <td>{{ result.value }}</td>
-          <td>{{ result.unit }}</td>
-        </tr>
-      </tbody>
-    </table>
+    <div id="dilution-result">
+      <table class="table table-striped">
+        <thead>
+          <tr>
+            <th scope="col">Property</th>
+            <th scope="col">Value</th>
+            <th scope="col">Unit</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>{{ result.property }}</td>
+            <td>{{ result.value }}</td>
+            <td>{{ result.unit }}</td>
+          </tr>
+        </tbody>
+      </table>
+      {% if result.solute_mass_g %}
+        <p class="mb-1">Solute mass: {{ result.solute_mass_g }} g</p>
+      {% endif %}
+    </div>
+    <button
+      type="button"
+      class="btn btn-outline-secondary btn-sm"
+      onclick="copyToClipboard('#dilution-result', this)"
+    >
+      Copy to Clipboard
+    </button>
   {% endif %}
 {% endblock %}

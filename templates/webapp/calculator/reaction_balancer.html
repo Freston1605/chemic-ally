@@ -14,9 +14,16 @@
 
 {% block calculator_result %}
   {% if result %}
-    <div class="mt-4">
+    <div class="mt-4" id="reaction-result">
       <h4>Result:</h4>
       <p>{{ result|safe }}</p>
     </div>
+    <button
+      type="button"
+      class="btn btn-outline-secondary btn-sm"
+      onclick="copyToClipboard('#reaction-result', this)"
+    >
+      Copy to Clipboard
+    </button>
   {% endif %}
 {% endblock %}
