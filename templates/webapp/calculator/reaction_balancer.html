@@ -6,7 +6,11 @@
 <form method="post" action="{% url 'reaction_balancer' %}">
   {% csrf_token %}
   {% for field in form %}
-    {% include 'webapp/calculator/_field_row.html' with field=field %}
+    {% if field.name == 'reactant' or field.name == 'product' %}
+      {% include 'webapp/calculator/_tag_input_field.html' with field=field %}
+    {% else %}
+      {% include 'webapp/calculator/_field_row.html' with field=field %}
+    {% endif %}
   {% endfor %}
   <button type="submit" class="btn btn-primary">Calculate</button>
 </form>

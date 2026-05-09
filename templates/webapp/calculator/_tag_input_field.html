@@ -1,0 +1,52 @@
+{% comment %}
+Tag input field partial for chemical formulas.
+Renders a container that the SubstanceTagInput JS widget transforms into
+a tag/chip input with autocomplete.
+
+Usage:
+  {% include 'webapp/calculator/_tag_input_field.html' with field=field %}
+{% endcomment %}
+<div class="mb-4">
+  <label for="{{ field.id_for_label }}" class="form-label">{{ field.label }}</label>
+  <div class="substance-tag-wrapper" style="position:relative;">
+    <div
+      id="tag-container-{{ field.name }}"
+      class="substance-tag-container-init"
+      data-field-name="{{ field.name }}"
+      data-placeholder="{{ field.field.widget.attrs.placeholder|default:'Type a substance and press Enter' }}"
+    >
+    </div>
+    <input
+      type="hidden"
+      name="{{ field.name }}"
+      id="{{ field.id_for_label }}"
+      value="{{ field.value|default:'' }}"
+    />
+  </div>
+  {% for error in field.errors %}
+    <div class="form-text text-danger">{{ error }}</div>
+  {% endfor %}
+  {% if field.help_text %}
+    <small class="text-muted">{{ field.help_text }}</small>
+  {% endif %}
+</div>
+
+<script>
+  (function() {
+    function init() {
+      if (typeof window.SubstanceTagInput === 'undefined') {
+        setTimeout(init, 50);
+        return;
+      }
+      var container = document.getElementById('tag-container-{{ field.name }}');
+      if (!container || container.dataset.initialized) return;
+      container.dataset.initialized = 'true';
+      var hiddenInput = document.getElementById('{{ field.id_for_label }}');
+      new window.SubstanceTagInput(container, {
+        hiddenInput: hiddenInput,
+        placeholder: container.dataset.placeholder || 'Type a substance and press Enter'
+      });
+    }
+    init();
+  })();
+</script>
