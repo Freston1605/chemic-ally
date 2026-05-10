@@ -16,9 +16,9 @@ from .calculations.base import (
     MolecularWeightCalculator,
     ReactionBalancer,
 )
+from .calculations.units import Q_
 from .forms import ChemicalReactionForm, MolecularFormulaForm, SolutionForm
 from .utils import add_previous_substances
-from .utils.units import Q_
 
 
 class LandingPage(TemplateView):
