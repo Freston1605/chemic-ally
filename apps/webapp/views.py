@@ -1,3 +1,5 @@
+import logging
+
 from abc import ABC, abstractmethod
 
 from django.contrib import messages
@@ -7,6 +9,8 @@ from django.views.generic.edit import FormView
 from django.views import View
 from django.shortcuts import render, redirect
 
+import pint
+
 from .calculations.base import (
     DilutionCalculator,
     MolecularWeightCalculator,
@@ -14,7 +18,7 @@ from .calculations.base import (
 )
 from .forms import ChemicalReactionForm, MolecularFormulaForm, SolutionForm
 from .utils import add_previous_substances
-import pint
+from .utils.units import Q_
 
 
 class LandingPage(TemplateView):
@@ -268,8 +272,6 @@ class CalculateDilutionView(BaseCalculateView):
             molecular_weight = cd.get("molecular_weight")
             solute_formula = cd.get("solute")
 
-            from .utils.units import Q_
-
             unit_map = {
                 "c1": cd.get("c1_unit"),
                 "v1": cd.get("v1_unit"),
@@ -349,8 +351,6 @@ class CalculateDilutionView(BaseCalculateView):
             return result_dict
 
         except Exception as e:
-            import logging
-
             logging.exception("Dilution calculation failed:")
             messages.error(self.request, f"Calculation error: {str(e)}")
             return None
