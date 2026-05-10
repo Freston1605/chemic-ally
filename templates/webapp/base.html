@@ -16,6 +16,12 @@
 
     <!-- CSS Sheet -->
     <link rel="stylesheet" href="{% static 'css/style.css' %}" />
+    <style>
+      html, body { height: 100%; }
+      body { display: flex; flex-direction: column; }
+      main { flex: 1 0 auto; }
+      footer { flex-shrink: 0; }
+    </style>
     {% block extra_head %}{% endblock %}
   </head>
 
@@ -65,50 +71,36 @@
         {% endblock %}
       </div>
     </main>
-    <footer class="bg-body-secondary">
-      <div class="container py-4 py-md-5 px-4 px-md-3">
-        <div class="row">
-          <div class="col-lg-3 mb-3">
-            <a class="d-inline-flex align-items-center mb-2 text-body-emphasis text-decoration-none" href="/" aria-label="Bootstrap">
-              <svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" fill="currentColor" class="bi bi-calculator me-2" viewBox="0 0 16 16">
+    <footer class="bg-body-secondary border-top py-3">
+      <div class="container">
+        <div class="row gy-2">
+          <div class="col-lg-4">
+            <a class="d-inline-flex align-items-center text-body-emphasis text-decoration-none" href="/" aria-label="ChemicAlly">
+              <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" class="bi bi-calculator me-1" viewBox="0 0 16 16">
                 <path d="M12 1a1 1 0 0 1 1 1v12a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V2a1 1 0 0 1 1-1zM4 0a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h8a2 2 0 0 0 2-2V2a2 2 0 0 0-2-2z" />
                 <path d="M4 2.5a.5.5 0 0 1 .5-.5h7a.5.5 0 0 1 .5.5v2a.5.5 0 0 1-.5.5h-7a.5.5 0 0 1-.5-.5zm0 4a.5.5 0 0 1 .5-.5h1a.5.5 0 0 1 .5.5v1a.5.5 0 0 1-.5.5h-1a.5.5 0 0 1-.5-.5zm0 3a.5.5 0 0 1 .5-.5h1a.5.5 0 0 1 .5.5v1a.5.5 0 0 1-.5.5h-1a.5.5 0 0 1-.5-.5zm0 3a.5.5 0 0 1 .5-.5h1a.5.5 0 0 1 .5.5v1a.5.5 0 0 1-.5.5h-1a.5.5 0 0 1-.5-.5zm3-6a.5.5 0 0 1 .5-.5h1a.5.5 0 0 1 .5.5v1a.5.5 0 0 1-.5.5h-1a.5.5 0 0 1-.5-.5zm0 3a.5.5 0 0 1 .5-.5h1a.5.5 0 0 1 .5.5v1a.5.5 0 0 1-.5.5h-1a.5.5 0 0 1-.5-.5zm0 3a.5.5 0 0 1 .5-.5h1a.5.5 0 0 1 .5.5v1a.5.5 0 0 1-.5.5h-1a.5.5 0 0 1-.5-.5zm3-6a.5.5 0 0 1 .5-.5h1a.5.5 0 0 1 .5.5v1a.5.5 0 0 1-.5.5h-1a.5.5 0 0 1-.5-.5zm0 3a.5.5 0 0 1 .5-.5h1a.5.5 0 0 1 .5.5v4a.5.5 0 0 1-.5.5h-1a.5.5 0 0 1-.5-.5z" />
               </svg>
-              <span class="fs-5">ChemicAlly</span>
+              <span class="fs-6 fw-semibold">ChemicAlly</span>
             </a>
-            <ul class="list-unstyled small">
-              <li class="mb-2">
-                Code available for all purposes under the <a href="https://github.com/Freston1605/chemic-ally/blob/main/LICENSE" target="_blank" rel="license noopener">GNU General Public License</a>.
-              </li>
+            <p class="text-muted small mb-0">
+              Code available under the <a href="https://github.com/Freston1605/chemic-ally/blob/main/LICENSE" target="_blank" rel="license noopener">GNU General Public License</a>.
+            </p>
+          </div>
+          <div class="col-6 col-lg-3 offset-lg-1">
+            <h6 class="fw-semibold mb-1">Links</h6>
+            <ul class="list-unstyled small mb-0">
+              <li><a href="{% url 'landing' %}">Home</a></li>
+              <li><a href="https://github.com/Freston1605/chemic-ally">GitHub Repository</a></li>
             </ul>
           </div>
-          <div class="col-6 col-lg-3 offset-lg-1 mb-3">
-            <h5>Links</h5>
-            <ul class="list-unstyled">
-              <li class="mb-2">
-                <a href="{% url 'landing' %}">Home</a>
-              </li>
-              <li>
-                <a href="https://github.com/Freston1605/chemic-ally">GitHub Repository</a>
-              </li>
-            </ul>
-          </div>
-          <div class="col-6 col-lg-3 offset-lg-1 mb-3">
-            <h5>Powered By</h5>
-            <ul class="list-unstyled">
-              <li class="mb-2">
-                <a href="https://www.djangoproject.com/">Django</a>
-              </li>
-              <li class="mb-2">
-                <a href="https://getbootstrap.com/">Bootstrap</a>
-              </li>
-              <li class="mb-2">
-                <a href="https://www.pythonanywhere.com/">Python Anywhere</a>
-              </li>
-              <li class="mb-2">
-                <a href="https://www.mathjax.org/">MathJax</a>
-              </li>
-              <li><a href="https://pypi.org/project/chempy/">ChemPy</a></li>
+          <div class="col-6 col-lg-3 offset-lg-1">
+            <h6 class="fw-semibold mb-1">Powered By</h6>
+            <ul class="list-unstyled small mb-0">
+              <li>Django</li>
+              <li>Bootstrap</li>
+              <li>Python Anywhere</li>
+              <li>MathJax</li>
+              <li>ChemPy</li>
             </ul>
           </div>
         </div>
