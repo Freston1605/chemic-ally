@@ -3,7 +3,7 @@
 {% block calculator_title %}Chemical Reaction Balancer{% endblock %}
 
 {% block calculator_form %}
-<form method="post" action="{% url 'reaction_balancer' %}">
+<form method="post" action="{% url 'reaction_balancer' %}" id="calculator-form">
   {% csrf_token %}
   {% for field in form %}
     {% if field.name == 'reactant' or field.name == 'product' %}
@@ -12,7 +12,6 @@
       {% include 'webapp/calculator/_field_row.html' with field=field %}
     {% endif %}
   {% endfor %}
-  <button type="submit" class="btn btn-primary">Calculate</button>
 </form>
 {% endblock %}
 
@@ -20,14 +19,16 @@
   {% if result %}
     <div class="col-xl-6 col-lg-6 col-md-12 mb-3">
       <div class="card result-card h-100">
-        <div class="card-body">
-          <div id="reaction-result">
-            <h4>Result:</h4>
-            <p>{{ result|safe }}</p>
+        <div class="card-body d-flex flex-column">
+          <h4>Result:</h4>
+          <div class="flex-grow-1 d-flex align-items-center justify-content-center">
+            <div id="reaction-result" class="w-100">
+              <p>{{ result|safe }}</p>
+            </div>
           </div>
           <button
             type="button"
-            class="btn btn-outline-secondary btn-sm"
+            class="btn btn-outline-secondary btn-sm mt-auto align-self-end"
             onclick="copyToClipboard('#reaction-result', this)"
           >
             Copy to Clipboard

@@ -6,7 +6,7 @@
   <p class="text-muted small mb-4">
     Enter three of the four values below. Leave exactly one field blank and the calculator will compute it.
   </p>
-  <form method="post" id="dilution_form" action="{% url 'dilution' %}">
+  <form method="post" id="calculator-form" action="{% url 'dilution' %}">
     {% csrf_token %}
     {% if form.non_field_errors %}
       <div class="alert alert-danger">
@@ -18,7 +18,6 @@
     {% for item in dilution_fields %}
       {% include 'webapp/calculator/_dilution_pair.html' with item=item %}
     {% endfor %}
-    <button type="submit" class="btn btn-primary">Calculate</button>
   </form>
 {% endblock %}
 
@@ -26,32 +25,34 @@
   {% if result %}
     <div class="col-xl-6 col-lg-6 col-md-12 mb-3">
       <div class="card result-card h-100">
-        <div class="card-body">
+        <div class="card-body d-flex flex-column">
           <h4>Results:</h4>
-          <div id="dilution-result">
-            <table class="table table-striped">
-              <thead>
-                <tr>
-                  <th scope="col">Property</th>
-                  <th scope="col">Value</th>
-                  <th scope="col">Unit</th>
-                </tr>
-              </thead>
-              <tbody>
-                <tr>
-                  <td>{{ result.property }}</td>
-                  <td>{{ result.value }}</td>
-                  <td>{{ result.unit }}</td>
-                </tr>
-              </tbody>
-            </table>
-            {% if result.solute_mass_g %}
-              <p class="mb-1">Solute mass: {{ result.solute_mass_g }} g</p>
-            {% endif %}
+          <div class="flex-grow-1 d-flex align-items-center justify-content-center">
+            <div id="dilution-result" class="w-100">
+              <table class="table table-striped">
+                <thead>
+                  <tr>
+                    <th scope="col">Property</th>
+                    <th scope="col">Value</th>
+                    <th scope="col">Unit</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr>
+                    <td>{{ result.property }}</td>
+                    <td>{{ result.value }}</td>
+                    <td>{{ result.unit }}</td>
+                  </tr>
+                </tbody>
+              </table>
+              {% if result.solute_mass_g %}
+                <p class="mb-1">Solute mass: {{ result.solute_mass_g }} g</p>
+              {% endif %}
+            </div>
           </div>
           <button
             type="button"
-            class="btn btn-outline-secondary btn-sm"
+            class="btn btn-outline-secondary btn-sm mt-auto align-self-end"
             onclick="copyToClipboard('#dilution-result', this)"
           >
             Copy to Clipboard
