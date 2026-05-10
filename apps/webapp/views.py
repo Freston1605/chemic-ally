@@ -207,14 +207,40 @@ class BalanceChemicalReaction(BaseCalculateView):
 
 class CalculateDilutionView(BaseCalculateView):
     """
-    A view for calculating dilutions in chemistry.
-    Inherits from BaseCalculateView.
+    View for performing dilution calculations (C₁V₁ = C₂V₂).
+
+    Accepts three of the four variables (initial concentration, initial volume,
+    final concentration, final volume) and computes the missing one. Supports
+    unit-aware arithmetic via Pint, and optionally calculates solute mass when a
+    molecular weight or solute formula is provided.
+
+    Attributes:
+        template_name (str): The template used to render the dilution form.
+        form_class (Type[SolutionForm]): The form class for dilution input.
+
+    Args:
+        BaseCalculateView (Type[BaseCalculateView]):
+            Base class for form-driven calculator views.
     """
 
     template_name = "webapp/calculator/dilution.html"
     form_class = SolutionForm
 
     def get_context_data(self, **kwargs):
+        """
+        Extend the template context with structured dilution field data.
+
+        Each field is paired with its unit selector so the template can render
+        them as a single grouped row.
+
+        Args:
+            **kwargs: Additional keyword arguments passed to the parent
+                      ``get_context_data``.
+
+        Returns:
+            dict: The enriched context dictionary containing a
+                  ``dilution_fields`` list.
+        """
         context = super().get_context_data(**kwargs)
         form = context.get("form") or self.get_form()
         context["dilution_fields"] = [
@@ -331,6 +357,18 @@ class CalculateDilutionView(BaseCalculateView):
 
 
 def make_json_safe(obj):
+    """
+    Recursively convert Pint quantities and other non-JSON-serializable types
+    to plain Python types.
+
+    Args:
+        obj: A value that may contain ``pint.Quantity`` instances, dicts,
+             or lists.
+
+    Returns:
+        The same structure with all ``pint.Quantity`` values converted to
+        ``float`` magnitudes.
+    """
     if isinstance(obj, pint.Quantity):
         return float(obj.magnitude)
     if isinstance(obj, dict):
@@ -341,14 +379,63 @@ def make_json_safe(obj):
 
 
 class DashboardView(View):
+    """
+    All-in-one dashboard view that consolidates molecular weight, dilution, and
+    reaction balancing calculations into a single page.
+
+    The dashboard stores its last-used values and results in the user's session
+    so that the form is repopulated across requests. A ``reset`` action clears
+    the session data and redirects to a clean dashboard.
+
+    Attributes:
+        template_name (str): The template used to render the dashboard page.
+
+    Args:
+        View (Type[View]): Django's base class-based view.
+    """
+
     template_name = "webapp/dashboard.html"
 
     def get(self, request):
+        """
+        Render the dashboard with previously stored session data.
+
+        Retrieves the ``dashboard_context`` dict from the session (if any) and
+        passes it to the template as the initial context.
+
+        Args:
+            request (HttpRequest): The incoming GET request.
+
+        Returns:
+            HttpResponse: The rendered dashboard page.
+        """
         # Render the dashboard with any session-persisted data
         context = request.session.get('dashboard_context', {})
         return render(request, self.template_name, context)
 
     def post(self, request):
+        """
+        Process a dashboard action and return the updated page.
+
+        Supported actions:
+            - ``calc_mw``: Calculate molecular weight for the given formula.
+            - ``use_mw``: Calculate molecular weight and copy the result into
+              the dilution molecular weight field.
+            - ``calc_dilution``: Perform a C₁V₁ = C₂V₂ dilution calculation.
+            - ``balance_reaction``: Balance the provided chemical reaction.
+            - ``reset``: Clear session data and redirect to a clean dashboard.
+
+        After processing, the context is saved to the session for persistence
+        and serialized via :func:`make_json_safe` to ensure JSON compatibility.
+
+        Args:
+            request (HttpRequest): The incoming POST request containing the
+                                   form fields and an ``action`` parameter.
+
+        Returns:
+            HttpResponse: The rendered dashboard page, or a redirect for the
+                          ``reset`` action.
+        """
         context = {}
         action = request.POST.get('action')
         # Always repopulate fields
