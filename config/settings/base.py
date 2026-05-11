@@ -9,9 +9,11 @@ https://docs.djangoproject.com/en/5.0/topics/settings/
 For the full list of settings and their values, see
 https://docs.djangoproject.com/en/5.0/ref/settings/
 """
+
 import os
 import sys
 from pathlib import Path
+
 from dotenv import load_dotenv
 
 # Load the environment variables
@@ -27,14 +29,18 @@ sys.path.insert(0, str(BASE_DIR / 'chemically'))
 # See https://docs.djangoproject.com/en/5.0/howto/deployment/checklist/
 
 # SECURITY WARNING: keep the secret key used in production secret!
-SECRET_KEY = os.environ.get("SECRET_KEY", "hg&fx+3xp@0sf2s^#(hi#tqrbim!q473umn#k+i!ov)55dv5v*")
+SECRET_KEY = os.environ.get(
+    "SECRET_KEY", "hg&fx+3xp@0sf2s^#(hi#tqrbim!q473umn#k+i!ov)55dv5v*"
+)
+
+# SECURITY WARNING: don't run with debug turned on in production!
+DEBUG = False
+
 ALLOWED_HOSTS = [
     "localhost",
     "127.0.0.1",
 ]
 
-# Default debug settings overridden in environment modules
-DEBUG = False
 
 # Application definition
 
@@ -45,8 +51,10 @@ INSTALLED_APPS = [
     'django.contrib.sessions',
     'django.contrib.messages',
     'django.contrib.staticfiles',
-    'webapp',  # Main app
+    # Third-party apps
     'storages',
+    # Project apps
+    'webapp',
 ]
 
 MIDDLEWARE = [
@@ -78,12 +86,6 @@ TEMPLATES = [
     },
 ]
 
-STATIC_URL = 'static/'
-
-STATICFILES_DIRS = [
-    BASE_DIR / 'static',
-]
-
 WSGI_APPLICATION = 'config.wsgi.application'
 
 
@@ -96,6 +98,7 @@ DATABASES = {
         "ENGINE": "django.db.backends.dummy",
     }
 }
+
 
 # Password validation
 # https://docs.djangoproject.com/en/5.0/ref/settings/#auth-password-validators
@@ -131,16 +134,26 @@ USE_I18N = True
 USE_TZ = True
 
 
+# Static files (CSS, JavaScript, Images)
+# https://docs.djangoproject.com/en/5.0/howto/static-files/
+
+STATIC_URL = 'static/'
+
+STATICFILES_DIRS = [
+    BASE_DIR / 'static',
+]
+
+
 # Default primary key field type
 # https://docs.djangoproject.com/en/5.0/ref/settings/#default-auto-field
 
 DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
 
+
 # Logging configuration
-# Uses a file handler with a verbose formatter. The log file
-# is stored in the project directory to avoid missing-path
-# errors during testing and in environments where /var/log may
-# not be writable.
+# Uses a console handler with a verbose formatter so logs go to
+# stdout/stderr and are visible both in development (terminal) and
+# production (e.g. CloudWatch, container logs).
 
 LOGGING = {
     'version': 1,
@@ -152,14 +165,14 @@ LOGGING = {
         },
     },
     'handlers': {
-        'console': { # Changed from 'file' to 'console'
+        'console': {
             'level': 'INFO',
-            'class': 'logging.StreamHandler', # Changed to StreamHandler
+            'class': 'logging.StreamHandler',
             'formatter': 'verbose',
         },
     },
     'root': {
-        'handlers': ['console'], # Pointing to the new console handler
+        'handlers': ['console'],
         'level': 'INFO',
     },
 }
