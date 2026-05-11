@@ -15,6 +15,15 @@ Usage:
       data-field-name="{{ field.name }}"
       data-placeholder="{{ field.field.widget.attrs.placeholder|default:'Type a substance and press Enter' }}"
     >
+      {# Fallback visible input rendered server-side; JS widget replaces it on load #}
+      <input
+        type="text"
+        class="substance-tag-fallback form-control"
+        id="fallback-{{ field.name }}"
+        placeholder="{{ field.field.widget.attrs.placeholder|default:'Type a substance and press Enter' }}"
+        value="{{ field.value|default:'' }}"
+        autocomplete="off"
+      />
     </div>
     <input
       type="hidden"
