@@ -20,6 +20,7 @@ Usage:
         type="text"
         class="substance-tag-fallback form-control"
         id="fallback-{{ field.name }}"
+        name="{{ field.name }}"
         placeholder="{{ field.field.widget.attrs.placeholder|default:'Type a substance and press Enter' }}"
         value="{{ field.value|default:'' }}"
         autocomplete="off"
@@ -27,7 +28,6 @@ Usage:
     </div>
     <input
       type="hidden"
-      name="{{ field.name }}"
       id="{{ field.id_for_label }}"
       value="{{ field.value|default:'' }}"
     />
@@ -50,11 +50,20 @@ Usage:
       var container = document.getElementById('tag-container-{{ field.name }}');
       if (!container || container.dataset.initialized) return;
       container.dataset.initialized = 'true';
-      var hiddenInput = document.getElementById('{{ field.id_for_label }}');
-      new window.SubstanceTagInput(container, {
-        hiddenInput: hiddenInput,
+      // Use the `name` option so the widget creates its own hidden input
+      // with the correct name attribute (the static hidden has no name,
+      // to avoid conflicts when JS fails to load and only the fallback
+      // text field — which has the name — submits the data).
+      var widget = new window.SubstanceTagInput(container, {
+        name: '{{ field.name }}',
         placeholder: container.dataset.placeholder || 'Type a substance and press Enter'
       });
+      // Transfer initial value from the static hidden input into the
+      // widget's newly-created hidden input.
+      var oldHidden = document.getElementById('{{ field.id_for_label }}');
+      if (oldHidden && oldHidden.value) {
+        widget.setTags(oldHidden.value.split(/\s+/).filter(Boolean));
+      }
     }
     init();
   })();
