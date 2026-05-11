@@ -1,22 +1,32 @@
 /**
  * Substance Tag Input Widget
  * ===========================
+ *
  * Provides an autocomplete tag/chip input for chemical formulas with
- * undo/redo support.
+ * undo/redo support. This widget is intended to replace a plain text
+ * input with a more usable tokenized substance entry field.
  *
  * Usage:
  *   new SubstanceTagInput(element, options)
- *   where element is the container div and options include:
- *     - hiddenInput: selector for the hidden input to sync with
- *     - placeholder: placeholder text for the input field
+ *
+ * Options:
+ *   - hiddenInput: selector or DOM element for the hidden input to keep in sync
+ *   - placeholder: placeholder text for the input field
+ *   - name: name for a generated hidden input when `hiddenInput` is not provided
+ *
+ * Public API:
+ *   - getTags(): Array<string>
+ *   - clear(): void
+ *   - setTags(tags: Array<string>): void
  *
  * Keyboard shortcuts:
  *   - Enter or Tab: accept current typed text as a tag
- *   - Backspace (empty input): remove last tag
+ *   - Backspace (empty input): remove the last tag
  *   - Up/Down arrows: navigate autocomplete suggestions
  *   - Enter/Tab on suggestion: select it
+ *   - Esc: close suggestion list
  *   - Ctrl+Z / Cmd+Z: undo
- *   - Ctrl+Shift+Z / Cmd+Shift+Z: redo
+ *   - Ctrl+Shift+Z / Cmd+Shift+Z or Ctrl+Y: redo
  */
 
 (function () {
@@ -85,6 +95,14 @@
   ];
 
   // ── Widget ──
+  /**
+   * A tag input widget for entering chemical substances.
+   * @param {HTMLElement|string} container - Container element or selector for the widget.
+   * @param {Object} options - Widget configuration options.
+   * @param {string|HTMLElement|null} [options.hiddenInput] - Hidden input to synchronize with tag values.
+   * @param {string} [options.placeholder] - Placeholder text for the input field.
+   * @param {string} [options.name] - Name for a generated hidden input if hiddenInput is not provided.
+   */
   class SubstanceTagInput {
     constructor(container, options) {
       this.container =
@@ -120,6 +138,10 @@
     }
 
     _buildDOM() {
+      // Remove any server-rendered fallback inputs before building the widget
+      const fallbacks = this.container.querySelectorAll(".substance-tag-fallback");
+      fallbacks.forEach((el) => el.remove());
+
       // Wrap existing content
       this.container.classList.add("substance-tag-container");
       this.container.style.cssText =
@@ -173,6 +195,11 @@
       });
     }
 
+    /**
+     * Load initial tags from the hidden input value.
+     * Expected format is whitespace-separated substance tokens.
+     * @private
+     */
     _loadInitial() {
       if (!this.hiddenInput || !this.hiddenInput.value) return;
       const values = this.hiddenInput.value
@@ -182,6 +209,11 @@
       values.forEach((v) => this._addTag(v, false));
     }
 
+    /**
+     * Synchronize the hidden input value with the current tag list.
+     * Also dispatches a change event to support form listeners.
+     * @private
+     */
     _syncHidden() {
       if (this.hiddenInput) {
         this.hiddenInput.value = this.tags.join(" ");
@@ -192,6 +224,14 @@
       }
     }
 
+    /**
+     * Add a new substance tag to the widget.
+     * Duplicate values are ignored.
+     * @private
+     * @param {string} text - Substance formula to add.
+     * @param {boolean} [recordHistory=true] - Whether to record undo history.
+     * @returns {boolean} True if the tag was added.
+     */
     _addTag(text, recordHistory = true) {
       text = text.trim();
       if (!text) return false;
@@ -207,6 +247,12 @@
       return true;
     }
 
+    /**
+     * Remove a tag by index and update the hidden input.
+     * @private
+     * @param {number} index - Position of the tag to remove.
+     * @param {boolean} [recordHistory=true] - Whether to record undo history.
+     */
     _removeTag(index, recordHistory = true) {
       if (index < 0 || index >= this.tags.length) return;
       const removed = this.tags.splice(index, 1)[0];
@@ -251,11 +297,21 @@
       });
     }
 
+    /**
+     * Push a change action onto the undo stack.
+     * Clearing redo ensures redo only works after an undo.
+     * @private
+     * @param {{type:string,value:string,index:number}} action
+     */
     _pushHistory(action) {
       this.undoStack.push(action);
       this.redoStack = []; // Clear redo stack on new action
     }
 
+    /**
+     * Undo the last tag action.
+     * Restores the previous tag state and updates the hidden input.
+     */
     undo() {
       if (this.undoStack.length === 0) return;
       const action = this.undoStack.pop();
@@ -276,6 +332,10 @@
       this._syncHidden();
     }
 
+    /**
+     * Redo the most recently undone tag action.
+     * @returns {void}
+     */
     redo() {
       if (this.redoStack.length === 0) return;
       const action = this.redoStack.pop();
@@ -481,10 +541,18 @@
     }
 
     // Public API
+    /**
+     * Get the current tags as an array of strings.
+     * @returns {string[]}
+     */
     getTags() {
       return [...this.tags];
     }
 
+    /**
+     * Remove all tags and reset widget state.
+     * @returns {void}
+     */
     clear() {
       this.tags = [];
       this.undoStack = [];
@@ -494,6 +562,11 @@
       this._syncHidden();
     }
 
+    /**
+     * Replace the current tags with a new set of values.
+     * @param {string[]} tags - New tags to set.
+     * @returns {void}
+     */
     setTags(tags) {
       this.tags = [];
       this.undoStack = [];
