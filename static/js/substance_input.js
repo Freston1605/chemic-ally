@@ -136,10 +136,13 @@
       // Bind events
       this._bindEvents();
     }
-
-    _buildDOM() {
-      // Remove any server-rendered fallback inputs before building the widget
+    
+    __buildDOM() {
+      // 1. Capture the ID from the fallback before it's deleted
       const fallbacks = this.container.querySelectorAll(".substance-tag-fallback");
+      const fallbackId = fallbacks.length > 0 ? fallbacks[0].id : null;
+
+      // Remove any server-rendered fallback inputs before building the widget
       fallbacks.forEach((el) => el.remove());
 
       // Wrap existing content
@@ -172,6 +175,12 @@
       // Text input
       this.textInput = document.createElement("input");
       this.textInput.type = "text";
+      
+      // 2. Adopt the old ID so the <label> stays linked!
+      if (fallbackId) {
+        this.textInput.id = fallbackId;
+      }
+
       this.textInput.className = "substance-tag-input";
       this.textInput.style.cssText =
         "border:none;outline:none;flex:1;min-width:120px;padding:2px 4px;font-size:0.9rem;background:transparent;";
@@ -269,16 +278,25 @@
       this._syncHidden();
     }
 
+    _formatFormula(text) {
+      // Wraps numbers in <sub> and charges in <sup>
+      return text
+        .replace(/(\d+)/g, '<sub>$1</sub>')
+        .replace(/(\+|\-)(\d+)?/g, (match, p1, p2) => `<sup>${p2 || ''}${p1}</sup>`);
+    }
+
     _renderTags() {
       this.tagList.innerHTML = "";
       this.tags.forEach((tag, i) => {
         const chip = document.createElement("span");
         chip.className = "substance-tag";
-        chip.style.cssText =
-          "display:inline-flex;align-items:center;gap:4px;background:var(--bs-secondary-bg,#495057);border-radius:16px;padding:2px 8px;font-size:0.875rem;line-height:1.5;white-space:nowrap;color:var(--bs-body-color,#dee2e6);";
+        chip.style.cssText = "display:inline-flex;align-items:center;gap:4px;background:var(--bs-secondary-bg,#495057);border-radius:16px;padding:2px 8px;font-size:0.875rem;line-height:1.5;white-space:nowrap;color:var(--bs-body-color,#dee2e6);";
 
         const label = document.createElement("span");
-        label.textContent = tag;
+        
+        // Use the new helper function here!
+        label.innerHTML = this._formatFormula(tag);
+        
         chip.appendChild(label);
 
         const closeBtn = document.createElement("button");
@@ -296,6 +314,7 @@
         this.tagList.appendChild(chip);
       });
     }
+
 
     /**
      * Push a change action onto the undo stack.

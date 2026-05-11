@@ -7,7 +7,9 @@ Usage:
   {% include 'webapp/calculator/_tag_input_field.html' with field=field %}
 {% endcomment %}
 <div class="mb-4">
-  <label for="{{ field.id_for_label }}" class="form-label">{{ field.label }}</label>
+  {# 1. Point the label to the VISIBLE input #}
+  <label for="fallback-{{ field.name }}" class="form-label">{{ field.label }}</label>
+  
   <div class="substance-tag-wrapper" style="position:relative;">
     <div
       id="tag-container-{{ field.name }}"
@@ -15,7 +17,6 @@ Usage:
       data-field-name="{{ field.name }}"
       data-placeholder="{{ field.field.widget.attrs.placeholder|default:'Type a substance and press Enter' }}"
     >
-      {# Fallback visible input rendered server-side; JS widget replaces it on load #}
       <input
         type="text"
         class="substance-tag-fallback form-control"
@@ -26,6 +27,8 @@ Usage:
         autocomplete="off"
       />
     </div>
+
+    {# 2. This remains hidden for JS to seed from, but isn't linked to the label #}
     <input
       type="hidden"
       id="{{ field.id_for_label }}"
