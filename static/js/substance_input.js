@@ -70,7 +70,7 @@
     "SiO2", "TiO2", "P2O5", "SO2", "SO3",
     // Common acids
     "CH3COOH", "HCOOH", "C6H5COOH", "C2H5OH", "CH3OH",
-    "C6H12O6", "C12H22O11", "C6H6", "C6H14", "C8H18",
+    "C6H6", "C6H14", "C8H18",
     // Organic compounds
     "CH3CHO", "CH3COCH3", "C2H5OC2H5", "CHCl3", "CCl4",
     "C2H2O4", "C4H10O", "C5H12", "C6H5OH", "C6H5NH2",
@@ -80,8 +80,6 @@
     "C9H8O4", // aspirin
     "C8H10N4O2", // caffeine
     "C21H30O2", // testosterone
-    "C6H12O6", // glucose
-    "C12H22O11", // sucrose
     "H2NCH2COOH", // glycine
     "H2NC(CH3)2COOH", // alanine
     "HClO4", "HBrO4", "HIO4",
@@ -137,7 +135,7 @@
       this._bindEvents();
     }
     
-    __buildDOM() {
+    _buildDOM() {
       // 1. Capture the ID from the fallback before it's deleted
       const fallbacks = this.container.querySelectorAll(".substance-tag-fallback");
       const fallbackId = fallbacks.length > 0 ? fallbacks[0].id : null;
@@ -226,9 +224,7 @@
     _syncHidden() {
       if (this.hiddenInput) {
         this.hiddenInput.value = this.tags.join(" ");
-      }
-      // Trigger change event for form
-      if (this.hiddenInput) {
+        // Trigger change event for form
         this.hiddenInput.dispatchEvent(new Event("change", { bubbles: true }));
       }
     }
@@ -432,7 +428,6 @@
     }
 
     _positionSuggestions() {
-      const rect = this.container.getBoundingClientRect();
       this.suggestEl.style.left = "0";
       this.suggestEl.style.top = "100%";
     }
