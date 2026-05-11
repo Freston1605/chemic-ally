@@ -1,7 +1,6 @@
 from .base import *
 
 DEBUG = True
-ALLOWED_HOSTS = ["localhost", "127.0.0.1"]
 
 # Use SQLite for local development to avoid PostgreSQL latency and simplify setup.
 DATABASES = {
@@ -23,7 +22,6 @@ WHITENOISE_AUTOREFRESH = True
 
 STATIC_URL = 'static/'
 STATIC_ROOT = BASE_DIR / "staticfiles"
-STATICFILES_DIRS = [BASE_DIR / 'static']
 
 MEDIA_URL = 'media/'
 MEDIA_ROOT = BASE_DIR / 'media'

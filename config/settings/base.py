@@ -28,7 +28,10 @@ sys.path.insert(0, str(BASE_DIR / 'chemically'))
 
 # SECURITY WARNING: keep the secret key used in production secret!
 SECRET_KEY = os.environ.get("SECRET_KEY", "hg&fx+3xp@0sf2s^#(hi#tqrbim!q473umn#k+i!ov)55dv5v*")
-ALLOWED_HOSTS = []
+ALLOWED_HOSTS = [
+    "localhost",
+    "127.0.0.1",
+]
 
 # Default debug settings overridden in environment modules
 DEBUG = False
@@ -75,6 +78,8 @@ TEMPLATES = [
     },
 ]
 
+STATIC_URL = 'static/'
+
 STATICFILES_DIRS = [
     BASE_DIR / 'static',
 ]
@@ -84,6 +89,13 @@ WSGI_APPLICATION = 'config.wsgi.application'
 
 # Database
 # https://docs.djangoproject.com/en/5.0/ref/settings/#databases
+# Overridden in development.py and production.py with environment-specific engines.
+# This placeholder ensures base.py can be imported standalone.
+DATABASES = {
+    "default": {
+        "ENGINE": "django.db.backends.dummy",
+    }
+}
 
 # Password validation
 # https://docs.djangoproject.com/en/5.0/ref/settings/#auth-password-validators

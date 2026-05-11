@@ -23,7 +23,7 @@ class StaticStorage(S3Boto3Storage):
     """
 
     location = "static"
-    file_overwrite = False
+    file_overwrite = True
     querystring_auth = False
     custom_domain = settings.AWS_S3_CUSTOM_DOMAIN or None
 
