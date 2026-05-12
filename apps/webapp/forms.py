@@ -1,8 +1,7 @@
+import json
 import re
 
 from django import forms
-
-from .calculations.units import Q_
 
 
 class MolecularFormulaForm(forms.Form):
@@ -103,29 +102,18 @@ class EquilibriumSystemForm(forms.Form):
     Form for defining a coupled chemical equilibrium system.
 
     Users specify:
-    - chemical equations with equilibrium constants (species are parsed
-      automatically from the equations)
+    - chemical reactions with per-reaction fields (reactants, products, K value
+      in pKa or Ka mode) via a dynamic JS-driven UI that stores data in a
+      hidden JSON field
     - initial concentrations for each substance (via dynamic JS table)
     - solvent and its concentration (defaults: H2O, 55.4 M)
     """
 
-    equations = forms.CharField(
-        label="Equilibrium Equations",
-        help_text=(
-            "One equation per line. Format: reactants = products; K_value<br>"
-            "Species are automatically extracted from the equations."
-        ),
-        widget=forms.Textarea(
-            attrs={
-                "rows": 5,
-                "placeholder": (
-                    "HCO3- = H+ + CO3-2; 10**-10.3\n"
-                    "H2CO3 = H+ + HCO3-; 10**-6.3\n"
-                    "H2O = H+ + OH-; 10**-14/55.4"
-                ),
-                "class": "form-control font-monospace",
-            }
-        ),
+    reactions = forms.CharField(
+        required=False,
+        widget=forms.HiddenInput(),
+        label="Reactions (JSON)",
+        help_text="JSON array of reaction objects.",
     )
     concentrations = forms.CharField(
         required=False,
@@ -178,43 +166,87 @@ class EquilibriumSystemForm(forms.Form):
                         species.add(token)
         return species
 
-    def clean_equations(self):
-        equations = self.cleaned_data.get("equations", "")
-        lines = [line.strip() for line in equations.split("\n") if line.strip()]
-        if not lines:
-            raise forms.ValidationError("At least one equilibrium equation is required.")
-
-        for i, line in enumerate(lines, 1):
-            if ";" not in line:
+    def clean_reactions(self):
+        raw = self.cleaned_data.get("reactions", "")
+        if not raw or not raw.strip():
+            raise forms.ValidationError("At least one reaction is required.")
+        try:
+            reactions = json.loads(raw)
+        except json.JSONDecodeError as e:
+            raise forms.ValidationError(f"Invalid JSON: {e}")
+        if not isinstance(reactions, list) or len(reactions) == 0:
+            raise forms.ValidationError("Reactions must be a non-empty array.")
+        for i, rxn in enumerate(reactions, 1):
+            if not isinstance(rxn, dict):
+                raise forms.ValidationError(f"Reaction {i}: Expected an object.")
+            for key in ("reactants", "products", "k_mode", "k_value"):
+                if key not in rxn:
+                    raise forms.ValidationError(
+                        f"Reaction {i}: Missing '{key}' field."
+                    )
+            if rxn["k_mode"] not in ("pKa", "Ka"):
                 raise forms.ValidationError(
-                    f"Line {i}: Each equation must include an equilibrium constant "
-                    f"after a semicolon. Example: HCO3- = H+ + CO3-2; 10**-10.3"
+                    f"Reaction {i}: k_mode must be 'pKa' or 'Ka'."
                 )
-            if "=" not in line.split(";")[0]:
+            if not rxn["reactants"] or not str(rxn["reactants"]).strip():
                 raise forms.ValidationError(
-                    f"Line {i}: Each equation must contain '=' between reactants "
-                    f"and products."
+                    f"Reaction {i}: Reactants cannot be empty."
                 )
-
-        return lines
+            if not rxn["products"] or not str(rxn["products"]).strip():
+                raise forms.ValidationError(
+                    f"Reaction {i}: Products cannot be empty."
+                )
+            if not rxn["k_value"] or not str(rxn["k_value"]).strip():
+                raise forms.ValidationError(
+                    f"Reaction {i}: K value cannot be empty."
+                )
+        return reactions
 
     def clean(self):
         cleaned_data = super().clean()
+        reactions = cleaned_data.get("reactions")
+
+        if reactions:
+            # Reconstruct the old equations format for the backend calculator
+            equations_list = []
+            for rxn in reactions:
+                if rxn["k_mode"] == "pKa":
+                    k_expr = f"10**-{rxn['k_value']}"
+                else:
+                    k_expr = str(rxn["k_value"])
+                eq_str = f"{rxn['reactants']} = {rxn['products']}; {k_expr}"
+                equations_list.append(eq_str)
+            cleaned_data["equations"] = equations_list
+
+        # Parse concentrations JSON — each entry is {value: float, unit: str}
+        from .calculations.units import Q_
+
         concentrations_raw = cleaned_data.get("concentrations")
         if concentrations_raw:
-            import json
             try:
                 parsed = json.loads(concentrations_raw)
                 if not isinstance(parsed, dict):
                     self.add_error("concentrations", "Must be a JSON object.")
                 else:
-                    cleaned_data["concentrations"] = {
-                        k: float(v) for k, v in parsed.items()
-                    }
+                    result = {}
+                    for substance, entry in parsed.items():
+                        if isinstance(entry, dict) and "value" in entry and "unit" in entry:
+                            q = Q_(float(entry["value"]), entry["unit"])
+                            result[substance] = float(q.to("mol/L").magnitude)
+                        elif isinstance(entry, (int, float)):
+                            # Backward compatibility: plain number treated as mol/L
+                            result[substance] = float(entry)
+                        elif isinstance(entry, str):
+                            try:
+                                result[substance] = float(entry)
+                            except (ValueError, TypeError):
+                                pass
+                    cleaned_data["concentrations"] = result
             except (json.JSONDecodeError, ValueError, TypeError) as e:
                 self.add_error("concentrations", f"Invalid JSON: {e}")
         else:
             cleaned_data["concentrations"] = {}
+
         return cleaned_data
 
 
@@ -391,7 +423,7 @@ class SolutionForm(forms.Form):
                     f"The {label.lower()} cannot be equal or lower than zero."
                 )
 
-        
+        from .calculations.units import Q_
 
         if v1 is not None and v2 is not None:
             v1_q = Q_(v1, cleaned_data.get("v1_unit"))

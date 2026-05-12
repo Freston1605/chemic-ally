@@ -1,3 +1,5 @@
+import json
+
 from django.test import SimpleTestCase, TestCase, Client
 from django.urls import reverse
 from django.conf import settings
@@ -387,44 +389,106 @@ class EquilibriaCalculatorTests(SimpleTestCase):
 class EquilibriumFormTests(SimpleTestCase):
     """Tests for the EquilibriumSystemForm."""
 
+    def _valid_reactions_json(self):
+        """Helper: return a valid reactions JSON string for the default example."""
+        return json.dumps([
+            {"reactants": "HCO3-", "products": "H+ + CO3-2", "k_mode": "pKa", "k_value": "10.3"},
+            {"reactants": "H2CO3", "products": "H+ + HCO3-", "k_mode": "pKa", "k_value": "6.3"},
+            {"reactants": "H2O", "products": "H+ + OH-", "k_mode": "pKa", "k_value": "14.0"},
+        ])
+
     def test_valid_form(self):
         form = EquilibriumSystemForm({
-            "equations": (
-                "HCO3- = H+ + CO3-2; 10**-10.3\n"
-                "H2CO3 = H+ + HCO3-; 10**-6.3\n"
-                "H2O = H+ + OH-; 10**-14/55.4"
-            ),
-            "concentrations": '{"HCO3-": 0.01}',
+            "reactions": self._valid_reactions_json(),
+            "concentrations": '{"HCO3-": {"value": 0.01, "unit": "mol/L"}}',
             "solvent": "H2O",
             "solvent_concentration": 55.4,
         })
         self.assertTrue(form.is_valid())
         self.assertEqual(len(form.cleaned_data["equations"]), 3)
+        # Verify the reconstructed equations
+        self.assertEqual(
+            form.cleaned_data["equations"],
+            [
+                "HCO3- = H+ + CO3-2; 10**-10.3",
+                "H2CO3 = H+ + HCO3-; 10**-6.3",
+                "H2O = H+ + OH-; 10**-14.0",
+            ],
+        )
+        # Verify concentrations are converted to mol/L
+        self.assertAlmostEqual(form.cleaned_data["concentrations"]["HCO3-"], 0.01)
 
-    def test_missing_equations(self):
+    def test_valid_form_concentration_unit_conversion(self):
+        """Concentrations in non-default units should be converted to mol/L."""
         form = EquilibriumSystemForm({
-            "equations": "",
+            "reactions": self._valid_reactions_json(),
+            "concentrations": '{"HCO3-": {"value": 10, "unit": "mmol/L"}}',
+        })
+        self.assertTrue(form.is_valid())
+        # 10 mmol/L = 0.01 mol/L
+        self.assertAlmostEqual(form.cleaned_data["concentrations"]["HCO3-"], 0.01)
+
+    def test_valid_form_backward_compat_plain_number(self):
+        """Plain number (no unit dict) should be treated as mol/L."""
+        form = EquilibriumSystemForm({
+            "reactions": self._valid_reactions_json(),
+            "concentrations": '{"HCO3-": 0.01}',
+        })
+        self.assertTrue(form.is_valid())
+        self.assertAlmostEqual(form.cleaned_data["concentrations"]["HCO3-"], 0.01)
+
+    def test_valid_form_ka_mode(self):
+        """Ka mode should use the raw value directly."""
+        reactions = json.dumps([
+            {"reactants": "CH3COOH", "products": "H+ + CH3COO-", "k_mode": "Ka", "k_value": "1.75e-5"},
+        ])
+        form = EquilibriumSystemForm({
+            "reactions": reactions,
+            "concentrations": '{"CH3COOH": 0.1}',
+        })
+        self.assertTrue(form.is_valid())
+        self.assertEqual(
+            form.cleaned_data["equations"],
+            ["CH3COOH = H+ + CH3COO-; 1.75e-5"],
+        )
+
+    def test_missing_reactions(self):
+        form = EquilibriumSystemForm({
+            "reactions": "",
         })
         self.assertFalse(form.is_valid())
-        self.assertIn("equations", form.errors)
+        self.assertIn("reactions", form.errors)
 
-    def test_equation_missing_semicolon(self):
+    def test_reactions_empty_array(self):
         form = EquilibriumSystemForm({
-            "equations": "H2O = H+ + OH-",
+            "reactions": "[]",
         })
         self.assertFalse(form.is_valid())
-        self.assertIn("equations", form.errors)
+        self.assertIn("reactions", form.errors)
 
-    def test_equation_missing_equals(self):
+    def test_reactions_missing_k_mode(self):
+        reactions = json.dumps([
+            {"reactants": "H2O", "products": "H+ + OH-", "k_value": "14.0"},
+        ])
         form = EquilibriumSystemForm({
-            "equations": "H2O; 10**-14",
+            "reactions": reactions,
         })
         self.assertFalse(form.is_valid())
-        self.assertIn("equations", form.errors)
+        self.assertIn("reactions", form.errors)
+
+    def test_reactions_missing_reactants(self):
+        reactions = json.dumps([
+            {"reactants": "", "products": "H+ + OH-", "k_mode": "pKa", "k_value": "14.0"},
+        ])
+        form = EquilibriumSystemForm({
+            "reactions": reactions,
+        })
+        self.assertFalse(form.is_valid())
+        self.assertIn("reactions", form.errors)
 
     def test_invalid_concentrations_json(self):
         form = EquilibriumSystemForm({
-            "equations": "H2O = H+ + OH-; 10**-14",
+            "reactions": self._valid_reactions_json(),
             "concentrations": "not-json",
         })
         self.assertFalse(form.is_valid())
@@ -467,12 +531,12 @@ class EquilibriaViewTests(TestCase):
 
     def test_equilibria_view_post_valid(self):
         data = {
-            "equations": (
-                "HCO3- = H+ + CO3-2; 10**-10.3\n"
-                "H2CO3 = H+ + HCO3-; 10**-6.3\n"
-                "H2O = H+ + OH-; 10**-14/55.4"
-            ),
-            "concentrations": '{"HCO3-": 0.01}',
+            "reactions": json.dumps([
+                {"reactants": "HCO3-", "products": "H+ + CO3-2", "k_mode": "pKa", "k_value": "10.3"},
+                {"reactants": "H2CO3", "products": "H+ + HCO3-", "k_mode": "pKa", "k_value": "6.3"},
+                {"reactants": "H2O", "products": "H+ + OH-", "k_mode": "pKa", "k_value": "14.0"},
+            ]),
+            "concentrations": '{"HCO3-": {"value": 0.01, "unit": "mol/L"}}',
             "solvent": "H2O",
             "solvent_concentration": 55.4,
         }
@@ -485,7 +549,7 @@ class EquilibriaViewTests(TestCase):
 
     def test_equilibria_view_post_invalid(self):
         data = {
-            "equations": "",
+            "reactions": "",
         }
         response = self.client.post(reverse("equilibria"), data)
         self.assertEqual(response.status_code, 200)
