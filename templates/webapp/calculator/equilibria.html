@@ -15,40 +15,6 @@
     </div>
   {% endif %}
 
-  <!-- Substances -->
-  <div class="mb-4">
-    <label for="{{ form.substances.id_for_label }}" class="form-label">{{ form.substances.label }}</label>
-    <div class="substance-tag-wrapper" style="position:relative;">
-      <div
-        id="tag-container-{{ form.substances.name }}"
-        class="substance-tag-container-init"
-        data-field-name="{{ form.substances.name }}"
-        data-placeholder="Type a substance and press Enter"
-      >
-        <input
-          type="text"
-          class="substance-tag-fallback form-control"
-          id="fallback-{{ form.substances.name }}"
-          name="{{ form.substances.name }}"
-          placeholder="{{ form.substances.field.widget.attrs.placeholder }}"
-          value="{{ form.substances.value|default:'' }}"
-          autocomplete="off"
-        />
-      </div>
-      <input
-        type="hidden"
-        id="{{ form.substances.id_for_label }}"
-        value="{{ form.substances.value|default:'' }}"
-      />
-    </div>
-    {% for error in form.substances.errors %}
-      <div class="form-text text-danger">{{ error }}</div>
-    {% endfor %}
-    {% if form.substances.help_text %}
-      <small class="text-muted">{{ form.substances.help_text|safe }}</small>
-    {% endif %}
-  </div>
-
   <!-- Equations -->
   <div class="mb-4">
     <label for="{{ form.equations.id_for_label }}" class="form-label">{{ form.equations.label }}</label>
@@ -67,11 +33,12 @@
     {% endif %}
   </div>
 
-  <!-- Dynamic Concentration Table -->
+  <!-- Dynamic Concentration Table (auto-populated from equations) -->
   <div class="mb-4" id="concentration-section" style="display:none;">
     <label class="form-label">Initial Concentrations (mol/L)</label>
     <p class="text-muted small">
-      Enter the initial concentration for each substance. Leave blank for zero.
+      Species are extracted from your equations above. Enter the initial concentration
+      for each substance. Leave blank for zero.
     </p>
     <div class="table-responsive">
       <table class="table table-sm table-bordered" id="concentration-table">
@@ -218,84 +185,53 @@
 {% block extra_scripts %}
 <script>
 /**
- * Build the initial concentrations table when substances are added.
+ * Parse species from the equations textarea and auto-populate
+ * the initial concentration table.
  */
 (function() {
+  'use strict';
+
+  function parseSpecies(equationsText) {
+    var species = [];
+    var seen = {};
+    var lines = equationsText.split('\n');
+    lines.forEach(function(line) {
+      line = line.trim();
+      if (!line) return;
+      // Remove the equilibrium constant part
+      var parts = line.split(';');
+      if (parts.length < 2) return;
+      var reactionPart = parts[0].trim();
+      if (reactionPart.indexOf('=') === -1) return;
+      var sides = reactionPart.split('=');
+      sides.forEach(function(side) {
+        // Split on ' + ' (space-plus-space) to distinguish
+        // the reaction delimiter from charge notation like H+ or Ca2+
+        var tokens = side.trim().split(/\s+\+\s+/);
+        tokens.forEach(function(token) {
+          token = token.trim();
+          if (token && !seen[token]) {
+            seen[token] = true;
+            species.push(token);
+          }
+        });
+      });
+    });
+    return species;
+  }
+
   function initEquilibria() {
-    // Get the substances tag input reference
-    var substancesContainer = document.getElementById('tag-container-{{ form.substances.name }}');
-    if (!substancesContainer) {
+    var equationsField = document.getElementById('{{ form.equations.id_for_label }}');
+    if (!equationsField) {
       setTimeout(initEquilibria, 100);
       return;
     }
 
-    // Helper to find the SubstanceTagInput widget instance
-    function getWidget() {
-      // Look for the hidden input created by the widget
-      var hidden = document.querySelector('input[name="{{ form.substances.name }}"]');
-      if (!hidden) return null;
-      // The widget stores a reference on its container
-      return substancesContainer._widget || null;
-    }
+    var section = document.getElementById('concentration-section');
+    var tbody = document.getElementById('concentration-tbody');
+    var hiddenConc = document.querySelector('input[name="concentrations"]');
 
-    // Poll for widget initialization
-    function pollWidget() {
-      if (substancesContainer._widget) {
-        setupConcentrationSync(substancesContainer._widget);
-      } else {
-        // Try to find the widget by looking for its internal state
-        var checkInterval = setInterval(function() {
-          // Widget creates itself via SubstanceTagInput class.
-          // If no .substance-tag-container yet, wait.
-          if (!substancesContainer.querySelector('.substance-tag-list')) {
-            return;
-          }
-          clearInterval(checkInterval);
-          // The widget sets itself on window globals or container dataset
-          // We'll use a MutationObserver to detect the hidden input
-          setupConcentrationSyncViaObserver(substancesContainer);
-        }, 200);
-      }
-    }
-
-    function setupConcentrationSyncViaObserver(container) {
-      // Watch for hidden input creation
-      var observer = new MutationObserver(function() {
-        var hidden = document.querySelector('input[name="{{ form.substances.name }}"]');
-        if (hidden && hidden.type === 'hidden') {
-          observer.disconnect();
-          // Wrap with polling for tag changes
-          pollConcentrationChanges();
-        }
-      });
-      observer.observe(container.parentNode, { childList: true, subtree: true });
-      // Also try directly
-      setTimeout(pollConcentrationChanges, 500);
-    }
-
-    // Poll for the substance input value and update the concentration table
-    function pollConcentrationChanges() {
-      var section = document.getElementById('concentration-section');
-      var tbody = document.getElementById('concentration-tbody');
-      var hiddenConc = document.querySelector('input[name="concentrations"]');
-      var prevValue = '';
-
-      setInterval(function() {
-        var hidden = document.querySelector('input[name="{{ form.substances.name }}"]');
-        if (!hidden) return;
-        var currentValue = hidden.value;
-
-        if (currentValue !== prevValue) {
-          prevValue = currentValue;
-          var substances = currentValue.split(/\s+/).filter(Boolean);
-          updateConcentrationTable(substances, tbody, section);
-          // Collect concentrations into hidden field
-          updateConcentrationsHidden(tbody, hiddenConc);
-        }
-      }, 300);
-    }
-
-    function updateConcentrationTable(substances, tbody, section) {
+    function updateConcentrationTable(species) {
       // Get existing values before rebuilding
       var existingValues = {};
       var inputs = tbody.querySelectorAll('input[data-substance]');
@@ -303,7 +239,7 @@
         existingValues[inp.dataset.substance] = inp.value;
       });
 
-      if (substances.length === 0) {
+      if (species.length === 0) {
         section.style.display = 'none';
         return;
       }
@@ -311,7 +247,7 @@
       section.style.display = 'block';
       tbody.innerHTML = '';
 
-      substances.forEach(function(substance) {
+      species.forEach(function(substance) {
         var tr = document.createElement('tr');
         
         var tdName = document.createElement('td');
@@ -328,8 +264,7 @@
         input.dataset.substance = substance;
         input.value = existingValues[substance] || '';
         input.addEventListener('input', function() {
-          updateConcentrationsHidden(tbody, 
-            document.querySelector('input[name="concentrations"]'));
+          updateConcentrationsHidden();
         });
         
         tdInput.appendChild(input);
@@ -337,10 +272,12 @@
         tr.appendChild(tdInput);
         tbody.appendChild(tr);
       });
+
+      updateConcentrationsHidden();
     }
 
-    function updateConcentrationsHidden(tbody, hiddenField) {
-      if (!hiddenField) return;
+    function updateConcentrationsHidden() {
+      if (!hiddenConc) return;
       var concData = {};
       var inputs = tbody.querySelectorAll('input[data-substance]');
       inputs.forEach(function(inp) {
@@ -349,13 +286,20 @@
           concData[inp.dataset.substance] = val;
         }
       });
-      hiddenField.value = JSON.stringify(concData);
+      hiddenConc.value = JSON.stringify(concData);
     }
 
-    pollWidget();
+    // React to changes in the equations textarea
+    equationsField.addEventListener('input', function() {
+      var species = parseSpecies(equationsField.value);
+      updateConcentrationTable(species);
+    });
+
+    // Trigger initial parsing
+    var initialSpecies = parseSpecies(equationsField.value);
+    updateConcentrationTable(initialSpecies);
   }
 
-  // Initialize after page load
   if (document.readyState === 'loading') {
     document.addEventListener('DOMContentLoaded', initEquilibria);
   } else {

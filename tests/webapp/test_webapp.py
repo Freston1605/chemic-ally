@@ -389,7 +389,6 @@ class EquilibriumFormTests(SimpleTestCase):
 
     def test_valid_form(self):
         form = EquilibriumSystemForm({
-            "substances": "HCO3- H+ CO3-2 H2CO3 OH- H2O",
             "equations": (
                 "HCO3- = H+ + CO3-2; 10**-10.3\n"
                 "H2CO3 = H+ + HCO3-; 10**-6.3\n"
@@ -404,7 +403,6 @@ class EquilibriumFormTests(SimpleTestCase):
 
     def test_missing_equations(self):
         form = EquilibriumSystemForm({
-            "substances": "H2O H+ OH-",
             "equations": "",
         })
         self.assertFalse(form.is_valid())
@@ -412,7 +410,6 @@ class EquilibriumFormTests(SimpleTestCase):
 
     def test_equation_missing_semicolon(self):
         form = EquilibriumSystemForm({
-            "substances": "H2O H+ OH-",
             "equations": "H2O = H+ + OH-",
         })
         self.assertFalse(form.is_valid())
@@ -420,7 +417,6 @@ class EquilibriumFormTests(SimpleTestCase):
 
     def test_equation_missing_equals(self):
         form = EquilibriumSystemForm({
-            "substances": "H2O H+ OH-",
             "equations": "H2O; 10**-14",
         })
         self.assertFalse(form.is_valid())
@@ -428,12 +424,34 @@ class EquilibriumFormTests(SimpleTestCase):
 
     def test_invalid_concentrations_json(self):
         form = EquilibriumSystemForm({
-            "substances": "H2O H+ OH-",
             "equations": "H2O = H+ + OH-; 10**-14",
             "concentrations": "not-json",
         })
         self.assertFalse(form.is_valid())
         self.assertIn("concentrations", form.errors)
+
+    def test_parse_species_from_equations(self):
+        """Static method should correctly extract species from equations."""
+        equations = (
+            "HCO3- = H+ + CO3-2; 10**-10.3\n"
+            "H2CO3 = H+ + HCO3-; 10**-6.3\n"
+            "H2O = H+ + OH-; 10**-14/55.4"
+        )
+        species = EquilibriumSystemForm.parse_species_from_equations(equations)
+        expected = {"HCO3-", "H+", "CO3-2", "H2CO3", "H2O", "OH-"}
+        self.assertEqual(species, expected)
+
+    def test_parse_species_empty(self):
+        """Empty text should produce an empty set."""
+        species = EquilibriumSystemForm.parse_species_from_equations("")
+        self.assertEqual(species, set())
+
+    def test_parse_species_single_equation(self):
+        """Single equation should parse correctly."""
+        equations = "CH3COOH = H+ + CH3COO-; 10**-4.76"
+        species = EquilibriumSystemForm.parse_species_from_equations(equations)
+        expected = {"CH3COOH", "H+", "CH3COO-"}
+        self.assertEqual(species, expected)
 
 
 class EquilibriaViewTests(TestCase):
@@ -449,7 +467,6 @@ class EquilibriaViewTests(TestCase):
 
     def test_equilibria_view_post_valid(self):
         data = {
-            "substances": "HCO3- H+ CO3-2 H2CO3 OH- H2O",
             "equations": (
                 "HCO3- = H+ + CO3-2; 10**-10.3\n"
                 "H2CO3 = H+ + HCO3-; 10**-6.3\n"
@@ -468,7 +485,6 @@ class EquilibriaViewTests(TestCase):
 
     def test_equilibria_view_post_invalid(self):
         data = {
-            "substances": "H2O H+ OH-",
             "equations": "",
         }
         response = self.client.post(reverse("equilibria"), data)

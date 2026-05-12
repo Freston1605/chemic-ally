@@ -99,25 +99,17 @@ class EquilibriumSystemForm(forms.Form):
     Form for defining a coupled chemical equilibrium system.
 
     Users specify:
-    - substances involved (via tag-input)
-    - chemical equations with equilibrium constants
-    - initial concentrations for each substance
+    - chemical equations with equilibrium constants (species are parsed
+      automatically from the equations)
+    - initial concentrations for each substance (via dynamic JS table)
     - solvent and its concentration (defaults: H2O, 55.4 M)
     """
 
-    substances = forms.CharField(
-        max_length=500,
-        label="Substances",
-        help_text="Enter all chemical species involved in the system.",
-        widget=forms.TextInput(
-            attrs={"placeholder": "HCO3- H+ CO3-2 H2CO3 OH- H2O"}
-        ),
-    )
     equations = forms.CharField(
         label="Equilibrium Equations",
         help_text=(
-            "One equation per line. Format: reactants = products; K_value\n"
-            'Example: <code>HCO3- = H+ + CO3-2; 10**-10.3</code>'
+            "One equation per line. Format: reactants = products; K_value<br>"
+            "Species are automatically extracted from the equations."
         ),
         widget=forms.Textarea(
             attrs={
@@ -153,6 +145,36 @@ class EquilibriumSystemForm(forms.Form):
         widget=forms.NumberInput(attrs={"step": "any", "placeholder": "55.4"}),
     )
 
+    @staticmethod
+    def parse_species_from_equations(equations_text: str) -> set:
+        """
+        Extract unique substance names from a multi-line equation string.
+
+        Parses each line by splitting on ``;``, then ``=``, then `` + ``
+        (space-plus-space, the reaction-side delimiter, not the charge
+        notation in e.g. ``H+``), and returns the set of all unique,
+        non-empty, trimmed tokens.
+        """
+        import re
+        species = set()
+        for line in equations_text.split("\n"):
+            line = line.strip()
+            if not line:
+                continue
+            # Remove the equilibrium constant part
+            reaction_part = line.split(";")[0].strip()
+            if "=" not in reaction_part:
+                continue
+            left, right = reaction_part.split("=", 1)
+            for side in (left, right):
+                # Split on ' + ' (space-plus-space) to distinguish
+                # the reaction separator from charge notation like H+ or Ca2+
+                for token in re.split(r'\s+\+\s+', side.strip()):
+                    token = token.strip()
+                    if token:
+                        species.add(token)
+        return species
+
     def clean_equations(self):
         equations = self.cleaned_data.get("equations", "")
         lines = [line.strip() for line in equations.split("\n") if line.strip()]
@@ -173,19 +195,24 @@ class EquilibriumSystemForm(forms.Form):
 
         return lines
 
-    def clean_concentrations(self):
-        data = self.cleaned_data.get("concentrations", "")
-        if not data:
-            return {}
-        import json
-        try:
-            parsed = json.loads(data)
-            if not isinstance(parsed, dict):
-                raise forms.ValidationError("Concentrations must be a JSON object.")
-            # Convert all values to float
-            return {k: float(v) for k, v in parsed.items()}
-        except (json.JSONDecodeError, ValueError, TypeError) as e:
-            raise forms.ValidationError(f"Invalid concentrations JSON: {e}")
+    def clean(self):
+        cleaned_data = super().clean()
+        concentrations_raw = cleaned_data.get("concentrations")
+        if concentrations_raw:
+            import json
+            try:
+                parsed = json.loads(concentrations_raw)
+                if not isinstance(parsed, dict):
+                    self.add_error("concentrations", "Must be a JSON object.")
+                else:
+                    cleaned_data["concentrations"] = {
+                        k: float(v) for k, v in parsed.items()
+                    }
+            except (json.JSONDecodeError, ValueError, TypeError) as e:
+                self.add_error("concentrations", f"Invalid JSON: {e}")
+        else:
+            cleaned_data["concentrations"] = {}
+        return cleaned_data
 
 
 class SolutionForm(forms.Form):
