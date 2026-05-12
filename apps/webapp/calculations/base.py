@@ -6,7 +6,7 @@
 from typing import Any, Dict, Optional, Tuple, Union
 
 from chempy import Substance, balance_stoichiometry
-from ..utils.units import Q_
+from .units import Q_
 
 
 # --- Calculation Base ---

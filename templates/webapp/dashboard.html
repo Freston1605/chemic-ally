@@ -27,9 +27,10 @@
                 <button name="action" value="calc_mw">Calculate MW</button>
             </div>
             {% if mw_result %}
-            <div class="dashboard-result">
+            <div class="dashboard-result" id="dashboard-mw-result">
                 <strong>Result:</strong> {{ mw_result }} g/mol
                 <button name="action" value="use_mw">Use in Dilution</button>
+                <button type="button" class="btn btn-outline-secondary btn-sm" onclick="copyToClipboard('#dashboard-mw-result', this)" style="float: right;">Copy</button>
             </div>
             {% endif %}
         </div>
@@ -64,9 +65,10 @@
                 <button name="action" value="calc_dilution">Calculate Dilution</button>
             </div>
             {% if dilution_result %}
-            <div class="dashboard-result">
+            <div class="dashboard-result" id="dashboard-dilution-result">
                 <strong>Result:</strong> {{ dilution_result.property }} = {{ dilution_result.value }} {{ dilution_result.unit }}
                 {% if dilution_result.solute_mass_g %}<br>Solute mass: {{ dilution_result.solute_mass_g }} g{% endif %}
+                <button type="button" class="btn btn-outline-secondary btn-sm" onclick="copyToClipboard('#dashboard-dilution-result', this)" style="float: right;">Copy</button>
             </div>
             {% endif %}
         </div>
@@ -85,8 +87,9 @@
                 <button name="action" value="balance_reaction">Balance Reaction</button>
             </div>
             {% if reaction_result %}
-            <div class="dashboard-result">
+            <div class="dashboard-result" id="dashboard-reaction-result">
                 <strong>Result:</strong> {{ reaction_result|safe }}
+                <button type="button" class="btn btn-outline-secondary btn-sm" onclick="copyToClipboard('#dashboard-reaction-result', this)" style="float: right;">Copy</button>
             </div>
             {% endif %}
         </div>

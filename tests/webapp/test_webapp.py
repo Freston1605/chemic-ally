@@ -226,6 +226,25 @@ class ViewTests(TestCase):
             response.context["result"]["property"], "Initial Volume"
         )
 
+    def test_dilution_view_post_missing_c2_returns_requested_unit(self):
+        data = {
+            "c1": "1",
+            "c1_unit": "mol/L",
+            "v1": "1",
+            "v1_unit": "L",
+            "c2": "",
+            "c2_unit": "mol/L",
+            "v2": "2",
+            "v2_unit": "L",
+        }
+        response = self.client.post(reverse("dilution"), data)
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(
+            response.context["result"]["property"], "Final Concentration"
+        )
+        self.assertAlmostEqual(response.context["result"]["value"], 0.5)
+        self.assertEqual(response.context["result"]["unit"], "mol/L")
+
 
 class ContextProcessorTests(TestCase):
     def setUp(self):

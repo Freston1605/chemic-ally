@@ -1,0 +1,73 @@
+{% comment %}
+Tag input field partial for chemical formulas.
+Renders a container that the SubstanceTagInput JS widget transforms into
+a tag/chip input with autocomplete.
+
+Usage:
+  {% include 'webapp/calculator/_tag_input_field.html' with field=field %}
+{% endcomment %}
+<div class="mb-4">
+  {# 1. Point the label to the VISIBLE input #}
+  <label for="fallback-{{ field.name }}" class="form-label">{{ field.label }}</label>
+  
+  <div class="substance-tag-wrapper" style="position:relative;">
+    <div
+      id="tag-container-{{ field.name }}"
+      class="substance-tag-container-init"
+      data-field-name="{{ field.name }}"
+      data-placeholder="{{ field.field.widget.attrs.placeholder|default:'Type a substance and press Enter' }}"
+    >
+      <input
+        type="text"
+        class="substance-tag-fallback form-control"
+        id="fallback-{{ field.name }}"
+        name="{{ field.name }}"
+        placeholder="{{ field.field.widget.attrs.placeholder|default:'Type a substance and press Enter' }}"
+        value="{{ field.value|default:'' }}"
+        autocomplete="off"
+      />
+    </div>
+
+    {# 2. This remains hidden for JS to seed from, but isn't linked to the label #}
+    <input
+      type="hidden"
+      id="{{ field.id_for_label }}"
+      value="{{ field.value|default:'' }}"
+    />
+  </div>
+  {% for error in field.errors %}
+    <div class="form-text text-danger">{{ error }}</div>
+  {% endfor %}
+  {% if field.help_text %}
+    <small class="text-muted">{{ field.help_text }}</small>
+  {% endif %}
+</div>
+
+<script>
+  (function() {
+    function init() {
+      if (typeof window.SubstanceTagInput === 'undefined') {
+        setTimeout(init, 50);
+        return;
+      }
+      var container = document.getElementById('tag-container-{{ field.name }}');
+      if (!container || container.dataset.initialized) return;
+      container.dataset.initialized = 'true';
+      // Use the `name` option so the widget creates its own hidden input
+      // with the correct name attribute (the static hidden has no name,
+      // to avoid conflicts when JS fails to load and only the fallback
+      // text field — which has the name — submits the data).
+      var widget = new window.SubstanceTagInput(container, {
+        name: '{{ field.name }}',
+        placeholder: container.dataset.placeholder || 'Type a substance and press Enter'
+      });
+      // Transfer initial value from the static hidden input into the
+      // widget's newly-created hidden input.
+      var oldHidden = document.getElementById('{{ field.id_for_label }}');
+      if (oldHidden && oldHidden.value) {
+        widget.setTags(oldHidden.value.split(/\s+/).filter(Boolean));
+      }
+    }
+    init();
+  })();
+</script>

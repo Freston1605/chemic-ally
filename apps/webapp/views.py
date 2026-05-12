@@ -1,3 +1,5 @@
+import logging
+
 from abc import ABC, abstractmethod
 
 from django.contrib import messages
@@ -7,14 +9,16 @@ from django.views.generic.edit import FormView
 from django.views import View
 from django.shortcuts import render, redirect
 
+import pint
+
 from .calculations.base import (
     DilutionCalculator,
     MolecularWeightCalculator,
     ReactionBalancer,
 )
+from .calculations.units import Q_
 from .forms import ChemicalReactionForm, MolecularFormulaForm, SolutionForm
 from .utils import add_previous_substances
-import pint
 
 
 class LandingPage(TemplateView):
@@ -207,12 +211,49 @@ class BalanceChemicalReaction(BaseCalculateView):
 
 class CalculateDilutionView(BaseCalculateView):
     """
-    A view for calculating dilutions in chemistry.
-    Inherits from BaseCalculateView.
+    View for performing dilution calculations (C₁V₁ = C₂V₂).
+
+    Accepts three of the four variables (initial concentration, initial volume,
+    final concentration, final volume) and computes the missing one. Supports
+    unit-aware arithmetic via Pint, and optionally calculates solute mass when a
+    molecular weight or solute formula is provided.
+
+    Attributes:
+        template_name (str): The template used to render the dilution form.
+        form_class (Type[SolutionForm]): The form class for dilution input.
+
+    Args:
+        BaseCalculateView (Type[BaseCalculateView]):
+            Base class for form-driven calculator views.
     """
 
     template_name = "webapp/calculator/dilution.html"
     form_class = SolutionForm
+
+    def get_context_data(self, **kwargs):
+        """
+        Extend the template context with structured dilution field data.
+
+        Each field is paired with its unit selector so the template can render
+        them as a single grouped row.
+
+        Args:
+            **kwargs: Additional keyword arguments passed to the parent
+                      ``get_context_data``.
+
+        Returns:
+            dict: The enriched context dictionary containing a
+                  ``dilution_fields`` list.
+        """
+        context = super().get_context_data(**kwargs)
+        form = context.get("form") or self.get_form()
+        context["dilution_fields"] = [
+            {"field": form["c1"], "unit": form["c1_unit"]},
+            {"field": form["v1"], "unit": form["v1_unit"]},
+            {"field": form["c2"], "unit": form["c2_unit"]},
+            {"field": form["v2"], "unit": form["v2_unit"]},
+        ]
+        return context
 
     def process_calculation(self, form: SolutionForm):
         """
@@ -230,8 +271,6 @@ class CalculateDilutionView(BaseCalculateView):
         try:
             molecular_weight = cd.get("molecular_weight")
             solute_formula = cd.get("solute")
-
-            from .utils.units import Q_
 
             unit_map = {
                 "c1": cd.get("c1_unit"),
@@ -271,8 +310,21 @@ class CalculateDilutionView(BaseCalculateView):
                 return None
 
             missing_value = result["missing_value"]
-            if hasattr(missing_value, "to_compact"):
-                missing_value = missing_value.to_compact()
+            unit_label_map = {
+                "c1": dict(form.fields["c1_unit"].choices)[unit_map["c1"]],
+                "v1": dict(form.fields["v1_unit"].choices)[unit_map["v1"]],
+                "c2": dict(form.fields["c2_unit"].choices)[unit_map["c2"]],
+                "v2": dict(form.fields["v2_unit"].choices)[unit_map["v2"]],
+            }
+            display_unit = unit_label_map[missing_prop]
+
+            if hasattr(missing_value, "to"):
+                desired_unit = unit_map[missing_prop]
+                try:
+                    missing_value = missing_value.to(desired_unit)
+                except Exception:
+                    missing_value = missing_value.to_compact()
+                    display_unit = str(missing_value.units)
 
             labels = [
                 "Initial Concentration",
@@ -280,12 +332,6 @@ class CalculateDilutionView(BaseCalculateView):
                 "Final Concentration",
                 "Final Volume",
             ]
-            unit_label_map = {
-                "c1": dict(form.fields["c1_unit"].choices)[unit_map["c1"]],
-                "v1": dict(form.fields["v1_unit"].choices)[unit_map["v1"]],
-                "c2": dict(form.fields["c2_unit"].choices)[unit_map["c2"]],
-                "v2": dict(form.fields["v2_unit"].choices)[unit_map["v2"]],
-            }
             result_dict = {
                 "property": labels[["c1", "v1", "c2", "v2"].index(missing_prop)],
                 "value": (
@@ -293,7 +339,7 @@ class CalculateDilutionView(BaseCalculateView):
                     if hasattr(missing_value, "magnitude")
                     else float(missing_value)
                 ),
-                "unit": unit_label_map[missing_prop],
+                "unit": display_unit,
             }
 
             if "mass_g" in result and result["mass_g"] is not None:
@@ -305,14 +351,24 @@ class CalculateDilutionView(BaseCalculateView):
             return result_dict
 
         except Exception as e:
-            import logging
-
             logging.exception("Dilution calculation failed:")
             messages.error(self.request, f"Calculation error: {str(e)}")
             return None
 
 
 def make_json_safe(obj):
+    """
+    Recursively convert Pint quantities and other non-JSON-serializable types
+    to plain Python types.
+
+    Args:
+        obj: A value that may contain ``pint.Quantity`` instances, dicts,
+             or lists.
+
+    Returns:
+        The same structure with all ``pint.Quantity`` values converted to
+        ``float`` magnitudes.
+    """
     if isinstance(obj, pint.Quantity):
         return float(obj.magnitude)
     if isinstance(obj, dict):
@@ -323,14 +379,63 @@ def make_json_safe(obj):
 
 
 class DashboardView(View):
+    """
+    All-in-one dashboard view that consolidates molecular weight, dilution, and
+    reaction balancing calculations into a single page.
+
+    The dashboard stores its last-used values and results in the user's session
+    so that the form is repopulated across requests. A ``reset`` action clears
+    the session data and redirects to a clean dashboard.
+
+    Attributes:
+        template_name (str): The template used to render the dashboard page.
+
+    Args:
+        View (Type[View]): Django's base class-based view.
+    """
+
     template_name = "webapp/dashboard.html"
 
     def get(self, request):
+        """
+        Render the dashboard with previously stored session data.
+
+        Retrieves the ``dashboard_context`` dict from the session (if any) and
+        passes it to the template as the initial context.
+
+        Args:
+            request (HttpRequest): The incoming GET request.
+
+        Returns:
+            HttpResponse: The rendered dashboard page.
+        """
         # Render the dashboard with any session-persisted data
         context = request.session.get('dashboard_context', {})
         return render(request, self.template_name, context)
 
     def post(self, request):
+        """
+        Process a dashboard action and return the updated page.
+
+        Supported actions:
+            - ``calc_mw``: Calculate molecular weight for the given formula.
+            - ``use_mw``: Calculate molecular weight and copy the result into
+              the dilution molecular weight field.
+            - ``calc_dilution``: Perform a C₁V₁ = C₂V₂ dilution calculation.
+            - ``balance_reaction``: Balance the provided chemical reaction.
+            - ``reset``: Clear session data and redirect to a clean dashboard.
+
+        After processing, the context is saved to the session for persistence
+        and serialized via :func:`make_json_safe` to ensure JSON compatibility.
+
+        Args:
+            request (HttpRequest): The incoming POST request containing the
+                                   form fields and an ``action`` parameter.
+
+        Returns:
+            HttpResponse: The rendered dashboard page, or a redirect for the
+                          ``reset`` action.
+        """
         context = {}
         action = request.POST.get('action')
         # Always repopulate fields
