@@ -94,6 +94,100 @@ class ChemicalReactionForm(forms.Form):
         return cleaned_data
 
 
+class EquilibriumSystemForm(forms.Form):
+    """
+    Form for defining a coupled chemical equilibrium system.
+
+    Users specify:
+    - substances involved (via tag-input)
+    - chemical equations with equilibrium constants
+    - initial concentrations for each substance
+    - solvent and its concentration (defaults: H2O, 55.4 M)
+    """
+
+    substances = forms.CharField(
+        max_length=500,
+        label="Substances",
+        help_text="Enter all chemical species involved in the system.",
+        widget=forms.TextInput(
+            attrs={"placeholder": "HCO3- H+ CO3-2 H2CO3 OH- H2O"}
+        ),
+    )
+    equations = forms.CharField(
+        label="Equilibrium Equations",
+        help_text=(
+            "One equation per line. Format: reactants = products; K_value\n"
+            'Example: <code>HCO3- = H+ + CO3-2; 10**-10.3</code>'
+        ),
+        widget=forms.Textarea(
+            attrs={
+                "rows": 5,
+                "placeholder": (
+                    "HCO3- = H+ + CO3-2; 10**-10.3\n"
+                    "H2CO3 = H+ + HCO3-; 10**-6.3\n"
+                    "H2O = H+ + OH-; 10**-14/55.4"
+                ),
+                "class": "form-control font-monospace",
+            }
+        ),
+    )
+    concentrations = forms.CharField(
+        required=False,
+        widget=forms.HiddenInput(),
+        label="Concentrations (JSON)",
+        help_text="JSON object mapping substance → initial concentration in mol/L",
+    )
+    solvent = forms.CharField(
+        max_length=20,
+        initial="H2O",
+        required=False,
+        label="Solvent",
+        help_text="Chemical formula of the solvent (default: H2O).",
+        widget=forms.TextInput(attrs={"placeholder": "H2O"}),
+    )
+    solvent_concentration = forms.FloatField(
+        initial=55.4,
+        required=False,
+        label="Solvent concentration (mol/L)",
+        help_text="Concentration of the solvent in mol/L (default: 55.4 for water).",
+        widget=forms.NumberInput(attrs={"step": "any", "placeholder": "55.4"}),
+    )
+
+    def clean_equations(self):
+        equations = self.cleaned_data.get("equations", "")
+        lines = [line.strip() for line in equations.split("\n") if line.strip()]
+        if not lines:
+            raise forms.ValidationError("At least one equilibrium equation is required.")
+
+        for i, line in enumerate(lines, 1):
+            if ";" not in line:
+                raise forms.ValidationError(
+                    f"Line {i}: Each equation must include an equilibrium constant "
+                    f"after a semicolon. Example: HCO3- = H+ + CO3-2; 10**-10.3"
+                )
+            if "=" not in line.split(";")[0]:
+                raise forms.ValidationError(
+                    f"Line {i}: Each equation must contain '=' between reactants "
+                    f"and products."
+                )
+
+        return lines
+
+    def clean_concentrations(self):
+        data = self.cleaned_data.get("concentrations", "")
+        if not data:
+            return {}
+        import json
+        try:
+            parsed = json.loads(data)
+            if not isinstance(parsed, dict):
+                raise forms.ValidationError("Concentrations must be a JSON object.")
+            # Convert all values to float
+            return {k: float(v) for k, v in parsed.items()}
+        except (json.JSONDecodeError, ValueError, TypeError) as e:
+            raise forms.ValidationError(f"Invalid concentrations JSON: {e}")
+
+
 class SolutionForm(forms.Form):
     """
     Django form for capturing a simple dilution with an initial and final state.

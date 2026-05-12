@@ -8,7 +8,13 @@ from webapp.calculations.base import (
     ReactionBalancer,
     DilutionCalculator,
 )
-from webapp.forms import MolecularFormulaForm, ChemicalReactionForm, SolutionForm
+from webapp.calculations.equilibria import EquilibriaCalculator
+from webapp.forms import (
+    ChemicalReactionForm,
+    EquilibriumSystemForm,
+    MolecularFormulaForm,
+    SolutionForm,
+)
 
 settings.SECRET_KEY = "test"
 
@@ -261,6 +267,216 @@ class ContextProcessorTests(TestCase):
         self.client.post(reverse('molecular_weight'), {'formula': 'CO2'})
         session = self.client.session
         self.assertIn('CO2', session['previous_substances'])
+
+
+
+class EquilibriaCalculatorTests(SimpleTestCase):
+    """Tests for the EquilibriaCalculator backend."""
+
+    def setUp(self):
+        self.calc = EquilibriaCalculator()
+
+    def test_carbonate_example(self):
+        """Reproduce the example from the issue: carbonate/bicarbonate system."""
+        equations = [
+            "HCO3- = H+ + CO3-2; 10**-10.3",
+            "H2CO3 = H+ + HCO3-; 10**-6.3",
+            "H2O = H+ + OH-; 10**-14/55.4",
+        ]
+        concentrations = {"HCO3-": 1e-2}
+        result = self.calc.calculate(
+            equations=equations,
+            concentrations=concentrations,
+            solvent="H2O",
+            solvent_concentration=55.4,
+        )
+
+        self.assertTrue(result["success"])
+        self.assertIsNotNone(result["ph"])
+        # Expected pH ~8.30 from the example
+        self.assertAlmostEqual(result["ph"], 8.30, places=2)
+        self.assertIn("H+", result["species"])
+        self.assertIn("HCO3-", result["species"])
+        self.assertIn("CO3-2", result["species"])
+        self.assertIn("OH-", result["species"])
+        self.assertTrue(result["species"]["H2O"] > 0)
+
+    def test_simple_acid(self):
+        """A simple monoprotic weak acid (acetic acid)."""
+        equations = [
+            "CH3COOH = H+ + CH3COO-; 10**-4.76",
+            "H2O = H+ + OH-; 10**-14/55.4",
+        ]
+        concentrations = {"CH3COOH": 0.1}
+        result = self.calc.calculate(
+            equations=equations,
+            concentrations=concentrations,
+            solvent="H2O",
+            solvent_concentration=55.4,
+        )
+
+        self.assertTrue(result["success"])
+        self.assertIsNotNone(result["ph"])
+        # Acetic acid 0.1 M: pH ~2.88
+        self.assertAlmostEqual(result["ph"], 2.88, places=1)
+
+    def test_no_success_on_bad_equation(self):
+        """Malformed equation should return success=False."""
+        equations = [
+            "this is not valid; 10**-5",
+        ]
+        concentrations = {"H2O": 55.4}
+        result = self.calc.calculate(
+            equations=equations,
+            concentrations=concentrations,
+        )
+        self.assertFalse(result["success"])
+        self.assertIn("error", result)
+
+    def test_ph_none_without_hplus(self):
+        """If H+ is not a species, pH should be None."""
+        equations = [
+            "AgCl(s) = Ag+ + Cl-; 10**-9.75",
+        ]
+        concentrations = {"AgCl(s)": 1.0}
+        result = self.calc.calculate(
+            equations=equations,
+            concentrations=concentrations,
+        )
+        self.assertTrue(result["success"])
+        self.assertIsNone(result["ph"])
+
+    def test_empty_equations(self):
+        """Empty equations list should fail."""
+        result = self.calc.calculate(
+            equations=[],
+            concentrations={"H2O": 55.4},
+        )
+        self.assertFalse(result["success"])
+
+    def test_water_autoionization(self):
+        """Pure water: pH should be 7."""
+        equations = [
+            "H2O = H+ + OH-; 10**-14/55.4",
+        ]
+        concentrations = {}
+        result = self.calc.calculate(
+            equations=equations,
+            concentrations=concentrations,
+            solvent="H2O",
+            solvent_concentration=55.4,
+        )
+        self.assertTrue(result["success"])
+        self.assertIsNotNone(result["ph"])
+        self.assertAlmostEqual(result["ph"], 7.0, places=1)
+
+    def test_sane_flag(self):
+        """The sane flag should be a boolean."""
+        equations = [
+            "H2O = H+ + OH-; 10**-14/55.4",
+        ]
+        concentrations = {}
+        result = self.calc.calculate(
+            equations=equations,
+            concentrations=concentrations,
+        )
+        self.assertIn("sane", result)
+        self.assertIsInstance(result["sane"], bool)
+
+
+class EquilibriumFormTests(SimpleTestCase):
+    """Tests for the EquilibriumSystemForm."""
+
+    def test_valid_form(self):
+        form = EquilibriumSystemForm({
+            "substances": "HCO3- H+ CO3-2 H2CO3 OH- H2O",
+            "equations": (
+                "HCO3- = H+ + CO3-2; 10**-10.3\n"
+                "H2CO3 = H+ + HCO3-; 10**-6.3\n"
+                "H2O = H+ + OH-; 10**-14/55.4"
+            ),
+            "concentrations": '{"HCO3-": 0.01}',
+            "solvent": "H2O",
+            "solvent_concentration": 55.4,
+        })
+        self.assertTrue(form.is_valid())
+        self.assertEqual(len(form.cleaned_data["equations"]), 3)
+
+    def test_missing_equations(self):
+        form = EquilibriumSystemForm({
+            "substances": "H2O H+ OH-",
+            "equations": "",
+        })
+        self.assertFalse(form.is_valid())
+        self.assertIn("equations", form.errors)
+
+    def test_equation_missing_semicolon(self):
+        form = EquilibriumSystemForm({
+            "substances": "H2O H+ OH-",
+            "equations": "H2O = H+ + OH-",
+        })
+        self.assertFalse(form.is_valid())
+        self.assertIn("equations", form.errors)
+
+    def test_equation_missing_equals(self):
+        form = EquilibriumSystemForm({
+            "substances": "H2O H+ OH-",
+            "equations": "H2O; 10**-14",
+        })
+        self.assertFalse(form.is_valid())
+        self.assertIn("equations", form.errors)
+
+    def test_invalid_concentrations_json(self):
+        form = EquilibriumSystemForm({
+            "substances": "H2O H+ OH-",
+            "equations": "H2O = H+ + OH-; 10**-14",
+            "concentrations": "not-json",
+        })
+        self.assertFalse(form.is_valid())
+        self.assertIn("concentrations", form.errors)
+
+
+class EquilibriaViewTests(TestCase):
+    """Tests for the CalculateEquilibriaView."""
+
+    def setUp(self):
+        self.client = Client()
+
+    def test_equilibria_view_get(self):
+        response = self.client.get(reverse("equilibria"))
+        self.assertEqual(response.status_code, 200)
+        self.assertTemplateUsed(response, "webapp/calculator/equilibria.html")
+
+    def test_equilibria_view_post_valid(self):
+        data = {
+            "substances": "HCO3- H+ CO3-2 H2CO3 OH- H2O",
+            "equations": (
+                "HCO3- = H+ + CO3-2; 10**-10.3\n"
+                "H2CO3 = H+ + HCO3-; 10**-6.3\n"
+                "H2O = H+ + OH-; 10**-14/55.4"
+            ),
+            "concentrations": '{"HCO3-": 0.01}',
+            "solvent": "H2O",
+            "solvent_concentration": 55.4,
+        }
+        response = self.client.post(reverse("equilibria"), data)
+        self.assertEqual(response.status_code, 200)
+        result = response.context.get("result")
+        self.assertIsNotNone(result)
+        self.assertTrue(result.get("success", False))
+        self.assertIsNotNone(result.get("ph"))
+
+    def test_equilibria_view_post_invalid(self):
+        data = {
+            "substances": "H2O H+ OH-",
+            "equations": "",
+        }
+        response = self.client.post(reverse("equilibria"), data)
+        self.assertEqual(response.status_code, 200)
+        # Should re-render form with errors
+        form = response.context.get("form")
+        self.assertIsNotNone(form)
+        self.assertFalse(form.is_valid())
 
 
 class LoggingConfigTests(SimpleTestCase):

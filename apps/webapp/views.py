@@ -16,8 +16,14 @@ from .calculations.base import (
     MolecularWeightCalculator,
     ReactionBalancer,
 )
+from .calculations.equilibria import EquilibriaCalculator
 from .calculations.units import Q_
-from .forms import ChemicalReactionForm, MolecularFormulaForm, SolutionForm
+from .forms import (
+    ChemicalReactionForm,
+    EquilibriumSystemForm,
+    MolecularFormulaForm,
+    SolutionForm,
+)
 from .utils import add_previous_substances
 
 
@@ -354,6 +360,82 @@ class CalculateDilutionView(BaseCalculateView):
             logging.exception("Dilution calculation failed:")
             messages.error(self.request, f"Calculation error: {str(e)}")
             return None
+
+
+
+class CalculateEquilibriaView(BaseCalculateView):
+    """
+    View for solving coupled chemical equilibria in solution.
+
+    Accepts a set of equilibrium equations with constants and initial
+    concentrations, then computes the equilibrium composition using
+    chempy's EqSystem.
+
+    Attributes:
+        template_name (str): The template used to render the equilibria form.
+        form_class (Type[EquilibriumSystemForm]): The form class for input.
+
+    Args:
+        BaseCalculateView (Type[BaseCalculateView]):
+            Base class for form-driven calculator views.
+    """
+
+    template_name = "webapp/calculator/equilibria.html"
+    form_class = EquilibriumSystemForm
+
+    def process_calculation(self, form: EquilibriumSystemForm) -> dict:
+        """
+        Solve the equilibrium system from cleaned form data.
+
+        Args:
+            form: The validated EquilibriumSystemForm instance.
+
+        Returns:
+            dict with keys:
+            - ph: float or None
+            - species: dict of equilibrium concentrations
+            - sane: bool
+            - info: dict with solver metadata
+            - success: bool
+            - error: str (only on failure)
+        """
+        cd = form.cleaned_data
+        equations = cd["equations"]
+        concentrations = cd.get("concentrations", {})
+        solvent = cd.get("solvent") or "H2O"
+        solvent_conc = cd.get("solvent_concentration") or 55.4
+
+        calculator = EquilibriaCalculator()
+        result = calculator.calculate(
+            equations=equations,
+            concentrations=concentrations,
+            solvent=solvent,
+            solvent_concentration=solvent_conc,
+        )
+
+        if result.get("success"):
+            # Save substances to session autocomplete
+            substances = list(result.get("species", {}).keys())
+            if substances:
+                add_previous_substances(self.request, substances)
+            # Also save equations-derived substances
+            eq_substances = set()
+            for eq in equations:
+                parts = eq.split(";")[0]
+                for side in parts.split("="):
+                    for s in side.split("+"):
+                        s = s.strip()
+                        if s:
+                            eq_substances.add(s)
+            if eq_substances:
+                add_previous_substances(self.request, eq_substances)
+        else:
+            messages.error(
+                self.request,
+                f"Equilibria calculation failed: {result.get('error', 'Unknown error')}",
+            )
+
+        return result
 
 
 def make_json_safe(obj):

@@ -182,5 +182,6 @@ CALCULATION_REGISTRY = {
     "molecular_weight": MolecularWeightCalculator,
     "reaction_balancer": ReactionBalancer,
     "dilution": DilutionCalculator,
+    "equilibria": "EquilibriaCalculator",  # imported lazily to avoid circular import
     # Add more calculators here
 }

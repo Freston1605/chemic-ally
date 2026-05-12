@@ -51,13 +51,30 @@
     "OH-", "Cl-", "Br-", "I-", "F-", "O2-", "S2-", "N3-", "P3-",
     "NO3-", "NO2-", "SO4-2", "SO3-2", "CO3-2", "PO4-3", "ClO4-", "ClO3-",
     "MnO4-", "Cr2O7-2", "C2O4-2", "CH3COO-", "HCO3-", "HSO4-",
+    // Conjugate bases / acid-related ions
+    "H2PO4-", "HPO4-2", "H2AsO4-", "HAsO4-2",
+    "HS-", "S-2", "HSe-", "Se-2", "HTe-", "Te-2",
+    "CN-", "OCN-", "SCN-", "BO3-3", "B4O7-2",
+    "SiO3-2", "CrO4-2", "Cr2O7-2", "WO4-2", "MoO4-2",
+    "VO3-", "VO4-3", "MnO4-2", "ReO4-",
+    // Organic ions / biochemical
+    "CH3COO-", "C2O4-2", "HCOO-", "C6H5COO-",
+    "C6H5O-", "C6H5NH3+", "CH3NH3+", "(CH3)2NH2+",
+    "H2NCH2COO-", "C5H5NH+",  // glycinate, pyridinium
     // Common compounds (inorganic)
     "H2O", "H2O2", "D2O", "NH3", "N2H4", "NO", "NO2", "N2O", "N2O3", "N2O4", "N2O5",
     "HNO3", "HNO2", "CO", "CO2", "H2CO3", "CH4", "C2H6", "C2H4", "C2H2",
     "H2SO4", "H2SO3", "SO2", "SO3", "H2S", "SF6",
     "HCl", "HClO", "HClO2", "HClO3", "HClO4", "HF", "HBr", "HI",
     "H3PO4", "H3PO3", "PH3", "P2O5",
+    // Additional acids for equilibria
+    "H3PO4", "H2PO4-", "HPO4-2", "H3AsO4", "H2SeO4", "H2SeO3",
+    "H2TeO4", "H2TeO3", "H3BO3", "H2SiO3", "H2WO4", "H2MoO4",
+    "H2S2O3", "H2S2O8", "HSCN", "HCN", "HN3", "HNO2",
+    // Bases
     "NaOH", "KOH", "Ca(OH)2", "Mg(OH)2", "Al(OH)3", "NH4OH",
+    "LiOH", "RbOH", "CsOH", "Sr(OH)2", "Ba(OH)2",
+    // Salts
     "NaCl", "KCl", "CaCl2", "MgCl2", "FeCl2", "FeCl3", "AlCl3",
     "Na2CO3", "NaHCO3", "CaCO3", "K2CO3",
     "NaNO3", "KNO3", "Ca(NO3)2", "AgNO3",
@@ -66,30 +83,62 @@
     "NaClO", "NaClO2", "KClO3", "KClO4",
     "KMnO4", "K2Cr2O7", "K2CrO4",
     "NH4Cl", "NH4NO3", "(NH4)2SO4", "(NH4)2CO3",
-    "Na2O", "MgO", "CaO", "Al2O3", "Fe2O3", "Fe3O4", "CuO", "Cu2O", "ZnO",
-    "SiO2", "TiO2", "P2O5", "SO2", "SO3",
-    // Common acids
-    "CH3COOH", "HCOOH", "C6H5COOH", "C2H5OH", "CH3OH",
-    "C6H6", "C6H14", "C8H18",
-    // Organic compounds
-    "CH3CHO", "CH3COCH3", "C2H5OC2H5", "CHCl3", "CCl4",
-    "C2H2O4", "C4H10O", "C5H12", "C6H5OH", "C6H5NH2",
-    // More specific
-    "C6H8O6", // ascorbic acid
-    "C6H8O7", // citric acid
-    "C9H8O4", // aspirin
-    "C8H10N4O2", // caffeine
-    "C21H30O2", // testosterone
-    "H2NCH2COOH", // glycine
-    "H2NC(CH3)2COOH", // alanine
-    "HClO4", "HBrO4", "HIO4",
-    "H2Se", "H2Te",
-    "LiOH", "RbOH", "CsOH", "Sr(OH)2", "Ba(OH)2",
     "NaBr", "NaI", "KF", "KBr", "KI",
     "Na2S", "K2S", "CaS", "FeS", "CuS",
     "NaNO2", "KNO2",
     "Na2SO3", "K2SO3",
     "Na2SiO3", "Na2B4O7",
+    "Na2O", "MgO", "CaO", "Al2O3", "Fe2O3", "Fe3O4", "CuO", "Cu2O", "ZnO",
+    "SiO2", "TiO2", "P2O5", "SO2", "SO3",
+    // Common acids (organic)
+    "CH3COOH", "HCOOH", "C6H5COOH", "C2H5OH", "CH3OH",
+    "CH3CH2COOH", "CH3CH2CH2COOH", "(CH3)2CHCOOH",
+    "CH2ClCOOH", "CHCl2COOH", "CCl3COOH",
+    "CF3COOH", "CH3CHOHCOOH",  // lactic acid
+    "HOOCCOOH", "HOOCCH2COOH", "HOOCCH2CH2COOH",
+    "C6H5CH2COOH", "C6H5OH", "C6H5NH2",
+    // Organic compounds
+    "CH3CHO", "CH3COCH3", "C2H5OC2H5", "CHCl3", "CCl4",
+    "C2H2O4", "C4H10O", "C5H12", "C6H5OH", "C6H5NH2",
+    // Amino acids
+    "H2NCH2COOH",     // glycine
+    "H2NC(CH3)2COOH", // alanine
+    "H2NCH(CH3)COOH", // L-alanine
+    "H2NCH(C4H5N2)COOH", // histidine
+    "H2NCH(CH2C6H5)COOH", // phenylalanine
+    "H2NCH(CH2OH)COOH", // serine
+    "H2NCH(CH2SH)COOH", // cysteine
+    "H2NCH(CH2CH(CH3)2)COOH", // leucine
+    "H2NCH(CH(CH3)2)COOH", // valine
+    "H2NCH(CH2COOH)COOH", // aspartic acid
+    "H2NCH(CH2CH2COOH)COOH", // glutamic acid
+    "H2NCH(CH2CH2CH2CH2NH2)COOH", // lysine
+    "H2NCH(CH2CH2CH2NHCNHNH2)COOH", // arginine
+    "H2NCH(CH2C8H6N)COOH", // tryptophan
+    "H2NCH(CH2C9H6N)COOH", // tryptophan alt
+    // Biochemical compounds
+    "C6H8O6",   // ascorbic acid (Vitamin C)
+    "C6H8O7",   // citric acid
+    "C9H8O4",   // aspirin (acetylsalicylic acid)
+    "C8H10N4O2", // caffeine
+    "C21H30O2",  // testosterone
+    "C10H16N2O8", // EDTA
+    "C10H14N2O5", // thymidine
+    "C9H13N3O5", // guanosine
+    "C9H13N3O5", // adenosine? ambiguous
+    "C10H13N5O4", // adenosine
+    "C5H5N5",     // adenine
+    "C4H5N3O",    // cytosine
+    "C5H5N5O",    // guanine
+    "C4H4N2O2",   // uracil
+    "C5H6N2O2",   // thymine
+    // Additional equilibria-relevant species
+    "H3O+", "e-", "H2O*",
+    "Cu(NH3)4+2", "Ag(NH3)2+", "Fe(CN)6-3", "Fe(CN)6-4",
+    "Ni(CN)4-2", "Co(NH3)6+3", "CuCl4-2", "Zn(NH3)4+2",
+    "Cd(NH3)4+2", "Hg(NH3)2+2", "HgCl4-2",
+    "PtCl4-2", "PdCl4-2", "AuCl4-",
+    "AgCl2-", "AgBr2-", "AgI2-",
   ];
 
   // ── Widget ──
