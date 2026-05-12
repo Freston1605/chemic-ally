@@ -2,6 +2,8 @@ import re
 
 from django import forms
 
+from .calculations.units import Q_
+
 
 class MolecularFormulaForm(forms.Form):
     """
@@ -389,7 +391,7 @@ class SolutionForm(forms.Form):
                     f"The {label.lower()} cannot be equal or lower than zero."
                 )
 
-        from .calculations.units import Q_
+        
 
         if v1 is not None and v2 is not None:
             v1_q = Q_(v1, cleaned_data.get("v1_unit"))
