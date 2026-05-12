@@ -1,3 +1,5 @@
+import re
+
 from django import forms
 
 
@@ -155,7 +157,6 @@ class EquilibriumSystemForm(forms.Form):
         notation in e.g. ``H+``), and returns the set of all unique,
         non-empty, trimmed tokens.
         """
-        import re
         species = set()
         for line in equations_text.split("\n"):
             line = line.strip()
