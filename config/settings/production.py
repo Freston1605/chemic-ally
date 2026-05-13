@@ -1,11 +1,59 @@
-from .base import *
+"""
+Production settings for ChemicAlly.
 
-# SECURITY WARNING: don't run with debug turned on in production!
+Overrides and extends base settings for the production environment.
+Expects all required secrets and credentials to be supplied via
+environment variables (injected by Elastic Beanstalk or equivalent).
+"""
+
+import os
+
+from django.core.exceptions import ImproperlyConfigured
+
+from config.settings.base import (
+    BASE_DIR,
+    INSTALLED_APPS,
+    MIDDLEWARE,
+    TEMPLATES,
+    STATICFILES_DIRS,
+    AUTH_PASSWORD_VALIDATORS,
+    DEFAULT_AUTO_FIELD,
+    LANGUAGE_CODE,
+    TIME_ZONE,
+    USE_I18N,
+    USE_TZ,
+    LOGGING as BASE_LOGGING,
+)
+
+
+# ---------------------------------------------------------------------------
+# Helpers
+# ---------------------------------------------------------------------------
+
+def _required_env(key: str) -> str:
+    """Return the value of *key* or raise a descriptive error.
+
+    Using this helper instead of bare ``os.environ[key]`` ensures the
+    failing setting name is clearly visible in error reports and avoids
+    confusion with other potential ``KeyError`` sources.
+    """
+    try:
+        return os.environ[key]
+    except KeyError:
+        raise ImproperlyConfigured(
+            f"Production setting requires environment variable '{key}' to be set."
+        ) from None
+
+
+# ---------------------------------------------------------------------------
+# Core Django settings
+# ---------------------------------------------------------------------------
+
 DEBUG = False
 
-SECRET_KEY = os.environ["SECRET_KEY"]
+SECRET_KEY = _required_env("SECRET_KEY")
 
-ALLOWED_HOSTS += [
+ALLOWED_HOSTS = [
     ".elasticbeanstalk.com",
     ".chemic-ally.xyz",
 ]
@@ -29,39 +77,42 @@ SESSION_COOKIE_SECURE = True
 
 CSRF_COOKIE_SECURE = True
 
-SECURE_HSTS_SECONDS = 31536000  # 1 year — but start with a smaller value if testing
+SECURE_HSTS_SECONDS = 31536000  # 1 year — start with a smaller value when testing
 SECURE_HSTS_INCLUDE_SUBDOMAINS = True
 SECURE_HSTS_PRELOAD = True
 
 SECURE_CONTENT_TYPE_NOSNIFF = True
-SECURE_BROWSER_XSS_FILTER = True
+
+# X-XSS-Protection header is deliberately omitted — modern browsers have
+# deprecated this feature and Django itself deprecated the related
+# SECURE_BROWSER_XSS_FILTER setting in 5.0.
+
 X_FRAME_OPTIONS = "DENY"
 
 
-# Database
-# https://docs.djangoproject.com/en/5.0/ref/settings/#databases
+# ---------------------------------------------------------------------------
+# Database  (PostgreSQL via AWS RDS)
+# ---------------------------------------------------------------------------
 
 DATABASES = {
     "default": {
         "ENGINE": "django.db.backends.postgresql",
-        "NAME": os.environ["RDS_DB_NAME"],
-        "USER": os.environ["RDS_USERNAME"],
-        "PASSWORD": os.environ["RDS_PASSWORD"],
-        "HOST": os.environ["RDS_HOSTNAME"],
-        "PORT": os.environ["RDS_PORT"],
-        # "CONN_MAX_AGE": 600,
+        "NAME": _required_env("RDS_DB_NAME"),
+        "USER": _required_env("RDS_USERNAME"),
+        "PASSWORD": _required_env("RDS_PASSWORD"),
+        "HOST": _required_env("RDS_HOSTNAME"),
+        "PORT": _required_env("RDS_PORT"),
+        # Persistent connections reduce per-request connection overhead at
+        # the cost of holding a pool of connections open.  The value of 60
+        # seconds matches common Elastic Beanstalk / proxy timeouts.
+        "CONN_MAX_AGE": 60,
     }
 }
 
 
-# STORAGES
-# https://docs.djangoproject.com/en/5.0/ref/settings/#storages
-# Modern configuration using the STORAGES dict (replaces the deprecated
-# STATICFILES_STORAGE / DEFAULT_FILE_STORAGE pattern).
-#
-#  •  Static files  – publicly readable, served through optional CloudFront.
-#  •  Media files   – private, served via temporary signed URLs (1 h TTL).
-#  •  No AWS_DEFAULT_ACL  – S3 bucket policies handle access instead.
+# ---------------------------------------------------------------------------
+# STORAGES  (S3 via django-storages)
+# ---------------------------------------------------------------------------
 
 STORAGES = {
     "default": {
@@ -73,14 +124,13 @@ STORAGES = {
 }
 
 
-
 # ---------------------------------------------------------------------------
 # AWS S3 configuration
 # ---------------------------------------------------------------------------
 
-AWS_ACCESS_KEY_ID = os.environ["AWS_ACCESS_KEY_ID"]
-AWS_SECRET_ACCESS_KEY = os.environ["AWS_SECRET_ACCESS_KEY"]
-AWS_STORAGE_BUCKET_NAME = os.environ["AWS_STORAGE_BUCKET_NAME"]
+AWS_ACCESS_KEY_ID = _required_env("AWS_ACCESS_KEY_ID")
+AWS_SECRET_ACCESS_KEY = _required_env("AWS_SECRET_ACCESS_KEY")
+AWS_STORAGE_BUCKET_NAME = _required_env("AWS_STORAGE_BUCKET_NAME")
 AWS_S3_REGION_NAME = os.environ.get("AWS_S3_REGION_NAME", "us-east-2")
 
 AWS_S3_CUSTOM_DOMAIN = os.environ.get("AWS_S3_CUSTOM_DOMAIN", "") or None
@@ -92,21 +142,38 @@ AWS_S3_VERIFY = True
 AWS_S3_SIGNATURE_VERSION = "s3v4"
 AWS_S3_ADDRESSING_STYLE = "virtual"
 
-# Object-level defaults
-AWS_S3_OBJECT_PARAMETERS = {
-    "CacheControl": "max-age=86400",
-}
-
-# Do not overwrite files with the same name (raise an error instead).
-AWS_S3_FILE_OVERWRITE = False
+# Object-level cache and overwrite behaviour are configured per-backend
+# inside config/storage_backends.py (StaticStorage, MediaStorage) so the
+# module-level AWS_S3_OBJECT_PARAMETERS and AWS_S3_FILE_OVERWRITE are
+# intentionally omitted here.
 
 
-# Static files (CSS, JavaScript, Images)
-# https://docs.djangoproject.com/en/5.0/howto/static-files/
+# ---------------------------------------------------------------------------
+# Static files  (URL)
+# ---------------------------------------------------------------------------
+
 # When AWS_S3_CUSTOM_DOMAIN is set (CloudFront), use it; otherwise fall
 # back to the direct S3 endpoint.
-
 if AWS_S3_CUSTOM_DOMAIN:
     STATIC_URL = f"https://{AWS_S3_CUSTOM_DOMAIN}/static/"
 else:
     STATIC_URL = f"{AWS_S3_ENDPOINT_URL}/{AWS_STORAGE_BUCKET_NAME}/static/"
+
+
+# ---------------------------------------------------------------------------
+# Logging  (production-tuned)
+# ---------------------------------------------------------------------------
+
+LOGGING = {
+    **BASE_LOGGING,
+    "loggers": {
+        # Suppress noisy middleware / health-check chatter at DEBUG/INFO
+        # level.  WARNING and above are still forwarded to the root logger.
+        "django.request": {
+            "level": "WARNING",
+        },
+        "django.security": {
+            "level": "WARNING",
+        },
+    },
+}
