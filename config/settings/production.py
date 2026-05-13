@@ -6,14 +6,36 @@ DEBUG = False
 SECRET_KEY = os.environ["SECRET_KEY"]
 
 ALLOWED_HOSTS += [
-    "chemically-env.eba-pyxp2kzs.us-east-2.elasticbeanstalk.com",
     ".elasticbeanstalk.com",
-    "chemic-ally.xyz",
+    ".chemic-ally.xyz",
 ]
 
 CSRF_TRUSTED_ORIGINS = [
-    "https://chemically-env.eba-pyxp2kzs.us-east-2.elasticbeanstalk.com",
+    "https://*.us-east-2.elasticbeanstalk.com",
+    "https://chemic-ally.xyz",
+    "https://www.chemic-ally.xyz",
 ]
+
+
+# ---------------------------------------------------------------------------
+# HTTPS / SSL Security
+# ---------------------------------------------------------------------------
+
+SECURE_SSL_REDIRECT = True
+
+SECURE_PROXY_SSL_HEADER = ("HTTP_X_FORWARDED_PROTO", "https")
+
+SESSION_COOKIE_SECURE = True
+
+CSRF_COOKIE_SECURE = True
+
+SECURE_HSTS_SECONDS = 31536000  # 1 year — but start with a smaller value if testing
+SECURE_HSTS_INCLUDE_SUBDOMAINS = True
+SECURE_HSTS_PRELOAD = True
+
+SECURE_CONTENT_TYPE_NOSNIFF = True
+SECURE_BROWSER_XSS_FILTER = True
+X_FRAME_OPTIONS = "DENY"
 
 
 # Database
