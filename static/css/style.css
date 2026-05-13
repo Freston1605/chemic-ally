@@ -1,3 +1,106 @@
-/* #jumbotron, #toolgrid {
-    height: 100vh;
-  } */
+/* ============================================================
+   Base layout — flex sticky footer
+   ============================================================ */
+html, body { height: 100%; }
+body { display: flex; flex-direction: column; }
+main { flex: 1 0 auto; }
+footer { flex-shrink: 0; }
+
+/* ============================================================
+   Navbar dropdown — expand leftward to avoid word-breaking
+   ============================================================ */
+/* Desktop: align to the right edge and expand left */
+@media (min-width: 992px) {
+  .navbar .dropdown-menu {
+    right: 0;
+    left: auto;
+    max-width: min(100vw - 2rem, 360px);
+  }
+}
+/* Keep items on one line; only break as last resort */
+.navbar .dropdown-item {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 100%;
+}
+/* On smaller viewports within the dropdown, allow wrapping */
+@media (max-width: 991.98px) {
+  .navbar .dropdown-item {
+    white-space: normal;
+    overflow-wrap: break-word;
+  }
+}
+
+/* ============================================================
+   Calculator card animations
+   ============================================================ */
+.form-card-col {
+  animation: formSlideLeft 0.4s ease-out;
+}
+.result-card {
+  animation: resultFadeIn 0.4s ease-out;
+}
+@keyframes formSlideLeft {
+  from { transform: translateX(8px); }
+  to   { transform: translateX(0); }
+}
+@keyframes resultFadeIn {
+  from { opacity: 0; transform: translateY(12px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+/* ============================================================
+   Chemical Equilibria — wider form card
+   ============================================================ */
+@media (min-width: 992px) {
+  .form-card-col {
+    flex: 0 0 auto;
+    width: 75%;
+  }
+}
+@media (min-width: 1400px) {
+  .form-card-col {
+    flex: 0 0 auto;
+    width: 66.66666667%;
+  }
+}
+
+/* ============================================================
+   Chemical Equilibria — table layout
+   ============================================================ */
+#calculator-form {
+  max-width: 100%;
+  overflow: hidden;
+}
+#reactions-table {
+  table-layout: fixed;
+}
+#reactions-table input.form-control,
+#reactions-table select.form-select {
+  max-width: 100%;
+  min-width: 0;
+  width: 100%;
+}
+#concentration-table {
+  table-layout: fixed;
+}
+#concentration-table input.form-control,
+#concentration-table select.form-select {
+  max-width: 100%;
+  min-width: 0;
+  width: 100%;
+}
+.form-card-col .card-body {
+  overflow: hidden;
+}
+
+/* ============================================================
+   Chemical Equilibria — help text wrapping
+   ============================================================ */
+.text-muted,
+.form-text {
+  word-wrap: break-word;
+  overflow-wrap: break-word;
+  hyphens: auto;
+}

@@ -3,26 +3,6 @@
 
 {% block calculator_title %}Chemical Equilibria Calculator{% endblock %}
 
-{% block extra_head %}
-{{ block.super }}
-<style>
-  /* Widen the form card for the equilibria page — the reaction table
-     and concentration table with unit selectors need more horizontal space. */
-  @media (min-width: 992px) {
-    .form-card-col {
-      flex: 0 0 auto;
-      width: 75%;
-    }
-  }
-  @media (min-width: 1400px) {
-    .form-card-col {
-      flex: 0 0 auto;
-      width: 66.66666667%;
-    }
-  }
-</style>
-{% endblock %}
-
 {% block calculator_form %}
 <form method="post" action="{% url 'equilibria' %}" id="calculator-form">
   {% csrf_token %}
