@@ -11,7 +11,7 @@ ALLOWED_HOSTS += [
 ]
 
 CSRF_TRUSTED_ORIGINS = [
-    "https://*.us-east-2.elasticbeanstalk.com",
+    "https://*.elasticbeanstalk.com",
     "https://chemic-ally.xyz",
     "https://www.chemic-ally.xyz",
 ]
