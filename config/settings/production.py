@@ -34,7 +34,7 @@ DEBUG = False
 
 SECRET_KEY = _required_env("SECRET_KEY")
 
-ALLOWED_HOSTS = [
+ALLOWED_HOSTS += [
     ".elasticbeanstalk.com",
     ".chemic-ally.xyz",
 ]
