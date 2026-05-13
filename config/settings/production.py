@@ -8,6 +8,7 @@ environment variables (injected by Elastic Beanstalk or equivalent).
 
 import os
 from django.core.exceptions import ImproperlyConfigured
+from config.settings.base import *
 from config.settings.base import LOGGING as BASE_LOGGING
 
 
