@@ -10,20 +10,7 @@ import os
 
 from django.core.exceptions import ImproperlyConfigured
 
-from config.settings.base import (
-    BASE_DIR,
-    INSTALLED_APPS,
-    MIDDLEWARE,
-    TEMPLATES,
-    STATICFILES_DIRS,
-    AUTH_PASSWORD_VALIDATORS,
-    DEFAULT_AUTO_FIELD,
-    LANGUAGE_CODE,
-    TIME_ZONE,
-    USE_I18N,
-    USE_TZ,
-    LOGGING as BASE_LOGGING,
-)
+from config.settings.base import LOGGING as BASE_LOGGING
 
 
 # ---------------------------------------------------------------------------
