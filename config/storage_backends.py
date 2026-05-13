@@ -17,15 +17,20 @@ from storages.backends.s3boto3 import S3Boto3Storage
 class StaticStorage(S3Boto3Storage):
     """Storage backend for collectstatic assets.
 
-    Files are stored under ``static/`` in the bucket and are publicly
-    readable.  A generous cache TTL is applied because these assets
-    change infrequently (on deploy).
+    Files are stored under ``static/`` in the bucket. A generous cache 
+    TTL is applied because these assets change infrequently (on deploy).
     """
 
     location = "static"
     file_overwrite = True
     querystring_auth = False
-    custom_domain = settings.AWS_S3_CUSTOM_DOMAIN or None
+    
+    # Use getattr to prevent crashes if the setting is ever removed
+    custom_domain = getattr(settings, "AWS_S3_CUSTOM_DOMAIN", None)
+    
+    # CRITICAL: Modern S3 buckets block ACLs by default. 
+    # This prevents 403 Access Denied errors during collectstatic.
+    default_acl = None 
 
     def __init__(self, *args, **kwargs):
         kwargs.setdefault("object_parameters", {"CacheControl": "max-age=31536000"})
@@ -35,9 +40,9 @@ class StaticStorage(S3Boto3Storage):
 class MediaStorage(S3Boto3Storage):
     """Storage backend for user-uploaded media files.
 
-    Files are stored under ``media/`` in the bucket.  They are *not*
-    publicly readable; access is granted via temporary signed URLs
-    (querystring authentication) that expire after one hour.
+    Files are stored under ``media/`` in the bucket. Access is granted 
+    via temporary signed URLs (querystring authentication) that expire 
+    after one hour.
     """
 
     location = "media"
@@ -45,8 +50,10 @@ class MediaStorage(S3Boto3Storage):
     querystring_auth = True
     querystring_expire = 3600  # 1 hour
     custom_domain = None  # always use signed URLs, never a public CDN
+    
+    # Explicitly disable ACLs to respect modern S3 "Bucket Owner Enforced" settings.
+    default_acl = None 
 
     def __init__(self, *args, **kwargs):
         kwargs.setdefault("object_parameters", {"CacheControl": "max-age=86400"})
         super().__init__(*args, **kwargs)
-        
