@@ -1,3 +1,9 @@
 [flake8]
 max-line-length = 88
 extend-ignore = E203, W503
+exclude = .venv,.git,__pycache__,.pytest_cache,*/migrations/*
+per-file-ignores =
+    config/settings/development.py: F405
+    config/settings/production.py: F405
+
+

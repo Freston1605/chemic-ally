@@ -8,7 +8,7 @@ environment variables (injected by Elastic Beanstalk or equivalent).
 
 import os
 from django.core.exceptions import ImproperlyConfigured
-from config.settings.base import *
+from config.settings.base import *  # noqa: F403
 from config.settings.base import LOGGING as BASE_LOGGING
 
 
@@ -79,7 +79,8 @@ DATABASES = {
         "PORT": _required_env("RDS_PORT"),
         "CONN_MAX_AGE": 60,
         # Ensures stale connections don't crash requests (Requires Django 4.1+)
-        "CONN_HEALTH_CHECKS": True, 
+        "CONN_HEALTH_CHECKS": True,
+
     }
 }
 
@@ -102,8 +103,9 @@ STORAGES = {
 # AWS S3 configuration
 # ---------------------------------------------------------------------------
 
-# Use .get() for keys. In AWS, the EC2 instance running your app should use an IAM Instance 
-# Profile to access S3 automatically, rather than hardcoding access keys in env vars.
+# Use .get() for keys. In AWS, the EC2 instance running your app should
+# use an IAM Instance Profile to access S3 automatically, rather than
+# hardcoding access keys in env vars.
 AWS_ACCESS_KEY_ID = os.environ.get("AWS_ACCESS_KEY_ID")
 AWS_SECRET_ACCESS_KEY = os.environ.get("AWS_SECRET_ACCESS_KEY")
 

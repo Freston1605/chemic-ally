@@ -1,7 +1,6 @@
 import pytest
-from django.core.exceptions import ValidationError
 from django.db import IntegrityError
-from hplc_simulator.models import Analyte, Level, UserScore, LevelProgress
+from hplc_simulator.models import Level, UserScore, LevelProgress
 
 
 @pytest.fixture
@@ -21,8 +20,14 @@ def sample_level(db):
 def valid_score_data():
     return {
         'mobile_phase': {'start_b': 5, 'end_b': 95, 'ramp_time': 20, 'ph': 3.0},
-        'column_config': {'chemistry': 'C18', 'length_mm': 150, 'id_mm': 4.6, 'particle_size_um': 5.0},
-        'operation_config': {'flow_rate_ml_min': 1.0, 'temperature_c': 30, 'injection_volume_ul': 10},
+        'column_config': {
+            'chemistry': 'C18', 'length_mm': 150,
+            'id_mm': 4.6, 'particle_size_um': 5.0,
+        },
+        'operation_config': {
+            'flow_rate_ml_min': 1.0, 'temperature_c': 30,
+            'injection_volume_ul': 10,
+        },
         'total_run_time': 25.0,
         'max_pressure_bar': 120.0,
         'min_resolution': 1.8,
