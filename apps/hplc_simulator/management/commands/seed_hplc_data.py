@@ -26,6 +26,8 @@ class Command(BaseCommand):
                 'molecular_weight': 194.19,
                 'uv_absorption_max': 272,
                 'neutral_charge': False,
+                'concentration_mm': 1.0,
+                'extinction_coefficient': 10000,
             },
             {
                 'name': 'Acetaminophen',
@@ -37,6 +39,8 @@ class Command(BaseCommand):
                 'molecular_weight': 151.16,
                 'uv_absorption_max': 243,
                 'neutral_charge': False,
+                'concentration_mm': 1.0,
+                'extinction_coefficient': 12000,
             },
             {
                 'name': 'Ibuprofen',
@@ -48,6 +52,8 @@ class Command(BaseCommand):
                 'molecular_weight': 206.28,
                 'uv_absorption_max': 222,
                 'neutral_charge': False,
+                'concentration_mm': 1.0,
+                'extinction_coefficient': 500,
             },
             {
                 'name': 'Aspirin',
@@ -59,6 +65,8 @@ class Command(BaseCommand):
                 'molecular_weight': 180.16,
                 'uv_absorption_max': 276,
                 'neutral_charge': False,
+                'concentration_mm': 1.0,
+                'extinction_coefficient': 4000,
             },
             {
                 'name': 'Naproxen',
@@ -70,6 +78,8 @@ class Command(BaseCommand):
                 'molecular_weight': 230.26,
                 'uv_absorption_max': 230,
                 'neutral_charge': False,
+                'concentration_mm': 1.0,
+                'extinction_coefficient': 6000,
             },
             {
                 'name': 'Benzene',
@@ -81,6 +91,8 @@ class Command(BaseCommand):
                 'molecular_weight': 78.11,
                 'uv_absorption_max': 254,
                 'neutral_charge': True,
+                'concentration_mm': 1.0,
+                'extinction_coefficient': 200,
             },
             {
                 'name': 'Toluene',
@@ -92,6 +104,8 @@ class Command(BaseCommand):
                 'molecular_weight': 92.14,
                 'uv_absorption_max': 261,
                 'neutral_charge': True,
+                'concentration_mm': 1.0,
+                'extinction_coefficient': 230,
             },
             {
                 'name': 'Ethylbenzene',
@@ -103,6 +117,8 @@ class Command(BaseCommand):
                 'molecular_weight': 106.17,
                 'uv_absorption_max': 260,
                 'neutral_charge': True,
+                'concentration_mm': 1.0,
+                'extinction_coefficient': 260,
             },
             {
                 'name': 'Naphthalene',
@@ -114,6 +130,8 @@ class Command(BaseCommand):
                 'molecular_weight': 128.17,
                 'uv_absorption_max': 220,
                 'neutral_charge': True,
+                'concentration_mm': 1.0,
+                'extinction_coefficient': 5000,
             },
             {
                 'name': 'Phenol',
@@ -125,6 +143,8 @@ class Command(BaseCommand):
                 'molecular_weight': 94.11,
                 'uv_absorption_max': 270,
                 'neutral_charge': False,
+                'concentration_mm': 1.0,
+                'extinction_coefficient': 1450,
             },
             {
                 'name': 'Benzoic Acid',
@@ -136,6 +156,8 @@ class Command(BaseCommand):
                 'molecular_weight': 122.12,
                 'uv_absorption_max': 230,
                 'neutral_charge': False,
+                'concentration_mm': 1.0,
+                'extinction_coefficient': 12000,
             },
             {
                 'name': 'Aniline',
@@ -147,6 +169,8 @@ class Command(BaseCommand):
                 'molecular_weight': 93.13,
                 'uv_absorption_max': 230,
                 'neutral_charge': False,
+                'concentration_mm': 1.0,
+                'extinction_coefficient': 1400,
             },
         ]
 
@@ -169,7 +193,10 @@ class Command(BaseCommand):
             {
                 'name': 'Painkiller Analysis',
                 'slug': 'painkiller-analysis',
-                'description': 'Separate a mixture of common over-the-counter analgesics: caffeine, acetaminophen, ibuprofen, and aspirin.',
+                'description': (
+                    'Separate a mixture of common over-the-counter analgesics: '
+                    'caffeine, acetaminophen, ibuprofen, and aspirin.'
+                ),
                 'difficulty': 'beginner',
                 'analytes': ['Caffeine', 'Acetaminophen', 'Ibuprofen', 'Aspirin'],
                 'available_columns': ['C18', 'C8'],
@@ -179,7 +206,10 @@ class Command(BaseCommand):
             {
                 'name': 'Environmental Pollutants',
                 'slug': 'environmental-pollutants',
-                'description': 'Separate a mixture of polycyclic aromatic hydrocarbons (PAHs) found in environmental samples.',
+                'description': (
+                    'Separate a mixture of polycyclic aromatic hydrocarbons '
+                    '(PAHs) found in environmental samples.'
+                ),
                 'difficulty': 'beginner',
                 'analytes': ['Benzene', 'Toluene', 'Ethylbenzene', 'Naphthalene'],
                 'available_columns': ['C18'],
@@ -189,7 +219,10 @@ class Command(BaseCommand):
             {
                 'name': 'NSAID Comparison',
                 'slug': 'nsaid-comparison',
-                'description': 'Optimize separation of three common non-steroidal anti-inflammatory drugs with similar properties.',
+                'description': (
+                    'Optimize separation of three common non-steroidal '
+                    'anti-inflammatory drugs with similar properties.'
+                ),
                 'difficulty': 'intermediate',
                 'analytes': ['Ibuprofen', 'Naproxen', 'Aspirin'],
                 'available_columns': ['C18', 'C8', 'Phenyl'],
@@ -199,7 +232,10 @@ class Command(BaseCommand):
             {
                 'name': 'Phenolic Compounds',
                 'slug': 'phenolic-compounds',
-                'description': 'Separate a mixture of phenolic compounds. pH control is critical for ionizable analytes.',
+                'description': (
+                    'Separate a mixture of phenolic compounds. '
+                    'pH control is critical for ionizable analytes.'
+                ),
                 'difficulty': 'intermediate',
                 'analytes': ['Phenol', 'Benzoic Acid', 'Aniline', 'Acetaminophen'],
                 'available_columns': ['C18', 'C8'],
@@ -209,9 +245,15 @@ class Command(BaseCommand):
             {
                 'name': 'Full Painkiller Panel',
                 'slug': 'full-painkiller-panel',
-                'description': 'Separate all five analgesics including naproxen. Achieving baseline resolution for all peaks is challenging.',
+                'description': (
+                    'Separate all five analgesics including naproxen. '
+                    'Achieving baseline resolution for all peaks is challenging.'
+                ),
                 'difficulty': 'advanced',
-                'analytes': ['Caffeine', 'Acetaminophen', 'Ibuprofen', 'Aspirin', 'Naproxen'],
+                'analytes': [
+                    'Caffeine', 'Acetaminophen', 'Ibuprofen',
+                    'Aspirin', 'Naproxen',
+                ],
                 'available_columns': ['C18', 'C8', 'Phenyl'],
                 'max_pressure_bar': 400.0,
                 'base_points': 15000.0,
@@ -219,9 +261,15 @@ class Command(BaseCommand):
             {
                 'name': 'Method Transfer Challenge',
                 'slug': 'method-transfer',
-                'description': 'Transfer a legacy 20-minute method to a modern UHPLC method under 5 minutes while maintaining resolution.',
+                'description': (
+                    'Transfer a legacy 20-minute method to a modern UHPLC '
+                    'method under 5 minutes while maintaining resolution.'
+                ),
                 'difficulty': 'expert',
-                'analytes': ['Benzene', 'Toluene', 'Ethylbenzene', 'Naphthalene', 'Phenol'],
+                'analytes': [
+                    'Benzene', 'Toluene', 'Ethylbenzene',
+                    'Naphthalene', 'Phenol',
+                ],
                 'available_columns': ['C18'],
                 'max_pressure_bar': 600.0,
                 'base_points': 20000.0,

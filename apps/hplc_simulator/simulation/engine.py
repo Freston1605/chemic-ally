@@ -24,6 +24,8 @@ class AnalyteProperties:
     s_parameter: float
     pka: Optional[float] = None
     neutral_charge: bool = True
+    concentration_mm: float = 1.0
+    extinction_coefficient: Optional[float] = None
 
 
 @dataclass
@@ -52,6 +54,7 @@ class OperationConfig:
     flow_rate_ml_min: float = 1.0
     temperature_c: float = 30.0
     injection_volume_ul: float = 10.0
+    dwell_time_min: float = 1.0
 
 
 @dataclass
@@ -196,8 +199,7 @@ def calculate_effective_retention_gradient(
 
     t_r = t_0 + (t_g / b) * math.log(1 + b * k_initial)
 
-    dwell_time = 1.0
-    t_r += dwell_time
+    t_r += operation.dwell_time_min
 
     return max(t_0, t_r)
 
@@ -397,7 +399,10 @@ def generate_chromatogram(
             t_r, column, operation, operation.injection_volume_ul,
         )
 
-        peak_signal = _generate_peak(time_array, t_r, width, height=1000.0)
+        peak_signal = _generate_peak(
+            time_array, t_r, width,
+            height=_calculate_peak_height(analyte, operation.injection_volume_ul),
+        )
         signal += peak_signal
 
         area = float(np.trapezoid(peak_signal, time_array))
@@ -426,6 +431,38 @@ def generate_chromatogram(
         critical_pair=critical_pair,
         overpressure=False,
     )
+
+
+def _calculate_peak_height(
+    analyte: AnalyteProperties,
+    injection_volume_ul: float,
+) -> float:
+    """
+    Estimate peak height from analyte properties using a simplified Beer-Lambert model.
+
+    Signal is proportional to concentration x extinction coefficient x injection volume.
+
+    Args:
+        analyte: Analyte with concentration_mm and optional extinction_coefficient.
+        injection_volume_ul: Injection volume in microliters.
+
+    Returns:
+        Peak height in mAU, clamped to [10, 10000].
+    """
+    if analyte.extinction_coefficient and analyte.extinction_coefficient > 0:
+        base = 1000.0
+        ref_concentration = 1.0
+        ref_extinction = 10000.0
+        ref_injection = 10.0
+        height = (
+            base
+            * (analyte.concentration_mm / ref_concentration)
+            * (analyte.extinction_coefficient / ref_extinction)
+            * (injection_volume_ul / ref_injection)
+        )
+        return max(10.0, min(height, 10000.0))
+
+    return max(100.0, 1000.0 * (analyte.concentration_mm / 1.0))
 
 
 def _generate_peak(

@@ -12,6 +12,7 @@ from hplc_simulator.simulation.engine import (
     calculate_resolution,
     calculate_score,
     PeakInfo,
+    _calculate_peak_height,
 )
 from hplc_simulator.simulation.scoring import evaluate_run
 
@@ -414,3 +415,78 @@ class TestEvaluateRun:
         assert result.pressure_penalty == 0.0
         assert result.resolution_bonus > 0
         assert result.final_score == result.base_score + result.resolution_bonus
+
+
+class TestPeakHeight:
+    def test_default_height_without_extinction(self):
+        analyte = AnalyteProperties(
+            name='Test', log_kw=1.0, s_parameter=3.0,
+            concentration_mm=1.0, extinction_coefficient=None,
+        )
+        h = _calculate_peak_height(analyte, injection_volume_ul=10.0)
+        assert h == 1000.0
+
+    def test_height_scales_with_concentration(self):
+        analyte_low = AnalyteProperties(
+            name='Test', log_kw=1.0, s_parameter=3.0,
+            concentration_mm=0.5, extinction_coefficient=None,
+        )
+        analyte_high = AnalyteProperties(
+            name='Test', log_kw=1.0, s_parameter=3.0,
+            concentration_mm=2.0, extinction_coefficient=None,
+        )
+        h_low = _calculate_peak_height(analyte_low, 10.0)
+        h_high = _calculate_peak_height(analyte_high, 10.0)
+        assert h_high > h_low
+
+    def test_height_scales_with_extinction_coefficient(self):
+        analyte_low_eps = AnalyteProperties(
+            name='Test', log_kw=1.0, s_parameter=3.0,
+            concentration_mm=1.0, extinction_coefficient=500,
+        )
+        analyte_high_eps = AnalyteProperties(
+            name='Test', log_kw=1.0, s_parameter=3.0,
+            concentration_mm=1.0, extinction_coefficient=10000,
+        )
+        h_low = _calculate_peak_height(analyte_low_eps, 10.0)
+        h_high = _calculate_peak_height(analyte_high_eps, 10.0)
+        assert h_high > h_low
+
+    def test_height_clamped_to_minimum(self):
+        analyte = AnalyteProperties(
+            name='Test', log_kw=1.0, s_parameter=3.0,
+            concentration_mm=0.01, extinction_coefficient=100,
+        )
+        h = _calculate_peak_height(analyte, 10.0)
+        assert h >= 10.0
+
+    def test_height_clamped_to_maximum(self):
+        analyte = AnalyteProperties(
+            name='Test', log_kw=1.0, s_parameter=3.0,
+            concentration_mm=100.0, extinction_coefficient=50000,
+        )
+        h = _calculate_peak_height(analyte, 100.0)
+        assert h <= 10000.0
+
+    def test_chromatogram_peaks_have_different_heights(
+        self, standard_column, standard_mobile, standard_operation,
+    ):
+        analytes = [
+            AnalyteProperties(
+                name='StrongUV', log_kw=-0.5, s_parameter=3.0,
+                neutral_charge=True, concentration_mm=1.0,
+                extinction_coefficient=10000,
+            ),
+            AnalyteProperties(
+                name='WeakUV', log_kw=0.0, s_parameter=3.0,
+                neutral_charge=True, concentration_mm=1.0,
+                extinction_coefficient=200,
+            ),
+        ]
+        result = generate_chromatogram(
+            analytes, standard_column, standard_mobile, standard_operation,
+        )
+        assert len(result.peaks) >= 1
+        if len(result.peaks) >= 2:
+            heights = [p.height for p in result.peaks]
+            assert max(heights) > min(heights) * 5

@@ -43,6 +43,7 @@ function hplcSimulator() {
             flow_rate_ml_min: 1.0,
             temperature_c: 30,
             injection_volume_ul: 10,
+            dwell_time_min: 1.0,
         },
         running: false,
         results: {
@@ -63,6 +64,7 @@ function hplcSimulator() {
         viewMode: 'auto',
         plotInstance: null,
         errorMessage: '',
+        fieldErrors: {},
 
         async loadLevel(slug) {
             try {
@@ -99,11 +101,61 @@ function hplcSimulator() {
                 flow_rate_ml_min: 1.0,
                 temperature_c: 30,
                 injection_volume_ul: 10,
+                dwell_time_min: 1.0,
             };
             this.errorMessage = '';
+            this.fieldErrors = {};
+        },
+
+        estimatePressure() {
+            const p = this.params;
+            const tempK = p.temperature_c + 273.15;
+            const refVisc = 0.001 * Math.exp(1800 * (1 / tempK - 1 / 298.15));
+            const refVisc30 = 0.001 * Math.exp(1800 * (1 / 303.15 - 1 / 298.15));
+            return 120 * (p.column_length_mm / 150) * (p.flow_rate_ml_min / 1.0)
+                * Math.pow(5.0 / p.particle_size_um, 2)
+                * Math.pow(4.6 / p.column_id_mm, 2)
+                * (refVisc / refVisc30);
+        },
+
+        validateParams() {
+            const errors = {};
+            const p = this.params;
+
+            if (p.start_b < 0 || p.start_b > 100) errors.start_b = 'Must be 0-100%';
+            if (p.end_b < 0 || p.end_b > 100) errors.end_b = 'Must be 0-100%';
+            if (p.end_b < p.start_b) errors.end_b = 'End B% must be >= Start B%';
+            if (p.ramp_time <= 0) errors.ramp_time = 'Must be positive';
+            if (p.ph < 2.0 || p.ph > 8.0) errors.ph = 'Must be 2.0-8.0';
+            if (p.flow_rate_ml_min <= 0) errors.flow_rate_ml_min = 'Must be > 0';
+            if (p.temperature_c < 20 || p.temperature_c > 80) errors.temperature_c = 'Must be 20-80 C';
+            if (p.injection_volume_ul < 1 || p.injection_volume_ul > 100) errors.injection_volume_ul = 'Must be 1-100 uL';
+            if (p.dwell_time_min < 0.1 || p.dwell_time_min > 10.0) errors.dwell_time_min = 'Must be 0.1-10.0 min';
+
+            if (['C18', 'C8', 'C4'].includes(p.column_chemistry) && p.ph > 7.5) {
+                errors.ph = 'pH ' + p.ph + ' may damage ' + p.column_chemistry + ' silica columns';
+            }
+
+            if (p.particle_size_um < 2.0) {
+                const estPressure = this.estimatePressure();
+                const limit = this.level.max_pressure_bar || 400;
+                if (estPressure > limit) {
+                    errors.pressure_warning = 'Estimated pressure ' + estPressure.toFixed(0) + ' bar exceeds ' + limit + ' bar limit';
+                }
+            }
+
+            return errors;
         },
 
         async runSimulation() {
+            this.fieldErrors = {};
+            const errors = this.validateParams();
+            if (Object.keys(errors).length > 0) {
+                this.fieldErrors = errors;
+                this.errorMessage = Object.values(errors).join('; ');
+                return;
+            }
+
             this.running = true;
             this.hasResults = false;
             this.errorMessage = '';
@@ -134,6 +186,7 @@ function hplcSimulator() {
                     injection_volume_ul: parseFloat(
                         this.params.injection_volume_ul,
                     ),
+                    dwell_time_min: parseFloat(this.params.dwell_time_min),
                 },
             };
 
@@ -196,9 +249,19 @@ function hplcSimulator() {
         },
 
         animateChromatogram(chromatogram, peaks) {
+            if (!chromatogram || !chromatogram.time || !chromatogram.signal) {
+                this.errorMessage = 'No chromatogram data received.';
+                return;
+            }
+
             const timeData = chromatogram.time;
-            const signalData = chromatogram.signal;
+            const signalData = chromatogram.signal.map(v => isFinite(v) ? v : 0);
             const totalPoints = timeData.length;
+
+            if (totalPoints === 0) {
+                this.errorMessage = 'Empty chromatogram data.';
+                return;
+            }
 
             const trace = {
                 x: [],
