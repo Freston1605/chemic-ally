@@ -6,18 +6,20 @@ from django.contrib import messages
 from django.http import HttpResponse
 from django.views.generic import TemplateView
 from django.views.generic.edit import FormView
-from django.views import View
-from django.shortcuts import render, redirect
-
-import pint
 
 from .calculations.base import (
     DilutionCalculator,
     MolecularWeightCalculator,
     ReactionBalancer,
 )
+from .calculations.equilibria import EquilibriaCalculator
 from .calculations.units import Q_
-from .forms import ChemicalReactionForm, MolecularFormulaForm, SolutionForm
+from .forms import (
+    ChemicalReactionForm,
+    EquilibriumSystemForm,
+    MolecularFormulaForm,
+    SolutionForm,
+)
 from .utils import add_previous_substances
 
 
@@ -205,8 +207,13 @@ class BalanceChemicalReaction(BaseCalculateView):
             )
             add_previous_substances(self.request, reactants + products)
             return result
-        except Exception as e:
-            messages.error(self.request, f"Error: {str(e)}")
+        except Exception:
+            logging.exception("Reaction balancing failed:")
+            messages.error(
+                self.request,
+                "Could not balance the reaction. "
+                "Please check your input and try again.",
+            )
 
 
 class CalculateDilutionView(BaseCalculateView):
@@ -350,183 +357,87 @@ class CalculateDilutionView(BaseCalculateView):
 
             return result_dict
 
-        except Exception as e:
+        except Exception:
             logging.exception("Dilution calculation failed:")
-            messages.error(self.request, f"Calculation error: {str(e)}")
+            messages.error(
+                self.request,
+                "Could not complete the dilution calculation. "
+                "Please check your input and try again.",
+            )
             return None
 
 
-def make_json_safe(obj):
+class CalculateEquilibriaView(BaseCalculateView):
     """
-    Recursively convert Pint quantities and other non-JSON-serializable types
-    to plain Python types.
+    View for solving coupled chemical equilibria in solution.
 
-    Args:
-        obj: A value that may contain ``pint.Quantity`` instances, dicts,
-             or lists.
-
-    Returns:
-        The same structure with all ``pint.Quantity`` values converted to
-        ``float`` magnitudes.
-    """
-    if isinstance(obj, pint.Quantity):
-        return float(obj.magnitude)
-    if isinstance(obj, dict):
-        return {k: make_json_safe(v) for k, v in obj.items()}
-    if isinstance(obj, list):
-        return [make_json_safe(x) for x in obj]
-    return obj
-
-
-class DashboardView(View):
-    """
-    All-in-one dashboard view that consolidates molecular weight, dilution, and
-    reaction balancing calculations into a single page.
-
-    The dashboard stores its last-used values and results in the user's session
-    so that the form is repopulated across requests. A ``reset`` action clears
-    the session data and redirects to a clean dashboard.
+    Accepts a set of equilibrium equations with constants and initial
+    concentrations, then computes the equilibrium composition using
+    chempy's EqSystem.
 
     Attributes:
-        template_name (str): The template used to render the dashboard page.
+        template_name (str): The template used to render the equilibria form.
+        form_class (Type[EquilibriumSystemForm]): The form class for input.
 
     Args:
-        View (Type[View]): Django's base class-based view.
+        BaseCalculateView (Type[BaseCalculateView]):
+            Base class for form-driven calculator views.
     """
 
-    template_name = "webapp/dashboard.html"
+    template_name = "webapp/calculator/equilibria.html"
+    form_class = EquilibriumSystemForm
 
-    def get(self, request):
+    def process_calculation(self, form: EquilibriumSystemForm) -> dict:
         """
-        Render the dashboard with previously stored session data.
-
-        Retrieves the ``dashboard_context`` dict from the session (if any) and
-        passes it to the template as the initial context.
+        Solve the equilibrium system from cleaned form data.
 
         Args:
-            request (HttpRequest): The incoming GET request.
+            form: The validated EquilibriumSystemForm instance.
 
         Returns:
-            HttpResponse: The rendered dashboard page.
+            dict with keys:
+            - ph: float or None
+            - species: dict of equilibrium concentrations
+            - sane: bool
+            - info: dict with solver metadata
+            - success: bool
+            - error: str (only on failure)
         """
-        # Render the dashboard with any session-persisted data
-        context = request.session.get('dashboard_context', {})
-        return render(request, self.template_name, context)
+        cd = form.cleaned_data
+        equations = cd["equations"]
+        concentrations = cd.get("concentrations", {})
+        solvent = cd.get("solvent") or "H2O"
+        solvent_conc = cd.get("solvent_concentration") or 55.4
 
-    def post(self, request):
-        """
-        Process a dashboard action and return the updated page.
+        calculator = EquilibriaCalculator()
+        result = calculator.calculate(
+            equations=equations,
+            concentrations=concentrations,
+            solvent=solvent,
+            solvent_concentration=solvent_conc,
+        )
 
-        Supported actions:
-            - ``calc_mw``: Calculate molecular weight for the given formula.
-            - ``use_mw``: Calculate molecular weight and copy the result into
-              the dilution molecular weight field.
-            - ``calc_dilution``: Perform a C₁V₁ = C₂V₂ dilution calculation.
-            - ``balance_reaction``: Balance the provided chemical reaction.
-            - ``reset``: Clear session data and redirect to a clean dashboard.
+        if result.get("success"):
+            # Save substances to session autocomplete
+            substances = list(result.get("species", {}).keys())
+            if substances:
+                add_previous_substances(self.request, substances)
+            # Also save equations-derived substances
+            eq_substances = set()
+            for eq in equations:
+                parts = eq.split(";")[0]
+                for side in parts.split("="):
+                    for s in side.split("+"):
+                        s = s.strip()
+                        if s:
+                            eq_substances.add(s)
+            if eq_substances:
+                add_previous_substances(self.request, eq_substances)
+        else:
+            messages.error(
+                self.request,
+                "Could not solve the equilibrium system. "
+                "Please check your reactions and concentrations.",
+            )
 
-        After processing, the context is saved to the session for persistence
-        and serialized via :func:`make_json_safe` to ensure JSON compatibility.
-
-        Args:
-            request (HttpRequest): The incoming POST request containing the
-                                   form fields and an ``action`` parameter.
-
-        Returns:
-            HttpResponse: The rendered dashboard page, or a redirect for the
-                          ``reset`` action.
-        """
-        context = {}
-        action = request.POST.get('action')
-        # Always repopulate fields
-        context['formula'] = request.POST.get('formula', '')
-        context['c1'] = request.POST.get('c1', '')
-        context['c1_unit'] = request.POST.get('c1_unit', 'mol/L')
-        context['v1'] = request.POST.get('v1', '')
-        context['v1_unit'] = request.POST.get('v1_unit', 'L')
-        context['c2'] = request.POST.get('c2', '')
-        context['c2_unit'] = request.POST.get('c2_unit', 'mol/L')
-        context['v2'] = request.POST.get('v2', '')
-        context['v2_unit'] = request.POST.get('v2_unit', 'L')
-        context['molecular_weight'] = request.POST.get('molecular_weight', '')
-        context['solute'] = request.POST.get('solute', '')
-        context['reactant'] = request.POST.get('reactant', '')
-        context['product'] = request.POST.get('product', '')
-        context['reversible'] = bool(request.POST.get('reversible'))
-
-        if action == 'calc_mw':
-            formula = context['formula']
-            mw_result = None
-            if formula:
-                calculator = MolecularWeightCalculator()
-                mw_result = calculator.calculate(formula)
-            context['mw_result'] = mw_result
-        elif action == 'use_mw':
-            formula = context['formula']
-            calculator = MolecularWeightCalculator()
-            mw_result = calculator.calculate(formula)
-            context['molecular_weight'] = mw_result
-            context['mw_result'] = mw_result
-        elif action == 'calc_dilution':
-            try:
-                calculator = DilutionCalculator()
-                result = calculator.calculate(
-                    c1=float(context['c1']) if context['c1'] else None,
-                    c1_unit=context['c1_unit'],
-                    v1=float(context['v1']) if context['v1'] else None,
-                    v1_unit=context['v1_unit'],
-                    c2=float(context['c2']) if context['c2'] else None,
-                    c2_unit=context['c2_unit'],
-                    v2=float(context['v2']) if context['v2'] else None,
-                    v2_unit=context['v2_unit'],
-                    molecular_weight=(
-                        float(context['molecular_weight'])
-                        if context['molecular_weight']
-                        else None
-                    ),
-                    solute_formula=context['solute'],
-                )
-                context['dilution_result'] = make_json_safe(result)
-            except Exception as e:
-                context['dilution_result'] = {
-                    'property': 'Error',
-                    'value': str(e),
-                    'unit': '',
-                }
-        elif action == 'balance_reaction':
-            try:
-                reactants = (
-                    [x.strip() for x in context['reactant'].split()]
-                    if context['reactant']
-                    else []
-                )
-                products = (
-                    [x.strip() for x in context['product'].split()]
-                    if context['product']
-                    else []
-                )
-                calculator = ReactionBalancer()
-                balanced = calculator.calculate(
-                    reactants=reactants,
-                    products=products,
-                )
-                if balanced:
-                    reactants_balanced, products_balanced = balanced
-                    result = ReactionBalancer.to_latex(
-                        reactants_balanced,
-                        products_balanced,
-                        context['reversible'],
-                    )
-                    context['reaction_result'] = result
-                else:
-                    context['reaction_result'] = 'Could not balance reaction.'
-            except Exception as e:
-                context['reaction_result'] = f'Error: {e}'
-        elif action == 'reset':
-            request.session['dashboard_context'] = {}
-            return redirect('dashboard')
-
-        # Save context for persistence, making it JSON-safe
-        safe_context = make_json_safe(context)
-        request.session['dashboard_context'] = safe_context
-        return render(request, self.template_name, context)
+        return result

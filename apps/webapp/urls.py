@@ -4,12 +4,11 @@ from .views import (
     CalculateMolecularWeightView,
     BalanceChemicalReaction,
     CalculateDilutionView,
-    DashboardView,
+    CalculateEquilibriaView,
 )
 
 urlpatterns = [
     path('', LandingPage.as_view(), name='landing'),
-    path('dashboard/', DashboardView.as_view(), name='dashboard'),
     path(
         'calculate/molecular_weight',
         CalculateMolecularWeightView.as_view(),
@@ -24,5 +23,10 @@ urlpatterns = [
         'calculate/dilution',
         CalculateDilutionView.as_view(),
         name='dilution',
+    ),
+    path(
+        'calculate/equilibria',
+        CalculateEquilibriaView.as_view(),
+        name='equilibria',
     ),
 ]

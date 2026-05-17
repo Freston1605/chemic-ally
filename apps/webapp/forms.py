@@ -1,3 +1,6 @@
+import json
+import re
+
 from django import forms
 
 
@@ -70,8 +73,8 @@ class ChemicalReactionForm(forms.Form):
     reversible = forms.BooleanField(
         initial=True,
         required=False,
-        label="Irreversible Reaction",
-        help_text="Uncheck this box if the reaction is not reversible",
+        label="Reversible reaction",
+        help_text="Uncheck this box if the reaction is irreversible",
     )
 
     def clean(self):
@@ -90,6 +93,163 @@ class ChemicalReactionForm(forms.Form):
 
         if not reactant and not product:
             raise forms.ValidationError("Reactant and product must be provided.")
+
+        return cleaned_data
+
+
+class EquilibriumSystemForm(forms.Form):
+    """
+    Form for defining a coupled chemical equilibrium system.
+
+    Users specify:
+    - chemical reactions with per-reaction fields (reactants, products, K value
+      in pKa or Ka mode) via a dynamic JS-driven UI that stores data in a
+      hidden JSON field
+    - initial concentrations for each substance (via dynamic JS table)
+    - solvent and its concentration (defaults: H2O, 55.4 M)
+    """
+
+    reactions = forms.CharField(
+        required=False,
+        widget=forms.HiddenInput(),
+        label="Reactions (JSON)",
+        help_text="JSON array of reaction objects.",
+    )
+    concentrations = forms.CharField(
+        required=False,
+        widget=forms.HiddenInput(),
+        label="Concentrations (JSON)",
+        help_text="JSON object mapping substance → initial concentration in mol/L",
+    )
+    solvent = forms.CharField(
+        max_length=20,
+        initial="H2O",
+        required=False,
+        label="Solvent",
+        help_text="Chemical formula of the solvent (default: H2O).",
+        widget=forms.TextInput(attrs={"placeholder": "H2O"}),
+    )
+    solvent_concentration = forms.FloatField(
+        initial=55.4,
+        required=False,
+        label="Solvent concentration (mol/L)",
+        help_text="Concentration of the solvent in mol/L (default: 55.4 for water).",
+        widget=forms.NumberInput(attrs={"step": "any", "placeholder": "55.4"}),
+    )
+
+    @staticmethod
+    def parse_species_from_equations(equations_text: str) -> set:
+        """
+        Extract unique substance names from a multi-line equation string.
+
+        Parses each line by splitting on ``;``, then ``=``, then `` + ``
+        (space-plus-space, the reaction-side delimiter, not the charge
+        notation in e.g. ``H+``), and returns the set of all unique,
+        non-empty, trimmed tokens.
+        """
+        species = set()
+        for line in equations_text.split("\n"):
+            line = line.strip()
+            if not line:
+                continue
+            # Remove the equilibrium constant part
+            reaction_part = line.split(";")[0].strip()
+            if "=" not in reaction_part:
+                continue
+            left, right = reaction_part.split("=", 1)
+            for side in (left, right):
+                # Split on ' + ' (space-plus-space) to distinguish
+                # the reaction separator from charge notation like H+ or Ca2+
+                for token in re.split(r'\s+\+\s+', side.strip()):
+                    token = token.strip()
+                    if token:
+                        species.add(token)
+        return species
+
+    def clean_reactions(self):
+        raw = self.cleaned_data.get("reactions", "")
+        if not raw or not raw.strip():
+            raise forms.ValidationError("At least one reaction is required.")
+        try:
+            reactions = json.loads(raw)
+        except json.JSONDecodeError as e:
+            raise forms.ValidationError(f"Invalid JSON: {e}")
+        if not isinstance(reactions, list) or len(reactions) == 0:
+            raise forms.ValidationError("Reactions must be a non-empty array.")
+        for i, rxn in enumerate(reactions, 1):
+            if not isinstance(rxn, dict):
+                raise forms.ValidationError(f"Reaction {i}: Expected an object.")
+            for key in ("reactants", "products", "k_mode", "k_value"):
+                if key not in rxn:
+                    raise forms.ValidationError(
+                        f"Reaction {i}: Missing '{key}' field."
+                    )
+            if rxn["k_mode"] not in ("pKa", "Ka"):
+                raise forms.ValidationError(
+                    f"Reaction {i}: k_mode must be 'pKa' or 'Ka'."
+                )
+            if not rxn["reactants"] or not str(rxn["reactants"]).strip():
+                raise forms.ValidationError(
+                    f"Reaction {i}: Reactants cannot be empty."
+                )
+            if not rxn["products"] or not str(rxn["products"]).strip():
+                raise forms.ValidationError(
+                    f"Reaction {i}: Products cannot be empty."
+                )
+            if not rxn["k_value"] or not str(rxn["k_value"]).strip():
+                raise forms.ValidationError(
+                    f"Reaction {i}: K value cannot be empty."
+                )
+        return reactions
+
+    def clean(self):
+        cleaned_data = super().clean()
+        reactions = cleaned_data.get("reactions")
+
+        if reactions:
+            # Reconstruct the old equations format for the backend calculator
+            equations_list = []
+            for rxn in reactions:
+                if rxn["k_mode"] == "pKa":
+                    k_expr = f"10**-{rxn['k_value']}"
+                else:
+                    k_expr = str(rxn["k_value"])
+                eq_str = f"{rxn['reactants']} = {rxn['products']}; {k_expr}"
+                equations_list.append(eq_str)
+            cleaned_data["equations"] = equations_list
+
+        # Parse concentrations JSON — each entry is {value: float, unit: str}
+        from .calculations.units import Q_
+
+        concentrations_raw = cleaned_data.get("concentrations")
+        if concentrations_raw:
+            try:
+                parsed = json.loads(concentrations_raw)
+                if not isinstance(parsed, dict):
+                    self.add_error("concentrations", "Must be a JSON object.")
+                else:
+                    result = {}
+                    for substance, entry in parsed.items():
+                        if (
+                            isinstance(entry, dict)
+                            and "value" in entry
+                            and "unit" in entry
+                        ):
+                            q = Q_(float(entry["value"]), entry["unit"])
+                            result[substance] = float(q.to("mol/L").magnitude)
+                        elif isinstance(entry, (int, float)):
+                            # Backward compatibility: plain number treated as mol/L
+                            result[substance] = float(entry)
+                        elif isinstance(entry, str):
+                            try:
+                                result[substance] = float(entry)
+                            except (ValueError, TypeError):
+                                pass
+                    cleaned_data["concentrations"] = result
+            except (json.JSONDecodeError, ValueError, TypeError) as e:
+                self.add_error("concentrations", f"Invalid JSON: {e}")
+        else:
+            cleaned_data["concentrations"] = {}
 
         return cleaned_data
 
@@ -175,7 +335,7 @@ class SolutionForm(forms.Form):
     )
     c1 = forms.FloatField(
         min_value=0,
-        label="Initial concentration of the solute.",
+        label="C\u2081 (Initial Concentration)",
         required=False,
         help_text=(
             "Enter the concentration of the initial solute in the solution "
@@ -185,7 +345,7 @@ class SolutionForm(forms.Form):
 
     v1 = forms.FloatField(
         min_value=0,
-        label="Initial volume of the solute.",
+        label="V\u2081 (Initial Volume)",
         required=False,
         help_text=(
             "Enter the volume of the initial solution and choose the "
@@ -194,13 +354,13 @@ class SolutionForm(forms.Form):
     )
     c2 = forms.FloatField(
         min_value=0,
-        label="Final concentration of the solution.",
+        label="C\u2082 (Final Concentration)",
         required=False,
         help_text="Enter the concentration of the final solution.",
     )
     v2 = forms.FloatField(
         min_value=0,
-        label="Final volume of the solution.",
+        label="V\u2082 (Final Volume)",
         required=False,
         help_text="Enter the volume of the final solution.",
     )
