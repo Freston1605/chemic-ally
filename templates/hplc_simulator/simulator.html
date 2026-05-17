@@ -1,6 +1,7 @@
 {% extends "hplc_simulator/hplc_base.html" %}
 
 {% block main %}
+{% csrf_token %}
 <div class="container-fluid px-3 px-lg-4"
      x-data="hplcSimulator()"
      x-init="loadLevel('{{ level_slug }}')">
@@ -109,7 +110,7 @@
                       <div class="mb-2">
                         <label class="form-label small">Ramp Time (min)</label>
                         <input type="range" class="form-range"
-                               min="1" max="30" step="0.5"
+                               min="1" max="60" step="0.5"
                                x-model.number="params.ramp_time">
                         <div class="d-flex justify-content-between small text-muted">
                           <span x-text="params.ramp_time + ' min'"></span>
@@ -203,7 +204,7 @@
                   <div class="mb-2">
                     <label class="form-label small">Flow Rate (mL/min)</label>
                     <input type="range" class="form-range"
-                           min="0.1" max="3" step="0.1"
+                           min="0.1" max="5.0" step="0.1"
                            x-model.number="params.flow_rate_ml_min">
                     <div class="d-flex justify-content-between small text-muted">
                       <span x-text="params.flow_rate_ml_min + ' mL/min'"></span>
@@ -212,7 +213,7 @@
                   <div class="mb-2">
                     <label class="form-label small">Temperature (C)</label>
                     <input type="range" class="form-range"
-                           min="20" max="60" step="1"
+                           min="20" max="80" step="1"
                            x-model.number="params.temperature_c">
                     <div class="d-flex justify-content-between small text-muted">
                       <span x-text="params.temperature_c + ' C'"></span>
@@ -221,10 +222,37 @@
                   <div class="mb-2">
                     <label class="form-label small">Injection Volume (uL)</label>
                     <input type="range" class="form-range"
-                           min="1" max="50" step="1"
+                           min="1" max="100" step="1"
                            x-model.number="params.injection_volume_ul">
                     <div class="d-flex justify-content-between small text-muted">
                       <span x-text="params.injection_volume_ul + ' uL'"></span>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <!-- Advanced -->
+            <div class="accordion-item">
+              <h2 class="accordion-header">
+                <button class="accordion-button collapsed py-2"
+                        type="button"
+                        data-bs-toggle="collapse"
+                        data-bs-target="#advancedSection">
+                  Advanced
+                </button>
+              </h2>
+              <div id="advancedSection"
+                   class="accordion-collapse collapse"
+                   data-bs-parent="#paramAccordion">
+                <div class="accordion-body py-2">
+                  <div class="mb-2">
+                    <label class="form-label small">Dwell Time (min)</label>
+                    <input type="range" class="form-range"
+                           min="0.1" max="5.0" step="0.1"
+                           x-model.number="params.dwell_time_min">
+                    <div class="d-flex justify-content-between small text-muted">
+                      <span x-text="params.dwell_time_min.toFixed(1) + ' min'"></span>
                     </div>
                   </div>
                 </div>
@@ -243,8 +271,36 @@
         </div>
       </div>
 
+      <!-- Error message -->
+      <div class="alert alert-danger mt-3"
+           x-show="errorMessage"
+           x-text="errorMessage"></div>
+
+      <!-- pH warning -->
+      <div class="alert alert-warning mt-3"
+           x-show="params.ph > 7.5 && ['C18','C8','C4'].includes(params.column_chemistry)">
+        <strong>Column pH Warning:</strong> Silica-based columns may degrade above pH 7.5.
+        Consider using a hybrid or polymer column for high-pH methods.
+      </div>
+
+      <!-- Sub-2um particle warning -->
+      <div class="alert alert-warning mt-3"
+           x-show="params.particle_size_um < 2.0">
+        <strong>Sub-2 um Particles:</strong> UHPLC columns require higher pressure ratings.
+        Ensure your system can handle the estimated pressure.
+      </div>
+
+      <!-- Overpressure result alert -->
+      <div class="alert alert-danger mt-3"
+           x-show="hasResults && results.overpressure">
+        <strong>System Overpressure!</strong>
+        <span x-text="results.metrics.max_pressure_bar.toFixed(0)"></span> bar
+        exceeds the <span x-text="level.max_pressure_bar"></span> bar limit.
+        Reduce flow rate, shorten column, or increase particle size.
+      </div>
+
       <!-- Pressure gauge -->
-      <div class="card mt-3" x-show="results.metrics">
+      <div class="card mt-3" x-show="hasResults">
         <div class="card-header py-2">
           <h6 class="mb-0">System Status</h6>
         </div>
@@ -260,7 +316,7 @@
                    :style="'width: ' + pressurePercent() + '%'"></div>
             </div>
             <div class="small text-muted mt-1">
-              Limit: <span x-text="level.max_pressure_bar"></span> bar
+              Limit: <span x-text="level.max_pressure_bar || 400"></span> bar
             </div>
           </div>
         </div>

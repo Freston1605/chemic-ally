@@ -1,5 +1,6 @@
 import logging
 
+from django.core.exceptions import ValidationError
 from django.shortcuts import get_object_or_404
 from django.views.generic import TemplateView
 from rest_framework import status
@@ -70,6 +71,8 @@ class SimulateView(APIView):
                 s_parameter=analyte.s_parameter,
                 pka=analyte.pka,
                 neutral_charge=analyte.neutral_charge,
+                concentration_mm=analyte.concentration_mm,
+                extinction_coefficient=analyte.extinction_coefficient,
             ))
 
         mobile_config = MobilePhaseConfig(
@@ -92,6 +95,7 @@ class SimulateView(APIView):
             flow_rate_ml_min=data['operation']['flow_rate_ml_min'],
             temperature_c=data['operation']['temperature_c'],
             injection_volume_ul=data['operation']['injection_volume_ul'],
+            dwell_time_min=data['operation'].get('dwell_time_min', 1.0),
         )
 
         try:
@@ -176,7 +180,7 @@ class ScoreSubmissionView(APIView):
             request.session.create()
             session_key = request.session.session_key
 
-        score_record = UserScore.objects.create(
+        score_record = UserScore(
             level=level,
             session_key=session_key,
             mobile_phase=data['mobile_phase'],
@@ -189,6 +193,14 @@ class ScoreSubmissionView(APIView):
             is_successful=data['is_successful'],
             overpressure=data['overpressure'],
         )
+        try:
+            score_record.full_clean()
+        except ValidationError as e:
+            return Response(
+                {'errors': e.message_dict},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        score_record.save()
 
         progress, created = LevelProgress.objects.get_or_create(
             level=level,

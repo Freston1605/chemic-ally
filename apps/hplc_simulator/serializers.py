@@ -8,7 +8,7 @@ class AnalyteSerializer(serializers.ModelSerializer):
         fields = [
             'id', 'name', 'formula', 'pka', 'log_p', 'log_kw',
             's_parameter', 'molecular_weight', 'uv_absorption_max',
-            'neutral_charge',
+            'neutral_charge', 'concentration_mm', 'extinction_coefficient',
         ]
 
 
@@ -64,15 +64,58 @@ class MobilePhaseSerializer(serializers.Serializer):
 
 class ColumnConfigSerializer(serializers.Serializer):
     chemistry = serializers.CharField()
-    length_mm = serializers.ChoiceField(choices=[50, 100, 150, 250])
-    id_mm = serializers.ChoiceField(choices=[2.1, 3.0, 4.6])
-    particle_size_um = serializers.ChoiceField(choices=[1.8, 3.0, 5.0])
+    length_mm = serializers.FloatField()
+    id_mm = serializers.FloatField()
+    particle_size_um = serializers.FloatField()
+
+    def validate(self, data):
+        data = super().validate(data)
+        if data['chemistry'] in ('HILIC', 'NP'):
+            raise serializers.ValidationError(
+                f"{data['chemistry']} retention model is not implemented. "
+                "Only reversed-phase (C18, C8, C4, Phenyl) is supported."
+            )
+        return data
+
+    def validate_length_mm(self, value):
+        valid = [50, 100, 150, 250]
+        if value not in valid:
+            raise serializers.ValidationError(
+                f"Invalid column length. Choose from {valid}"
+            )
+        return value
+
+    def validate_id_mm(self, value):
+        valid = [2.1, 3.0, 4.6]
+        if value not in valid:
+            raise serializers.ValidationError(
+                f"Invalid column ID. Choose from {valid}"
+            )
+        return value
+
+    def validate_particle_size_um(self, value):
+        valid = [1.8, 3.0, 5.0]
+        if value not in valid:
+            raise serializers.ValidationError(
+                f"Invalid particle size. Choose from {valid}"
+            )
+        return value
 
 
 class OperationConfigSerializer(serializers.Serializer):
     flow_rate_ml_min = serializers.FloatField(min_value=0.1, max_value=5.0)
     temperature_c = serializers.FloatField(min_value=20, max_value=80)
     injection_volume_ul = serializers.FloatField(min_value=1, max_value=100)
+    dwell_time_min = serializers.FloatField(
+        min_value=0.1, max_value=10.0, default=1.0, required=False,
+    )
+
+    def validate_flow_rate_ml_min(self, value):
+        if value <= 0:
+            raise serializers.ValidationError(
+                "Flow rate must be strictly positive"
+            )
+        return value
 
 
 class SimulationRequestSerializer(serializers.Serializer):
@@ -80,6 +123,21 @@ class SimulationRequestSerializer(serializers.Serializer):
     mobile_phase = MobilePhaseSerializer()
     column = ColumnConfigSerializer()
     operation = OperationConfigSerializer()
+
+    def validate(self, data):
+        data = super().validate(data)
+        ph = data['mobile_phase']['ph']
+        chemistry = data['column']['chemistry']
+        if chemistry in ('C18', 'C8', 'C4') and ph > 7.5:
+            raise serializers.ValidationError({
+                'mobile_phase': {
+                    'ph': (
+                        f"pH {ph} exceeds safe range for {chemistry} "
+                        f"silica columns (max ~7.5)"
+                    )
+                }
+            })
+        return data
 
 
 class PeakSerializer(serializers.Serializer):

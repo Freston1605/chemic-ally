@@ -31,6 +31,14 @@ class Analyte(models.Model):
         default=True,
         help_text="Whether analyte is neutral at typical HPLC pH"
     )
+    concentration_mm = models.FloatField(
+        default=1.0,
+        help_text="Analyte concentration in mM for peak height calculation"
+    )
+    extinction_coefficient = models.FloatField(
+        null=True, blank=True,
+        help_text="Molar extinction coefficient (L/mol/cm) at UV absorption max"
+    )
 
     class Meta:
         ordering = ['name']
@@ -135,9 +143,75 @@ class UserScore(models.Model):
         indexes = [
             models.Index(fields=['level', 'session_key']),
         ]
+        constraints = [
+            models.CheckConstraint(
+                condition=models.Q(max_pressure_bar__gte=0),
+                name='userscore_max_pressure_non_negative',
+            ),
+            models.CheckConstraint(
+                condition=models.Q(min_resolution__gte=0),
+                name='userscore_min_resolution_non_negative',
+            ),
+            models.CheckConstraint(
+                condition=models.Q(total_run_time__gte=0),
+                name='userscore_total_run_time_non_negative',
+            ),
+            models.CheckConstraint(
+                condition=models.Q(score__gte=0),
+                name='userscore_score_non_negative',
+            ),
+        ]
 
     def __str__(self):
         return f"{self.level.name} - Score: {self.score:.0f}"
+
+    def clean(self):
+        super().clean()
+        errors = {}
+        if self.max_pressure_bar < 0:
+            errors['max_pressure_bar'] = 'Pressure cannot be negative'
+        if self.min_resolution < 0:
+            errors['min_resolution'] = 'Resolution cannot be negative'
+        if self.total_run_time <= 0:
+            errors['total_run_time'] = 'Run time must be positive'
+        if self.score < 0:
+            errors['score'] = 'Score cannot be negative'
+        if (
+            self.max_pressure_bar > self.level.max_pressure_bar
+            and not self.overpressure
+        ):
+            errors['overpressure'] = (
+                f'Pressure {self.max_pressure_bar:.0f} bar exceeds level limit '
+                f'{self.level.max_pressure_bar:.0f} bar; overpressure flag must be set'
+            )
+        self._validate_operation_config(errors)
+        self._validate_column_config(errors)
+        if errors:
+            from django.core.exceptions import ValidationError
+            raise ValidationError(errors)
+
+    def _validate_operation_config(self, errors):
+        op = self.operation_config or {}
+        flow = op.get('flow_rate_ml_min')
+        if flow is not None and flow <= 0:
+            errors['operation_config'] = 'Flow rate must be strictly positive'
+        temp = op.get('temperature_c')
+        if temp is not None and (temp < 20 or temp > 80):
+            errors.setdefault('operation_config', '')
+            errors['operation_config'] += ' Temperature must be 20-80 C'
+        inj = op.get('injection_volume_ul')
+        if inj is not None and (inj < 1 or inj > 100):
+            errors.setdefault('operation_config', '')
+            errors['operation_config'] += ' Injection volume must be 1-100 uL'
+
+    def _validate_column_config(self, errors):
+        col = self.column_config or {}
+        chemistry = col.get('chemistry', '')
+        if chemistry in ('HILIC', 'NP'):
+            errors['column_config'] = (
+                f'{chemistry} retention model is not implemented. '
+                'Only reversed-phase (C18, C8, C4, Phenyl) is supported.'
+            )
 
 
 class LevelProgress(models.Model):
@@ -162,6 +236,20 @@ class LevelProgress(models.Model):
     class Meta:
         unique_together = ['level', 'session_key']
         ordering = ['level__difficulty', 'level__name']
+        constraints = [
+            models.CheckConstraint(
+                condition=models.Q(best_score__gte=0),
+                name='levelprogress_best_score_non_negative',
+            ),
+            models.CheckConstraint(
+                condition=models.Q(best_resolution__gte=0),
+                name='levelprogress_best_resolution_non_negative',
+            ),
+            models.CheckConstraint(
+                condition=models.Q(best_run_time__gte=0),
+                name='levelprogress_best_run_time_non_negative',
+            ),
+        ]
 
     def __str__(self):
         status = "Completed" if self.completed else "In Progress"
