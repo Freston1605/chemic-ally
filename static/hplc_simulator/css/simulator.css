@@ -1,0 +1,52 @@
+.chromatogram-container {
+    width: 100%;
+    height: 400px;
+    min-height: 300px;
+}
+
+.level-card {
+    transition: transform 0.2s ease, box-shadow 0.2s ease;
+}
+
+.level-card:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+}
+
+.accordion-button {
+    font-size: 0.875rem;
+    padding: 0.5rem 1rem;
+}
+
+.accordion-button:not(.collapsed) {
+    background-color: rgba(13, 110, 253, 0.1);
+}
+
+.accordion-body {
+    padding: 0.75rem 1rem;
+}
+
+.form-range {
+    height: 1.5rem;
+}
+
+.progress {
+    background-color: #495057;
+}
+
+@media (max-width: 991.98px) {
+    .chromatogram-container {
+        height: 300px;
+    }
+}
+
+@media (max-width: 767.98px) {
+    .chromatogram-container {
+        height: 250px;
+    }
+
+    .accordion-button {
+        padding: 0.4rem 0.75rem;
+        font-size: 0.8rem;
+    }
+}

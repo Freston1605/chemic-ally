@@ -37,6 +37,8 @@
             <li class="nav-item dropdown">
               <a class="nav-link dropdown-toggle" href="#" id="dropdownId" data-bs-toggle="dropdown" aria-haspopup="true" aria-expanded="false">Tools</a>
               <div class="dropdown-menu" aria-labelledby="dropdownId">
+                <a class="dropdown-item" href="{% url 'hplc_simulator:index' %}">HPLC Simulator</a>
+                <hr class="dropdown-divider">
                 <a class="dropdown-item" href="{% url 'molecular_weight' %}">Molecular Weight Calculator</a>
                 <a class="dropdown-item" href="{% url 'dilution' %}">Dilution Calculator</a>
                 <a class="dropdown-item" href="{% url 'reaction_balancer' %}">Reaction Balancer</a>
