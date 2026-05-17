@@ -11,7 +11,7 @@ concurrency:
   cancel-in-progress: true
 
 env:
-  PYTHON_VERSION: "3.12"
+  PYTHON_VERSION: "3.14"
   DJANGO_SETTINGS_MODULE: config.settings.development
   EB_APPLICATION: chemically
   EB_ENVIRONMENT: Chemically-env
@@ -23,18 +23,15 @@ jobs:
   # Stage 1: Lint & Test
   # ─────────────────────────────────────────────
   lint-and-test:
-    name: Lint & Test (Python ${{ matrix.python-version }})
+    name: Lint & Test
     runs-on: ubuntu-latest
-    strategy:
-      matrix:
-        python-version: ["3.11", "3.12"]
     steps:
       - uses: actions/checkout@v5
 
       - name: Set up Python ${{ matrix.python-version }}
         uses: actions/setup-python@v6
         with:
-          python-version: ${{ matrix.python-version }}
+          python-version: "3.14"
           cache: pip
           cache-dependency-path: requirements/*.txt
 
@@ -54,9 +51,6 @@ jobs:
 
       - name: Run tests (pytest)
         run: pytest -v
-
-      - name: Run tests (Django runner)
-        run: python manage.py test webapp
 
   # ─────────────────────────────────────────────
   # Stage 2: Security Scan

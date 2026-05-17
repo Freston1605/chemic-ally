@@ -560,8 +560,8 @@ class EquilibriaViewTests(TestCase):
 
 
 class LoggingConfigTests(SimpleTestCase):
-    def test_logging_file_handler_path(self):
-        """Ensure LOGGING writes to the expected file."""
-        file_handler = settings.LOGGING['handlers']['file']
-        expected_path = settings.BASE_DIR / 'django.log'
-        self.assertEqual(file_handler['filename'], expected_path)
+    def test_logging_console_handler_configured(self):
+        """Ensure LOGGING uses console handler for stdout/stderr."""
+        console_handler = settings.LOGGING['handlers']['console']
+        self.assertEqual(console_handler['class'], 'logging.StreamHandler')
+        self.assertEqual(console_handler['formatter'], 'verbose')
