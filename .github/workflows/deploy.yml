@@ -16,6 +16,7 @@ env:
   EB_APPLICATION: chemically
   EB_ENVIRONMENT: Chemically-env
   AWS_REGION: us-east-2
+  AWS_ACCOUNT_ID: "768125641662"
 
 jobs:
   # ─────────────────────────────────────────────
@@ -181,14 +182,14 @@ jobs:
       - name: Upload package to S3
         run: |
           aws s3 cp deploy.zip \
-            "s3://elasticbeanstalk-${{ env.AWS_REGION }}-${{ secrets.AWS_ACCOUNT_ID }}/${{ env.EB_APPLICATION }}/${{ steps.version.outputs.label }}.zip"
+            "s3://elasticbeanstalk-${{ env.AWS_REGION }}-${{ env.AWS_ACCOUNT_ID }}/${{ env.EB_APPLICATION }}/${{ steps.version.outputs.label }}.zip"
 
       - name: Create EB application version
         run: |
           aws elasticbeanstalk create-application-version \
             --application-name ${{ env.EB_APPLICATION }} \
             --version-label "${{ steps.version.outputs.label }}" \
-            --source-bundle S3Bucket="elasticbeanstalk-${{ env.AWS_REGION }}-${{ secrets.AWS_ACCOUNT_ID }}",S3Key="${{ env.EB_APPLICATION }}/${{ steps.version.outputs.label }}.zip" \
+            --source-bundle S3Bucket="elasticbeanstalk-${{ env.AWS_REGION }}-${{ env.AWS_ACCOUNT_ID }}",S3Key="${{ env.EB_APPLICATION }}/${{ steps.version.outputs.label }}.zip" \
             --description "Deployed from ${{ github.sha }} by ${{ github.actor }}"
 
       - name: Deploy to environment

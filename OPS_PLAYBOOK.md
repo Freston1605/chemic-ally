@@ -424,6 +424,66 @@ aws elasticbeanstalk update-environment \
   --region us-east-2
 ```
 
+### Priority 6 — SSL Certificate Management (Updated)
+
+The `.ebextensions/https-instance.config` manages Let's Encrypt certificates via certbot. The current setup:
+
+- **Primary validation:** DNS-01 via Route 53 (zero downtime, no port conflicts)
+- **Fallback:** HTTP-01 standalone (briefly stops nginx during validation)
+- **Renewal:** Daily cron at 3:XX AM using DNS-01 — no service interruption
+- **Monitoring:** Daily expiry check at 9 AM, logs warnings if < 14 days remain
+- **Deploy hook:** nginx reloads automatically only when a cert is actually renewed
+
+**Route 53 permissions:** The EC2 instance profile gets an inline policy (`ChemicAllyCertbotRoute53`) added automatically during deployment to allow DNS-01 validation.
+
+**Troubleshooting certbot:**
+```bash
+eb ssh Chemically-env
+cat /var/log/certbot-install.log   # Deployment-time certbot output
+cat /var/log/certbot-renew.log      # Renewal cron + expiry check logs
+certbot certificates                 # List all certs and expiry dates
+openssl x509 -enddate -noout -in /etc/letsencrypt/live/chemic-ally.xyz/cert.pem
+```
+
+### Priority 7 — Migrate to ACM + ALB (Future)
+
+When ready to move from certbot to AWS Certificate Manager:
+
+1. **Verify ACM certificate** — a pending-validation ACM cert already exists (Route 53 CNAME `_0e8c53c33aa2fe30e2c1059d78e890be` is in place). Complete validation in the ACM console.
+
+2. **Create an ALB** and attach the ACM certificate to the HTTPS listener (port 443).
+
+3. **Change the EB environment** from `SingleInstance` to `LoadBalanced`:
+   ```bash
+   aws elasticbeanstalk update-environment \
+     --environment-name Chemically-env \
+     --option-settings '[
+       {"Namespace": "aws:ec2:vpc", "OptionName": "ELBScheme", "Value": "internet-facing"},
+       {"Namespace": "aws:ec2:vpc", "OptionName": "ELBSubnets", "Value": "subnet-02d1ad820c19ca8d6,subnet-0e4ba09d65bb88c70,subnet-0b4991de35dfd28b0"},
+       {"Namespace": "aws:elasticbeanstalk:environment", "OptionName": "EnvironmentType", "Value": "LoadBalanced"},
+       {"Namespace": "aws:elbv2:listener:default", "OptionName": "ListenerEnabled", "Value": "true"},
+       {"Namespace": "aws:elbv2:listener:443", "OptionName": "ListenerEnabled", "Value": "true"},
+       {"Namespace": "aws:elbv2:listener:443", "OptionName": "Protocol", "Value": "HTTPS"},
+       {"Namespace": "aws:elbv2:listener:443", "OptionName": "SSLCertificateArns", "Value": "arn:aws:acm:us-east-2:768125641662:certificate/<CERT_ID>"}
+     ]' \
+     --region us-east-2
+   ```
+
+4. **Remove certbot** — delete `.ebextensions/https-instance.config` (or rename to `https-instance.config.disabled`).
+
+5. **Update Django settings** — `SECURE_PROXY_SSL_HEADER` in `production.py` already handles ALB-terminated SSL via `X-Forwarded-Proto`. No code changes needed.
+
+6. **Update Route 53** — change the A record alias to point to the ALB DNS name instead of the EB CNAME.
+
+**Benefits of ACM + ALB:**
+- Automatic certificate renewal (no certbot, no cron, no downtime)
+- Health checks and multi-AZ availability
+- Easy horizontal scaling (increase ASG min/max)
+- WAF integration for DDoS protection
+- HTTP/2 and TLS 1.3 handled by ALB
+
+**Cost impact:** ~$16-22/month for the ALB (in addition to existing EC2 + RDS costs).
+
 ---
 
 ## 7. Monitoring & Alerting
