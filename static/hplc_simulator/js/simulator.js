@@ -32,9 +32,9 @@ function hplcSimulator() {
         availableColumns: ['C18', 'C8'],
         params: {
             is_gradient: true,
-            start_b: 10,
-            end_b: 90,
-            ramp_time: 15,
+            start_b: 5,
+            end_b: 95,
+            ramp_time: 20,
             ph: 3.0,
             column_chemistry: 'C18',
             column_length_mm: 150,
@@ -62,6 +62,7 @@ function hplcSimulator() {
         hasResults: false,
         viewMode: 'auto',
         plotInstance: null,
+        errorMessage: '',
 
         async loadLevel(slug) {
             try {
@@ -69,11 +70,14 @@ function hplcSimulator() {
                 this.level = await response.json();
                 this.availableColumns = this.level.constraints.available_columns;
 
-                if (this.level.constraints.max_pressure_bar) {
-                    this.level.max_pressure_bar = this.level.constraints.max_pressure_bar;
-                }
+                this.level.max_pressure_bar =
+                    this.level.constraints.max_pressure_bar;
 
-                if (!this.availableColumns.includes(this.params.column_chemistry)) {
+                if (
+                    !this.availableColumns.includes(
+                        this.params.column_chemistry,
+                    )
+                ) {
                     this.params.column_chemistry = this.availableColumns[0];
                 }
             } catch (error) {
@@ -84,9 +88,9 @@ function hplcSimulator() {
         resetParams() {
             this.params = {
                 is_gradient: true,
-                start_b: 10,
-                end_b: 90,
-                ramp_time: 15,
+                start_b: 5,
+                end_b: 95,
+                ramp_time: 20,
                 ph: 3.0,
                 column_chemistry: this.availableColumns[0],
                 column_length_mm: 150,
@@ -96,32 +100,40 @@ function hplcSimulator() {
                 temperature_c: 30,
                 injection_volume_ul: 10,
             };
+            this.errorMessage = '';
         },
 
         async runSimulation() {
             this.running = true;
             this.hasResults = false;
+            this.errorMessage = '';
 
             const payload = {
                 level_id: this.level.id,
                 mobile_phase: {
-                    start_b: this.params.start_b,
-                    end_b: this.params.end_b,
-                    ramp_time: this.params.ramp_time,
-                    ph: this.params.ph,
+                    start_b: parseFloat(this.params.start_b),
+                    end_b: parseFloat(this.params.end_b),
+                    ramp_time: parseFloat(this.params.ramp_time),
+                    ph: parseFloat(this.params.ph),
                     buffer_concentration_mm: 10,
                     is_gradient: this.params.is_gradient,
                 },
                 column: {
                     chemistry: this.params.column_chemistry,
-                    length_mm: this.params.column_length_mm,
-                    id_mm: this.params.column_id_mm,
-                    particle_size_um: this.params.particle_size_um,
+                    length_mm: parseFloat(this.params.column_length_mm),
+                    id_mm: parseFloat(this.params.column_id_mm),
+                    particle_size_um: parseFloat(
+                        this.params.particle_size_um,
+                    ),
                 },
                 operation: {
-                    flow_rate_ml_min: this.params.flow_rate_ml_min,
-                    temperature_c: this.params.temperature_c,
-                    injection_volume_ul: this.params.injection_volume_ul,
+                    flow_rate_ml_min: parseFloat(
+                        this.params.flow_rate_ml_min,
+                    ),
+                    temperature_c: parseFloat(this.params.temperature_c),
+                    injection_volume_ul: parseFloat(
+                        this.params.injection_volume_ul,
+                    ),
                 },
             };
 
@@ -140,15 +152,47 @@ function hplcSimulator() {
                 if (response.ok) {
                     this.results = data;
                     this.hasResults = true;
-                    this.animateChromatogram(data.chromatogram, data.peaks);
+                    this.animateChromatogram(
+                        data.chromatogram,
+                        data.peaks,
+                    );
                 } else {
+                    this.errorMessage = this.formatErrors(data.errors);
                     console.error('Simulation error:', data);
                 }
             } catch (error) {
+                this.errorMessage = 'Network error. Please try again.';
                 console.error('Failed to run simulation:', error);
             } finally {
                 this.running = false;
             }
+        },
+
+        formatErrors(errors) {
+            if (!errors) return 'An unknown error occurred.';
+
+            if (typeof errors === 'string') return errors;
+
+            const messages = [];
+            for (const [field, fieldErrors] of Object.entries(errors)) {
+                if (Array.isArray(fieldErrors)) {
+                    messages.push(`${field}: ${fieldErrors.join(', ')}`);
+                } else if (typeof fieldErrors === 'object') {
+                    for (const [subField, subErrors] of Object.entries(
+                        fieldErrors,
+                    )) {
+                        if (Array.isArray(subErrors)) {
+                            messages.push(
+                                `${field}.${subField}: ${subErrors.join(', ')}`,
+                            );
+                        }
+                    }
+                }
+            }
+
+            return messages.length > 0
+                ? messages.join('; ')
+                : 'Validation error occurred.';
         },
 
         animateChromatogram(chromatogram, peaks) {
@@ -215,7 +259,10 @@ function hplcSimulator() {
                     return;
                 }
 
-                const endIndex = Math.min(currentIndex + pointsPerFrame, totalPoints);
+                const endIndex = Math.min(
+                    currentIndex + pointsPerFrame,
+                    totalPoints,
+                );
                 trace.x = timeData.slice(0, endIndex);
                 trace.y = signalData.slice(0, endIndex);
 
@@ -319,7 +366,9 @@ function hplcSimulator() {
                 const cookies = document.cookie.split(';');
                 for (let i = 0; i < cookies.length; i++) {
                     const cookie = cookies[i].trim();
-                    if (cookie.substring(0, name.length + 1) === name + '=') {
+                    if (
+                        cookie.substring(0, name.length + 1) === name + '='
+                    ) {
                         cookieValue = decodeURIComponent(
                             cookie.substring(name.length + 1),
                         );

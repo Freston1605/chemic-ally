@@ -1,6 +1,7 @@
 {% extends "hplc_simulator/hplc_base.html" %}
 
 {% block main %}
+{% csrf_token %}
 <div class="container-fluid px-3 px-lg-4"
      x-data="hplcSimulator()"
      x-init="loadLevel('{{ level_slug }}')">
@@ -243,8 +244,13 @@
         </div>
       </div>
 
+      <!-- Error message -->
+      <div class="alert alert-danger mt-3"
+           x-show="errorMessage"
+           x-text="errorMessage"></div>
+
       <!-- Pressure gauge -->
-      <div class="card mt-3" x-show="results.metrics">
+      <div class="card mt-3" x-show="hasResults">
         <div class="card-header py-2">
           <h6 class="mb-0">System Status</h6>
         </div>
@@ -260,7 +266,7 @@
                    :style="'width: ' + pressurePercent() + '%'"></div>
             </div>
             <div class="small text-muted mt-1">
-              Limit: <span x-text="level.max_pressure_bar"></span> bar
+              Limit: <span x-text="level.max_pressure_bar || 400"></span> bar
             </div>
           </div>
         </div>

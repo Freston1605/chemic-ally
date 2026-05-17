@@ -64,9 +64,33 @@ class MobilePhaseSerializer(serializers.Serializer):
 
 class ColumnConfigSerializer(serializers.Serializer):
     chemistry = serializers.CharField()
-    length_mm = serializers.ChoiceField(choices=[50, 100, 150, 250])
-    id_mm = serializers.ChoiceField(choices=[2.1, 3.0, 4.6])
-    particle_size_um = serializers.ChoiceField(choices=[1.8, 3.0, 5.0])
+    length_mm = serializers.FloatField()
+    id_mm = serializers.FloatField()
+    particle_size_um = serializers.FloatField()
+
+    def validate_length_mm(self, value):
+        valid = [50, 100, 150, 250]
+        if value not in valid:
+            raise serializers.ValidationError(
+                f"Invalid column length. Choose from {valid}"
+            )
+        return value
+
+    def validate_id_mm(self, value):
+        valid = [2.1, 3.0, 4.6]
+        if value not in valid:
+            raise serializers.ValidationError(
+                f"Invalid column ID. Choose from {valid}"
+            )
+        return value
+
+    def validate_particle_size_um(self, value):
+        valid = [1.8, 3.0, 5.0]
+        if value not in valid:
+            raise serializers.ValidationError(
+                f"Invalid particle size. Choose from {valid}"
+            )
+        return value
 
 
 class OperationConfigSerializer(serializers.Serializer):
