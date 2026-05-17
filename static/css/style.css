@@ -1,14 +1,46 @@
 /* ============================================================
    Base layout — flex sticky footer
    ============================================================ */
+html { scroll-behavior: smooth; }
 html, body { height: 100%; }
 body { display: flex; flex-direction: column; }
 main { flex: 1 0 auto; }
 footer { flex-shrink: 0; }
 
 /* ============================================================
+   Skip-to-content link
+   ============================================================ */
+.skip-link {
+  position: absolute;
+  top: -100%;
+  left: 0;
+  padding: 0.5rem 1rem;
+  background: var(--bs-primary);
+  color: #fff;
+  z-index: 9999;
+  font-weight: 600;
+  text-decoration: none;
+  border-radius: 0 0 0.25rem 0;
+}
+.skip-link:focus {
+  top: 0;
+}
+
+/* ============================================================
    Navbar dropdown — expand leftward to avoid word-breaking
    ============================================================ */
+/* Theme toggle button */
+#bd-theme {
+  color: var(--bs-body-color);
+  padding: 0.5rem;
+  display: flex;
+  align-items: center;
+}
+#bd-theme:hover {
+  color: var(--bs-primary);
+}
+
+/* Navbar dropdown — expand leftward to avoid word-breaking */
 /* Desktop: align to the right edge and expand left */
 @media (min-width: 992px) {
   .navbar .dropdown-menu {
@@ -33,6 +65,41 @@ footer { flex-shrink: 0; }
 }
 
 /* ============================================================
+   Calculator layout — CSS Grid
+   ============================================================ */
+.calculator-layout {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 1.5rem;
+}
+
+@media (min-width: 992px) {
+  .calculator-layout {
+    grid-template-columns: 1fr 1fr;
+    align-items: start;
+  }
+}
+
+/* Equilibria gets wider form */
+.calculator-layout--wide {
+  grid-template-columns: 1fr;
+}
+
+@media (min-width: 992px) {
+  .calculator-layout--wide {
+    grid-template-columns: 2fr 1fr;
+  }
+}
+
+/* Sticky result panel on desktop */
+@media (min-width: 1200px) {
+  .result-card-col .result-card {
+    position: sticky;
+    top: 5rem;
+  }
+}
+
+/* ============================================================
    Calculator card animations
    ============================================================ */
 .form-card-col {
@@ -48,22 +115,6 @@ footer { flex-shrink: 0; }
 @keyframes resultFadeIn {
   from { opacity: 0; transform: translateY(12px); }
   to   { opacity: 1; transform: translateY(0); }
-}
-
-/* ============================================================
-   Chemical Equilibria — wider form card
-   ============================================================ */
-@media (min-width: 992px) {
-  .form-card-col {
-    flex: 0 0 auto;
-    width: 75%;
-  }
-}
-@media (min-width: 1400px) {
-  .form-card-col {
-    flex: 0 0 auto;
-    width: 66.66666667%;
-  }
 }
 
 /* ============================================================
@@ -103,4 +154,140 @@ footer { flex-shrink: 0; }
   word-wrap: break-word;
   overflow-wrap: break-word;
   hyphens: auto;
+}
+
+/* ============================================================
+   Substance tag widget — extracted from inline JS styles
+   ============================================================ */
+.substance-tag-container {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px;
+  border: 1px solid var(--bs-border-color, #6c757d);
+  border-radius: 0.375rem;
+  padding: 4px 8px;
+  min-height: 38px;
+  cursor: text;
+  background: var(--bs-body-bg, #212529);
+  color: var(--bs-body-color, #dee2e6);
+}
+
+.substance-tag-container-init {
+  /* Initial state before JS transforms it */
+}
+
+.substance-tag-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  align-items: center;
+}
+
+.substance-tag-input {
+  border: none;
+  outline: none;
+  flex: 1;
+  min-width: 120px;
+  padding: 2px 4px;
+  font-size: 0.9rem;
+  background: transparent;
+  color: inherit;
+}
+
+.substance-tag {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  background: var(--bs-secondary-bg, #495057);
+  border-radius: 16px;
+  padding: 2px 8px;
+  font-size: 0.875rem;
+  line-height: 1.5;
+  white-space: nowrap;
+  color: var(--bs-body-color, #dee2e6);
+}
+
+.substance-tag .btn-remove {
+  border: none;
+  background: none;
+  cursor: pointer;
+  font-size: 1.1rem;
+  line-height: 1;
+  padding: 2px 4px;
+  min-width: 24px;
+  min-height: 24px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--bs-secondary-color, #adb5bd);
+  border-radius: 50%;
+}
+
+.substance-tag .btn-remove:hover {
+  background: rgba(255, 255, 255, 0.1);
+}
+
+.substance-suggestions {
+  display: none;
+  position: absolute;
+  z-index: 1000;
+  background: var(--bs-body-bg, #212529);
+  color: var(--bs-body-color, #dee2e6);
+  border: 1px solid var(--bs-border-color, #6c757d);
+  border-radius: 0.25rem;
+  max-height: 200px;
+  overflow-y: auto;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.5);
+  width: 100%;
+  left: 0;
+  top: 100%;
+}
+
+.substance-suggestion-item {
+  padding: 6px 12px;
+  cursor: pointer;
+  font-size: 0.9rem;
+  color: var(--bs-body-color, #dee2e6);
+}
+
+.substance-suggestion-item:hover,
+.substance-suggestion-item.active {
+  background: var(--bs-primary, #007bff);
+  color: #fff;
+}
+
+/* ============================================================
+   Print styles
+   ============================================================ */
+@media print {
+  .navbar,
+  footer,
+  .skip-link,
+  .btn,
+  #calculate-btn {
+    display: none !important;
+  }
+
+  main {
+    flex: none;
+  }
+
+  .calculator-layout {
+    grid-template-columns: 1fr !important;
+  }
+
+  .card {
+    border: 1px solid #000 !important;
+    break-inside: avoid;
+  }
+
+  .result-card {
+    animation: none !important;
+  }
+
+  body {
+    color: #000;
+    background: #fff;
+  }
 }

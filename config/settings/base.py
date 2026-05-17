@@ -83,6 +83,7 @@ TEMPLATES = [
                 'django.contrib.auth.context_processors.auth',
                 'django.contrib.messages.context_processors.messages',
                 'chemically.context_processors.previous_substances',
+                'chemically.context_processors.current_url',
             ],
         },
     },

@@ -194,8 +194,6 @@
 
       // Wrap existing content
       this.container.classList.add("substance-tag-container");
-      this.container.style.cssText =
-        "display:flex;flex-wrap:wrap;align-items:center;gap:4px;border:1px solid #6c757d;border-radius:0.375rem;padding:4px 8px;min-height:38px;cursor:text;background:var(--bs-body-bg,#212529);color:var(--bs-body-color,#dee2e6);";
 
       // Create hidden input if needed
       if (this.options.hiddenInput) {
@@ -216,8 +214,6 @@
       // Tag list area
       this.tagList = document.createElement("div");
       this.tagList.className = "substance-tag-list";
-      this.tagList.style.cssText =
-        "display:flex;flex-wrap:wrap;gap:4px;align-items:center;";
 
       // Text input
       this.textInput = document.createElement("input");
@@ -229,15 +225,11 @@
       }
 
       this.textInput.className = "substance-tag-input";
-      this.textInput.style.cssText =
-        "border:none;outline:none;flex:1;min-width:120px;padding:2px 4px;font-size:0.9rem;background:transparent;";
       this.textInput.placeholder = this.options.placeholder;
 
       // Suggestions dropdown
       this.suggestEl = document.createElement("div");
       this.suggestEl.className = "substance-suggestions";
-      this.suggestEl.style.cssText =
-        "display:none;position:absolute;z-index:1000;background:var(--bs-body-bg,#212529);color:var(--bs-body-color,#dee2e6);border:1px solid #6c757d;border-radius:0.25rem;max-height:200px;overflow-y:auto;box-shadow:0 2px 8px rgba(0,0,0,0.5);width:100%;left:0;top:100%;";
 
       this.container.appendChild(this.tagList);
       this.container.appendChild(this.textInput);
@@ -335,7 +327,6 @@
       this.tags.forEach((tag, i) => {
         const chip = document.createElement("span");
         chip.className = "substance-tag";
-        chip.style.cssText = "display:inline-flex;align-items:center;gap:4px;background:var(--bs-secondary-bg,#495057);border-radius:16px;padding:2px 8px;font-size:0.875rem;line-height:1.5;white-space:nowrap;color:var(--bs-body-color,#dee2e6);";
 
         const label = document.createElement("span");
         
@@ -346,9 +337,8 @@
 
         const closeBtn = document.createElement("button");
         closeBtn.type = "button";
+        closeBtn.className = "btn-remove";
         closeBtn.innerHTML = "&times;";
-        closeBtn.style.cssText =
-          "border:none;background:none;cursor:pointer;font-size:1.1rem;line-height:1;padding:0 0 0 2px;color:var(--bs-secondary-color,#adb5bd);display:flex;align-items:center;";
         closeBtn.setAttribute("aria-label", `Remove ${tag}`);
         closeBtn.addEventListener("click", (e) => {
           e.stopPropagation();
@@ -441,8 +431,6 @@
         const item = document.createElement("div");
         item.className = "substance-suggestion-item";
         item.textContent = s;
-        item.style.cssText =
-          "padding:6px 12px;cursor:pointer;font-size:0.9rem;color:var(--bs-body-color,#dee2e6);";
         item.addEventListener("mouseenter", () => {
           this._highlightSuggestion(i);
         });
@@ -464,8 +452,7 @@
       this.suggestionIndex = index;
       const items = this.suggestEl.querySelectorAll(".substance-suggestion-item");
       items.forEach((el, i) => {
-        el.style.background = i === index ? "#007bff" : "";
-        el.style.color = i === index ? "#fff" : "";
+        el.classList.toggle("active", i === index);
       });
     }
 

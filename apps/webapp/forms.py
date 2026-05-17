@@ -73,8 +73,8 @@ class ChemicalReactionForm(forms.Form):
     reversible = forms.BooleanField(
         initial=True,
         required=False,
-        label="Irreversible Reaction",
-        help_text="Uncheck this box if the reaction is not reversible",
+        label="Reversible reaction",
+        help_text="Uncheck this box if the reaction is irreversible",
     )
 
     def clean(self):
@@ -230,7 +230,11 @@ class EquilibriumSystemForm(forms.Form):
                 else:
                     result = {}
                     for substance, entry in parsed.items():
-                        if isinstance(entry, dict) and "value" in entry and "unit" in entry:
+                        if (
+                            isinstance(entry, dict)
+                            and "value" in entry
+                            and "unit" in entry
+                        ):
                             q = Q_(float(entry["value"]), entry["unit"])
                             result[substance] = float(q.to("mol/L").magnitude)
                         elif isinstance(entry, (int, float)):
@@ -331,7 +335,7 @@ class SolutionForm(forms.Form):
     )
     c1 = forms.FloatField(
         min_value=0,
-        label="Initial concentration of the solute.",
+        label="C\u2081 (Initial Concentration)",
         required=False,
         help_text=(
             "Enter the concentration of the initial solute in the solution "
@@ -341,7 +345,7 @@ class SolutionForm(forms.Form):
 
     v1 = forms.FloatField(
         min_value=0,
-        label="Initial volume of the solute.",
+        label="V\u2081 (Initial Volume)",
         required=False,
         help_text=(
             "Enter the volume of the initial solution and choose the "
@@ -350,13 +354,13 @@ class SolutionForm(forms.Form):
     )
     c2 = forms.FloatField(
         min_value=0,
-        label="Final concentration of the solution.",
+        label="C\u2082 (Final Concentration)",
         required=False,
         help_text="Enter the concentration of the final solution.",
     )
     v2 = forms.FloatField(
         min_value=0,
-        label="Final volume of the solution.",
+        label="V\u2082 (Final Volume)",
         required=False,
         help_text="Enter the volume of the final solution.",
     )

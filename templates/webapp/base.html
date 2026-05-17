@@ -18,10 +18,27 @@
     <link rel="stylesheet" href="{% static 'css/style.css' %}" />
     <!-- Substance tag input widget (no DOM deps, safe to load early) -->
     <script src="{% static 'js/substance_input.js' %}"></script>
+    <script>
+      document.addEventListener('DOMContentLoaded', function() {
+        document.querySelectorAll('[data-widget="substance-tag"]').forEach(function(el) {
+          if (el.dataset.initialized) return;
+          el.dataset.initialized = 'true';
+          var widget = new window.SubstanceTagInput(el, {
+            name: el.dataset.fieldName,
+            placeholder: el.dataset.placeholder || 'Type a substance and press Enter'
+          });
+          var fallback = el.querySelector('.substance-tag-fallback');
+          if (fallback && fallback.value) {
+            widget.setTags(fallback.value.split(/\s+/).filter(Boolean));
+          }
+        });
+      });
+    </script>
     {% block extra_head %}{% endblock %}
   </head>
 
   <body>
+    <a href="#content" class="skip-link">Skip to main content</a>
     <!-- Navigation bar -->
     <header class="navbar navbar-expand-lg sticky-top bg-dark" data-bs-theme="dark">
       <nav class="container-xxl flex-wrap flex-lg-nowrap" aria-label="Main navigation">
@@ -34,15 +51,18 @@
         <button class="navbar-toggler d-lg-none" type="button" data-bs-toggle="collapse" data-bs-target="#collapsibleNavId" aria-controls="collapsibleNavId" aria-expanded="false" aria-label="Toggle navigation"></button>
         <div class="collapse navbar-collapse" id="collapsibleNavId">
           <ul class="navbar-nav ms-auto mt-2 mt-lg-0">
+            <li class="nav-item">
+              <button type="button" class="btn btn-link nav-link" id="bd-theme" aria-label="Toggle theme">
+                <span class="theme-icon-active"></span>
+              </button>
+            </li>
             <li class="nav-item dropdown">
               <a class="nav-link dropdown-toggle" href="#" id="dropdownId" data-bs-toggle="dropdown" aria-haspopup="true" aria-expanded="false">Tools</a>
               <div class="dropdown-menu" aria-labelledby="dropdownId">
-                <a class="dropdown-item" href="{% url 'hplc_simulator:index' %}">HPLC Simulator</a>
-                <hr class="dropdown-divider">
-                <a class="dropdown-item" href="{% url 'molecular_weight' %}">Molecular Weight Calculator</a>
-                <a class="dropdown-item" href="{% url 'dilution' %}">Dilution Calculator</a>
-                <a class="dropdown-item" href="{% url 'reaction_balancer' %}">Reaction Balancer</a>
-                <a class="dropdown-item" href="{% url 'equilibria' %}">Chemical Equilibria Calculator</a>
+                <a class="dropdown-item{% if current_url == 'molecular_weight' %} active{% endif %}" href="{% url 'molecular_weight' %}"{% if current_url == 'molecular_weight' %} aria-current="page"{% endif %}>Molecular Weight Calculator</a>
+                <a class="dropdown-item{% if current_url == 'dilution' %} active{% endif %}" href="{% url 'dilution' %}"{% if current_url == 'dilution' %} aria-current="page"{% endif %}>Dilution Calculator</a>
+                <a class="dropdown-item{% if current_url == 'reaction_balancer' %} active{% endif %}" href="{% url 'reaction_balancer' %}"{% if current_url == 'reaction_balancer' %} aria-current="page"{% endif %}>Reaction Balancer</a>
+                <a class="dropdown-item{% if current_url == 'equilibria' %} active{% endif %}" href="{% url 'equilibria' %}"{% if current_url == 'equilibria' %} aria-current="page"{% endif %}>Chemical Equilibria Calculator</a>
               </div>
             </li>
           </ul>
@@ -55,7 +75,7 @@
       <div id="content" class="container-xl py-4">
         <!-- Display mesagges -->
         {% if messages %}
-          <div class="container">
+          <div class="container" role="alert" aria-live="assertive" tabindex="-1" id="messages-container">
             {% for message in messages %}
               <div class="alert alert-dismissible fade show {% if 'success' in message.tags %}alert-success{% elif 'info' in message.tags %}alert-info{% elif 'warning' in message.tags %}alert-warning{% elif 'error' in message.tags or 'danger' in message.tags %}alert-danger{% else %}alert-secondary{% endif %}" role="alert">
                 {{ message }}
@@ -110,6 +130,33 @@
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.min.js" integrity="sha384-BBtl+eGJRgqQAUMxJ7pMwbEyER4l1g+O15P+16Ep7Q9Q+zqX6gSbd85u4mG4QzX+" crossorigin="anonymous"></script>
     <!-- Clipboard utility -->
     <script src="{% static 'js/clipboard.js' %}"></script>
+    <!-- Theme toggle -->
+    <script src="{% static 'js/dark_mode_enabler.js' %}"></script>
+    <!-- Form validation -->
+    <script src="{% static 'js/form_validation.js' %}"></script>
+    <!-- Focus management after form submission -->
+    <script>
+      (function() {
+        // Focus messages if errors present
+        var messages = document.getElementById('messages-container');
+        if (messages) {
+          var hasError = messages.querySelector('.alert-danger');
+          if (hasError) {
+            messages.focus();
+            messages.scrollIntoView({ behavior: 'smooth', block: 'center' });
+          }
+        }
+        // Focus result heading if result card exists
+        var resultCard = document.querySelector('.result-card');
+        if (resultCard) {
+          var heading = resultCard.querySelector('h3');
+          if (heading) {
+            heading.setAttribute('tabindex', '-1');
+            heading.focus();
+          }
+        }
+      })();
+    </script>
     {% block extra_scripts %}{% endblock %}
   </body>
 </html>
