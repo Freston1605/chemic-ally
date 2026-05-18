@@ -1,4 +1,4 @@
-"""Utility helpers for the webapp package."""
+"""Utility helpers for the chemistry_calculators package."""
 
 from typing import Iterable
 from django.http import HttpRequest

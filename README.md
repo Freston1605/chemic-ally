@@ -36,18 +36,18 @@ ChemicAlly is a web platform designed to facilitate quick and efficient calculat
 
 ```
 chemic-ally/
-├── apps/webapp/            # Main Django application
+├── apps/chemistry_calculators/ # Main Django application
 │   ├── calculations/       # Calculation engine (MolecularWeight, Reaction, Dilution)
 │   ├── utils/              # Utility helpers (session persistence, etc.)
 │   ├── forms.py            # Django forms (MolecularFormula, ChemicalReaction, Solution)
 │   ├── models.py           # Placeholder (no database models yet)
-│   ├── urls.py             # URL routing for webapp
+│   ├── urls.py             # URL routing for chemistry_calculators
 │   └── views.py            # Class-based views for all calculators + dashboard
 ├── config/                 # Django project configuration
 │   ├── settings/           # Environment-specific settings (base, development, production)
 │   └── urls.py             # Root URL configuration
 ├── chemically/             # Additional project-level modules
-├── templates/webapp/       # HTML templates
+├── templates/chemistry_calculators/ # HTML templates
 │   └── calculator/         # Per-calculator templates
 ├── static/                 # Static assets (CSS, JS)
 ├── tests/                  # Test suite

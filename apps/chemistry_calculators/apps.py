@@ -1,6 +1,6 @@
 from django.apps import AppConfig
 
 
-class WebAppConfig(AppConfig):
+class ChemistryCalculatorsConfig(AppConfig):
     default_auto_field = 'django.db.models.BigAutoField'
-    name = 'webapp'
+    name = 'chemistry_calculators'

@@ -56,7 +56,7 @@ jobs:
         run: pytest -v
 
       - name: Run tests (Django runner)
-        run: python manage.py test webapp
+        run: python manage.py test chemistry_calculators
 
   # ─────────────────────────────────────────────
   # Stage 2: Security Scan

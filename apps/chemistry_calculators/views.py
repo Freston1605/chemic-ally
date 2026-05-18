@@ -31,7 +31,7 @@ class LandingPage(TemplateView):
         TemplateView (Class): Class Based Django View
     """
 
-    template_name = "webapp/landing.html"
+    template_name = "chemistry_calculators/landing.html"
 
 
 class BaseCalculateView(FormView, ABC):
@@ -123,7 +123,7 @@ class CalculateMolecularWeightView(BaseCalculateView):
 
     """
 
-    template_name = "webapp/calculator/molecular_weight.html"
+    template_name = "chemistry_calculators/calculator/molecular_weight.html"
     form_class = MolecularFormulaForm
 
     def process_calculation(self, form: MolecularFormulaForm) -> dict:
@@ -164,14 +164,14 @@ class BalanceChemicalReaction(BaseCalculateView):
 
     Part of the new class-based calculator framework, this view delegates the
     actual stoichiometric balancing to :class:`ReactionBalancer` defined in
-    ``webapp.calculations.base``.
+    ``chemistry_calculators.calculations.base``.
 
     Args:
         - BaseCalculateView (Type[BaseCalculateView]): Base class for form-driven
           calculations.
     """
 
-    template_name = "webapp/calculator/reaction_balancer.html"
+    template_name = "chemistry_calculators/calculator/reaction_balancer.html"
     form_class = ChemicalReactionForm
 
     def process_calculation(self, form: form_class) -> str:
@@ -234,7 +234,7 @@ class CalculateDilutionView(BaseCalculateView):
             Base class for form-driven calculator views.
     """
 
-    template_name = "webapp/calculator/dilution.html"
+    template_name = "chemistry_calculators/calculator/dilution.html"
     form_class = SolutionForm
 
     def get_context_data(self, **kwargs):
@@ -384,7 +384,7 @@ class CalculateEquilibriaView(BaseCalculateView):
             Base class for form-driven calculator views.
     """
 
-    template_name = "webapp/calculator/equilibria.html"
+    template_name = "chemistry_calculators/calculator/equilibria.html"
     form_class = EquilibriumSystemForm
 
     def process_calculation(self, form: EquilibriumSystemForm) -> dict:
