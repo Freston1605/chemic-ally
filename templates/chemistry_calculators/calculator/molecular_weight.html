@@ -1,4 +1,4 @@
-{% extends 'webapp/calculator/_calculator_base.html' %}
+{% extends 'chemistry_calculators/calculator/_calculator_base.html' %}
 
 {% block breadcrumbs_inner %}
 <span class="separator" aria-hidden="true">/</span>
@@ -12,9 +12,9 @@
   {% csrf_token %}
   {% for field in form %}
     {% if field.name == 'formula' %}
-      {% include 'webapp/calculator/_tag_input_field.html' with field=field %}
+      {% include 'chemistry_calculators/calculator/_tag_input_field.html' with field=field %}
     {% else %}
-      {% include 'webapp/calculator/_field_row.html' with field=field %}
+      {% include 'chemistry_calculators/calculator/_field_row.html' with field=field %}
     {% endif %}
   {% endfor %}
 </form>

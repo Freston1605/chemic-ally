@@ -5,13 +5,13 @@ from django.urls import reverse
 from django.conf import settings
 from chempy import Substance
 
-from webapp.calculations.base import (
+from chemistry_calculators.calculations.base import (
     MolecularWeightCalculator,
     ReactionBalancer,
     DilutionCalculator,
 )
-from webapp.calculations.equilibria import EquilibriaCalculator
-from webapp.forms import (
+from chemistry_calculators.calculations.equilibria import EquilibriaCalculator
+from chemistry_calculators.forms import (
     ChemicalReactionForm,
     EquilibriumSystemForm,
     MolecularFormulaForm,
@@ -551,7 +551,7 @@ class EquilibriaViewTests(TestCase):
     def test_equilibria_view_get(self):
         response = self.client.get(reverse("equilibria"))
         self.assertEqual(response.status_code, 200)
-        self.assertTemplateUsed(response, "webapp/calculator/equilibria.html")
+        self.assertTemplateUsed(response, "chemistry_calculators/calculator/equilibria.html")
 
     def test_equilibria_view_post_valid(self):
         data = {

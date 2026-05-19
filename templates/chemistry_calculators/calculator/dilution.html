@@ -1,4 +1,4 @@
-{% extends 'webapp/calculator/_calculator_base.html' %}
+{% extends 'chemistry_calculators/calculator/_calculator_base.html' %}
 
 {% block breadcrumbs_inner %}
 <span class="separator" aria-hidden="true">/</span>
@@ -21,7 +21,7 @@
       </div>
     {% endif %}
     {% for item in dilution_fields %}
-      {% include 'webapp/calculator/_dilution_pair.html' with item=item %}
+      {% include 'chemistry_calculators/calculator/_dilution_pair.html' with item=item %}
     {% endfor %}
   </form>
 {% endblock %}
