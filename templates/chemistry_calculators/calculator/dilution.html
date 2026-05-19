@@ -1,15 +1,20 @@
 {% extends 'chemistry_calculators/calculator/_calculator_base.html' %}
 
-{% block calculator_title %}Dilution Calculator{% endblock %}
+{% block breadcrumbs_inner %}
+<span class="separator" aria-hidden="true">/</span>
+<span class="current">Dilution</span>
+{% endblock %}
+
+{% block calculator_title %}How much stock solution?{% endblock %}
 
 {% block calculator_form %}
-  <p class="text-muted small mb-4">
+  <p class="text-muted small mb-4" style="color:var(--ca-text-muted);">
     Enter three of the four values below. Leave exactly one field blank and the calculator will compute it.
   </p>
   <form method="post" id="calculator-form" action="{% url 'dilution' %}">
     {% csrf_token %}
     {% if form.non_field_errors %}
-      <div class="alert alert-danger">
+      <div class="ca-alert ca-alert-danger mb-3">
         {% for error in form.non_field_errors %}
           <div>{{ error }}</div>
         {% endfor %}
@@ -24,41 +29,29 @@
 {% block calculator_result %}
   {% if result %}
     <div class="result-card-col">
-      <div class="card result-card h-100">
-        <div class="card-body d-flex flex-column">
-          <h3 class="card-title mb-3">Results</h3>
-          <div class="flex-grow-1" aria-live="polite">
-            <div id="dilution-result" class="w-100">
-              <table class="table table-striped">
-                <thead>
-                  <tr>
-                    <th scope="col">Property</th>
-                    <th scope="col">Value</th>
-                    <th scope="col">Unit</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  <tr>
-                    <td>{{ result.property }}</td>
-                    <td>{{ result.value }}</td>
-                    <td>{{ result.unit }}</td>
-                  </tr>
-                </tbody>
-              </table>
-              {% if result.solute_mass_g %}
-                <p class="mb-1">Solute mass: {{ result.solute_mass_g }} g</p>
-              {% endif %}
-            </div>
+      <div class="ca-result-card">
+        <h3 class="fs-5 fw-semibold mb-3" style="color:var(--ca-text-primary);">Results</h3>
+        <div aria-live="polite">
+          <div id="dilution-result">
+            <div class="ca-result-value">{{ result.value }} <span class="unit">{{ result.unit }}</span></div>
+            <div class="ca-result-meta">{{ result.property }}</div>
+            {% if result.solute_mass_g %}
+              <div class="ca-result-meta mt-2">Solute mass: {{ result.solute_mass_g }} g</div>
+            {% endif %}
           </div>
-          <button
-            type="button"
-            class="btn btn-outline-secondary btn-sm mt-auto align-self-end"
-            onclick="copyToClipboard('#dilution-result', this)"
-            aria-label="Copy dilution results to clipboard"
-          >
-            Copy to Clipboard
-          </button>
         </div>
+        <button
+          type="button"
+          class="ca-btn ca-btn-icon mt-2"
+          onclick="copyToClipboard('#dilution-result', this)"
+          aria-label="Copy dilution results to clipboard"
+        >
+          <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" viewBox="0 0 16 16">
+            <path d="M4 1.5H3a2 2 0 0 0-2 2V14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V3.5a2 2 0 0 0-2-2h-1v1h1a1 1 0 0 1 1 1V14a1 1 0 0 1-1 1H3a1 1 0 0 1-1-1V3.5a1 1 0 0 1 1-1h1z"/>
+            <path d="M9.5 1a.5.5 0 0 1 .5.5v1a.5.5 0 0 1-.5.5h-3a.5.5 0 0 1-.5-.5v-1a.5.5 0 0 1 .5-.5zm-3-1A1.5 1.5 0 0 0 5 1.5v1A1.5 1.5 0 0 0 6.5 4h3A1.5 1.5 0 0 0 11 2.5v-1A1.5 1.5 0 0 0 9.5 0z"/>
+          </svg>
+          Copy
+        </button>
       </div>
     </div>
   {% endif %}

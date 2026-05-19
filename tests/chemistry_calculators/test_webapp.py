@@ -271,7 +271,6 @@ class ContextProcessorTests(TestCase):
         self.assertIn('CO2', session['previous_substances'])
 
 
-
 class EquilibriaCalculatorTests(SimpleTestCase):
     """Tests for the EquilibriaCalculator backend."""
 
@@ -392,9 +391,24 @@ class EquilibriumFormTests(SimpleTestCase):
     def _valid_reactions_json(self):
         """Helper: return a valid reactions JSON string for the default example."""
         return json.dumps([
-            {"reactants": "HCO3-", "products": "H+ + CO3-2", "k_mode": "pKa", "k_value": "10.3"},
-            {"reactants": "H2CO3", "products": "H+ + HCO3-", "k_mode": "pKa", "k_value": "6.3"},
-            {"reactants": "H2O", "products": "H+ + OH-", "k_mode": "pKa", "k_value": "14.0"},
+            {
+                "reactants": "HCO3-",
+                "products": "H+ + CO3-2",
+                "k_mode": "pKa",
+                "k_value": "10.3",
+            },
+            {
+                "reactants": "H2CO3",
+                "products": "H+ + HCO3-",
+                "k_mode": "pKa",
+                "k_value": "6.3",
+            },
+            {
+                "reactants": "H2O",
+                "products": "H+ + OH-",
+                "k_mode": "pKa",
+                "k_value": "14.0",
+            },
         ])
 
     def test_valid_form(self):
@@ -440,7 +454,12 @@ class EquilibriumFormTests(SimpleTestCase):
     def test_valid_form_ka_mode(self):
         """Ka mode should use the raw value directly."""
         reactions = json.dumps([
-            {"reactants": "CH3COOH", "products": "H+ + CH3COO-", "k_mode": "Ka", "k_value": "1.75e-5"},
+            {
+                "reactants": "CH3COOH",
+                "products": "H+ + CH3COO-",
+                "k_mode": "Ka",
+                "k_value": "1.75e-5",
+            },
         ])
         form = EquilibriumSystemForm({
             "reactions": reactions,
@@ -478,7 +497,12 @@ class EquilibriumFormTests(SimpleTestCase):
 
     def test_reactions_missing_reactants(self):
         reactions = json.dumps([
-            {"reactants": "", "products": "H+ + OH-", "k_mode": "pKa", "k_value": "14.0"},
+            {
+                "reactants": "",
+                "products": "H+ + OH-",
+                "k_mode": "pKa",
+                "k_value": "14.0",
+            },
         ])
         form = EquilibriumSystemForm({
             "reactions": reactions,
@@ -532,9 +556,24 @@ class EquilibriaViewTests(TestCase):
     def test_equilibria_view_post_valid(self):
         data = {
             "reactions": json.dumps([
-                {"reactants": "HCO3-", "products": "H+ + CO3-2", "k_mode": "pKa", "k_value": "10.3"},
-                {"reactants": "H2CO3", "products": "H+ + HCO3-", "k_mode": "pKa", "k_value": "6.3"},
-                {"reactants": "H2O", "products": "H+ + OH-", "k_mode": "pKa", "k_value": "14.0"},
+                {
+                    "reactants": "HCO3-",
+                    "products": "H+ + CO3-2",
+                    "k_mode": "pKa",
+                    "k_value": "10.3",
+                },
+                {
+                    "reactants": "H2CO3",
+                    "products": "H+ + HCO3-",
+                    "k_mode": "pKa",
+                    "k_value": "6.3",
+                },
+                {
+                    "reactants": "H2O",
+                    "products": "H+ + OH-",
+                    "k_mode": "pKa",
+                    "k_value": "14.0",
+                },
             ]),
             "concentrations": '{"HCO3-": {"value": 0.01, "unit": "mol/L"}}',
             "solvent": "H2O",
@@ -560,8 +599,8 @@ class EquilibriaViewTests(TestCase):
 
 
 class LoggingConfigTests(SimpleTestCase):
-    def test_logging_file_handler_path(self):
-        """Ensure LOGGING writes to the expected file."""
-        file_handler = settings.LOGGING['handlers']['file']
-        expected_path = settings.BASE_DIR / 'django.log'
-        self.assertEqual(file_handler['filename'], expected_path)
+    def test_logging_console_handler_configured(self):
+        """Ensure LOGGING uses console handler for stdout/stderr."""
+        console_handler = settings.LOGGING['handlers']['console']
+        self.assertEqual(console_handler['class'], 'logging.StreamHandler')
+        self.assertEqual(console_handler['formatter'], 'verbose')

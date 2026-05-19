@@ -16,12 +16,12 @@ function levelIndex() {
 
         difficultyBadge(difficulty) {
             const classes = {
-                beginner: 'bg-success',
-                intermediate: 'bg-info',
-                advanced: 'bg-warning text-dark',
-                expert: 'bg-danger',
+                beginner: 'badge-beginner',
+                intermediate: 'badge-intermediate',
+                advanced: 'badge-advanced',
+                expert: 'badge-advanced',
             };
-            return classes[difficulty] || 'bg-secondary';
+            return classes[difficulty] || 'badge-beginner';
         },
     };
 }
@@ -30,6 +30,12 @@ function hplcSimulator() {
     return {
         level: {},
         availableColumns: ['C18', 'C8'],
+        openSections: {
+            column: true,
+            mobilePhase: false,
+            operation: false,
+            advanced: false,
+        },
         params: {
             is_gradient: true,
             start_b: 5,
@@ -105,6 +111,19 @@ function hplcSimulator() {
             };
             this.errorMessage = '';
             this.fieldErrors = {};
+        },
+
+        toggleAccordion(section) {
+            this.openSections[section] = !this.openSections[section];
+        },
+
+        updateSliderFill(event) {
+            const el = event.target;
+            const min = parseFloat(el.min) || 0;
+            const max = parseFloat(el.max) || 100;
+            const val = parseFloat(el.value);
+            const pct = ((val - min) / (max - min)) * 100;
+            el.style.setProperty('--fill', pct + '%');
         },
 
         estimatePressure() {
@@ -263,12 +282,17 @@ function hplcSimulator() {
                 return;
             }
 
+            const traceColor = '#14b8a6';
+            const gridColor = '#30363d';
+            const textColor = '#8b949e';
+            const bgColor = '#0d1117';
+
             const trace = {
                 x: [],
                 y: [],
                 type: 'scatter',
                 mode: 'lines',
-                line: { color: '#0d6efd', width: 1.5 },
+                line: { color: traceColor, width: 1.5 },
                 name: 'Signal',
             };
 
@@ -280,8 +304,8 @@ function hplcSimulator() {
                 arrowhead: 2,
                 arrowsize: 1,
                 arrowwidth: 1,
-                arrowcolor: '#6c757d',
-                font: { size: 10, color: '#adb5bd' },
+                arrowcolor: textColor,
+                font: { size: 10, color: textColor },
                 ay: -20,
             }));
 
@@ -289,18 +313,20 @@ function hplcSimulator() {
                 margin: { t: 30, r: 20, b: 40, l: 60 },
                 xaxis: {
                     title: 'Time (min)',
-                    gridcolor: '#495057',
-                    zerolinecolor: '#495057',
+                    gridcolor: gridColor,
+                    zerolinecolor: gridColor,
+                    color: textColor,
                 },
                 yaxis: {
                     title: 'Signal (mAU)',
-                    gridcolor: '#495057',
-                    zerolinecolor: '#495057',
+                    gridcolor: gridColor,
+                    zerolinecolor: gridColor,
+                    color: textColor,
                     fixedrange: this.viewMode === 'manual',
                 },
-                plot_bgcolor: '#212529',
-                paper_bgcolor: '#212529',
-                font: { color: '#adb5bd' },
+                plot_bgcolor: bgColor,
+                paper_bgcolor: bgColor,
+                font: { color: textColor },
                 annotations: peakAnnotations,
                 showlegend: false,
             };
@@ -415,12 +441,12 @@ function hplcSimulator() {
 
         difficultyBadge(difficulty) {
             const classes = {
-                beginner: 'bg-success',
-                intermediate: 'bg-info',
-                advanced: 'bg-warning text-dark',
-                expert: 'bg-danger',
+                beginner: 'badge-beginner',
+                intermediate: 'badge-intermediate',
+                advanced: 'badge-advanced',
+                expert: 'badge-advanced',
             };
-            return classes[difficulty] || 'bg-secondary';
+            return classes[difficulty] || 'badge-beginner';
         },
 
         getCookie(name) {

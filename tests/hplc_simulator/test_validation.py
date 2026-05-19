@@ -1,11 +1,9 @@
 import pytest
 from django.core.exceptions import ValidationError
-from rest_framework.exceptions import ValidationError as DRFValidationError
-from hplc_simulator.models import Analyte, Level, UserScore
+from hplc_simulator.models import Level, UserScore
 from hplc_simulator.serializers import (
     ColumnConfigSerializer,
     OperationConfigSerializer,
-    MobilePhaseSerializer,
     SimulationRequestSerializer,
 )
 

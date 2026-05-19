@@ -1,72 +1,50 @@
 {% extends 'chemistry_calculators/base.html' %}
 
-{% block header %}
-
-{% endblock %}
-
 {% block main %}
-  <!-- Jumbotron -->
-
-  <div id="jumbotron" class="d-flex align-items-center p-5 mb-4 bg-body-tertiary rounded-3">
-    <div class="container-fluid">
-      <h1 class="display-5 fw-bold">ChemicAlly</h1>
-      <p class="col-md-8 fs-4">Empowering professionals with tools for rapid calculations for chemistry and beyond.</p>
-      <a class="btn btn-primary btn-lg" href="#tool_grid" role="button">See Tools</a>
-    </div>
+  <!-- Hero -->
+  <div class="py-5">
+    <h1 class="ca-page-title">Chemistry calculators for the bench</h1>
+    <p class="ca-lead">Molecular weight, dilutions, reaction balancing — all in one place.</p>
   </div>
 
   <!-- Tool Grid -->
-  <div id="tool_grid">
-    <div class="container-fluid py-5">
-      <div class="p5">
-        <div class="row pb-3">
-          <div class="col-12 col-md-6 col-lg-4 pb-3">
-            <div class="card h-100">
-              <div class="card-body mx-2 d-flex flex-column">
-                <h3 class="card-title mx">Molecular Weight Calculator</h3>
-                <p class="card-text text-justify flex-grow-1">Calculate the molecular weight of any molecule by entering its molecular formula.</p>
-                <a class="btn btn-primary" href="{% url 'molecular_weight' %}" role="button">Enter</a>
-              </div>
-            </div>
-          </div>
-          <div class="col-12 col-md-6 col-lg-4 pb-3">
-            <div class="card h-100">
-              <div class="card-body mx-2 d-flex flex-column">
-                <h3 class="card-title">Chemical Reaction Balancer</h3>
-                <p class="card-text text-justify flex-grow-1">Balances the stoichiometry of a chemical reaction and displays it using LaTeX through MathJax.</p>
-                <a class="btn btn-primary" href="{% url 'reaction_balancer' %}" role="button">Enter</a>
-              </div>
-            </div>
-          </div>
-          <div class="col-12 col-md-6 col-lg-4 pb-3">
-            <div class="card h-100">
-              <div class="card-body d-flex flex-column">
-                <h3 class="card-title">Dilution Calculator</h3>
-                <p class="card-text flex-grow-1">Calculates the concentration or volume of a solution in its initial or final state.</p>
-                <a class="btn btn-primary" href="{% url 'dilution' %}" role="button">Enter</a>
-              </div>
-            </div>
-          </div>
-          <div class="col-12 col-md-6 col-lg-4 pb-3">
-            <div class="card h-100">
-              <div class="card-body d-flex flex-column">
-                <h3 class="card-title">Chemical Equilibria Calculator</h3>
-                <p class="card-text flex-grow-1">Solves coupled chemical equilibria in aqueous solution and calculates pH using chempy.</p>
-                <a class="btn btn-primary" href="{% url 'equilibria' %}" role="button">Enter</a>
-              </div>
-            </div>
-          </div>
-          <div class="col-12 col-md-6 col-lg-4 pb-3">
-            <div class="card h-100">
-              <div class="card-body d-flex flex-column">
-                <h3 class="card-title">HPLC Simulator</h3>
-                <p class="card-text flex-grow-1">Interactive chromatographic separation simulator. Optimize parameters to achieve baseline resolution.</p>
-                <a name="" id="" class="btn btn-primary" href="{% url 'hplc_simulator:index' %}" role="button">Enter</a>
-              </div>
-            </div>
-          </div>
-        </div>
-      </div>
+  <div class="row g-3 pb-5">
+    <div class="col-12 col-md-6 col-lg-4">
+      <a class="ca-tool-card" href="{% url 'molecular_weight' %}">
+        <div class="emoji">⚖️</div>
+        <h3>Find a molecule's mass</h3>
+        <p>Molecular weight from formula</p>
+      </a>
+    </div>
+    <div class="col-12 col-md-6 col-lg-4">
+      <a class="ca-tool-card" href="{% url 'dilution' %}">
+        <div class="emoji">💧</div>
+        <h3>How much stock solution?</h3>
+        <p>Dilution calculator C₁V₁ = C₂V₂</p>
+      </a>
+    </div>
+    <div class="col-12 col-md-6 col-lg-4">
+      <a class="ca-tool-card" href="{% url 'equilibria' %}">
+        <div class="emoji">⚗️</div>
+        <h3>Will this reaction shift?</h3>
+        <p>Equilibrium constant + ICE table</p>
+        <span class="badge" style="background:var(--ca-accent-muted);color:var(--ca-accent);align-self:flex-start;font-size:0.75rem;font-weight:500;padding:0.125rem 0.5rem;border-radius:999px;">beta</span>
+      </a>
+    </div>
+    <div class="col-12 col-md-6 col-lg-4">
+      <a class="ca-tool-card" href="{% url 'reaction_balancer' %}">
+        <div class="emoji">↔️</div>
+        <h3>Balance this equation</h3>
+        <p>Reaction balancer with ChemPy</p>
+      </a>
+    </div>
+    <div class="col-12 col-md-6 col-lg-4">
+      <a class="ca-tool-card" href="{% url 'hplc_simulator:index' %}">
+        <div class="emoji">📊</div>
+        <h3>Simulate a chromatogram</h3>
+        <p>HPLC column parameters and gradient</p>
+        <span class="badge" style="background:var(--ca-accent-muted);color:var(--ca-accent);align-self:flex-start;font-size:0.75rem;font-weight:500;padding:0.125rem 0.5rem;border-radius:999px;">new</span>
+      </a>
     </div>
   </div>
 {% endblock %}
