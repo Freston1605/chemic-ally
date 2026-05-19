@@ -103,3 +103,7 @@ tests/
 - Session stores substance history and calculator form state
 - Templates live in `templates/webapp/` and `templates/hplc_simulator/` (project-level `TEMPLATES.DIRS`)
 - HPLC simulator has a `SCIENTIFIC_LOGIC.md` documenting physical invariants — any changes to the simulation engine must respect these constraints
+
+## Agent Conduct
+
+- **Branch guard**: Before committing to any pre-existing branch (`main`, `eb`, or any branch that already exists before the current session), ask the user to confirm the target branch. Use worktrees (`createworktree`) for new feature branches.
