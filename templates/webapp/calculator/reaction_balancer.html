@@ -1,6 +1,11 @@
 {% extends 'webapp/calculator/_calculator_base.html' %}
 
-{% block calculator_title %}Chemical Reaction Balancer{% endblock %}
+{% block breadcrumbs_inner %}
+<span class="separator" aria-hidden="true">/</span>
+<span class="current">Reaction</span>
+{% endblock %}
+
+{% block calculator_title %}Balance this equation{% endblock %}
 
 {% block calculator_form %}
 <form method="post" action="{% url 'reaction_balancer' %}" id="calculator-form">
@@ -18,23 +23,25 @@
 {% block calculator_result %}
   {% if result %}
     <div class="result-card-col">
-      <div class="card result-card h-100">
-        <div class="card-body d-flex flex-column">
-          <h3 class="card-title mb-3">Result</h3>
-          <div class="flex-grow-1" aria-live="polite">
-            <div id="reaction-result" class="w-100">
-              <p>{{ result|safe }}</p>
-            </div>
+      <div class="ca-result-card">
+        <h3 class="fs-5 fw-semibold mb-3" style="color:var(--ca-text-primary);">Result</h3>
+        <div aria-live="polite">
+          <div id="reaction-result">
+            <p class="fs-5" style="font-family:monospace;">{{ result|safe }}</p>
           </div>
-          <button
-            type="button"
-            class="btn btn-outline-secondary btn-sm mt-auto align-self-end"
-            onclick="copyToClipboard('#reaction-result', this)"
-            aria-label="Copy balanced reaction to clipboard"
-          >
-            Copy to Clipboard
-          </button>
         </div>
+        <button
+          type="button"
+          class="ca-btn ca-btn-icon mt-2"
+          onclick="copyToClipboard('#reaction-result', this)"
+          aria-label="Copy balanced reaction to clipboard"
+        >
+          <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" viewBox="0 0 16 16">
+            <path d="M4 1.5H3a2 2 0 0 0-2 2V14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V3.5a2 2 0 0 0-2-2h-1v1h1a1 1 0 0 1 1 1V14a1 1 0 0 1-1 1H3a1 1 0 0 1-1-1V3.5a1 1 0 0 1 1-1h1z"/>
+            <path d="M9.5 1a.5.5 0 0 1 .5.5v1a.5.5 0 0 1-.5.5h-3a.5.5 0 0 1-.5-.5v-1a.5.5 0 0 1 .5-.5zm-3-1A1.5 1.5 0 0 0 5 1.5v1A1.5 1.5 0 0 0 6.5 4h3A1.5 1.5 0 0 0 11 2.5v-1A1.5 1.5 0 0 0 9.5 0z"/>
+          </svg>
+          Copy
+        </button>
       </div>
     </div>
   {% endif %}

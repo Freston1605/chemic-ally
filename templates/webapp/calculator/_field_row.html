@@ -1,4 +1,4 @@
-<div class="mb-4">
+<div class="ca-input-group">
   {% if field.field.widget.input_type == 'checkbox' %}
     <div class="form-check">
       <input
@@ -8,31 +8,33 @@
         id="{{ field.id_for_label }}"
         {% if field.value %}checked{% endif %}
       />
-      <label class="form-check-label" for="{{ field.id_for_label }}">{{ field.label }}</label>
+      <label class="form-check-label" for="{{ field.id_for_label }}" style="color:var(--ca-text-primary);">{{ field.label }}</label>
     </div>
   {% elif field.field.widget.input_type == 'textarea' %}
-    <label for="{{ field.id_for_label }}" class="form-label">{{ field.label }}</label>
-    <textarea
-      name="{{ field.name }}"
-      id="{{ field.id_for_label }}"
-      class="form-control"
-      placeholder="{{ field.field.widget.attrs.placeholder|default:'' }}"
-    >{{ field.value|default:'' }}</textarea>
+    <label for="{{ field.id_for_label }}">{{ field.label }}</label>
+    <div class="ca-input-row">
+      <textarea
+        name="{{ field.name }}"
+        id="{{ field.id_for_label }}"
+        placeholder="{{ field.field.widget.attrs.placeholder|default:'' }}"
+      >{{ field.value|default:'' }}</textarea>
+    </div>
   {% else %}
-    <label for="{{ field.id_for_label }}" class="form-label">{{ field.label }}</label>
-    <input
-      type="{{ field.field.widget.input_type }}"
-      name="{{ field.name }}"
-      id="{{ field.id_for_label }}"
-      class="form-control"
-      placeholder="{{ field.field.widget.attrs.placeholder|default:'' }}"
-      value="{{ field.value|default:'' }}"
-    />
+    <label for="{{ field.id_for_label }}">{{ field.label }}</label>
+    <div class="ca-input-row">
+      <input
+        type="{{ field.field.widget.input_type }}"
+        name="{{ field.name }}"
+        id="{{ field.id_for_label }}"
+        placeholder="{{ field.field.widget.attrs.placeholder|default:'' }}"
+        value="{{ field.value|default:'' }}"
+      />
+    </div>
   {% endif %}
   {% for error in field.errors %}
-    <div class="form-text text-danger">{{ error }}</div>
+    <div class="ca-input-error">{{ error }}</div>
   {% endfor %}
   {% if field.help_text %}
-    <small class="text-muted">{{ field.help_text }}</small>
+    <small class="text-muted" style="color:var(--ca-text-muted);font-size:0.8rem;">{{ field.help_text }}</small>
   {% endif %}
 </div>

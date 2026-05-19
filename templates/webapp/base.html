@@ -2,10 +2,14 @@
 <!DOCTYPE html>
 <html lang="en" data-bs-theme="dark">
   <head>
-    <title>ChemicAlly</title>
-    <!-- Required meta tags -->
+    <title>{% block title %}ChemicAlly{% endblock %}</title>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no" />
+
+    <!-- Inter font -->
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet" />
 
     <!-- Bootstrap CSS v5.3.2 -->
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet" integrity="sha384-T3c6CoIi6uLrA9TneNEoa7RxnatzjcDSCmG1MXxSR1GAsXEV/Dwwykc2MPK8M2HN" crossorigin="anonymous" />
@@ -14,9 +18,105 @@
     <script src="https://cdnjs.cloudflare.com/polyfill/v3/polyfill.min.js?features=IntersectionObserver,Promise"></script>
     <script id="MathJax-script" async src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-mml-chtml.js"></script>
 
-    <!-- CSS Sheet -->
+    <!-- Styles -->
     <link rel="stylesheet" href="{% static 'css/style.css' %}" />
-    <!-- Substance tag input widget (no DOM deps, safe to load early) -->
+
+    {% block extra_head %}{% endblock %}
+  </head>
+
+  <body>
+    <a href="#content" class="skip-link">Skip to main content</a>
+
+    <!-- Navigation -->
+    <nav class="ca-nav" aria-label="Main navigation">
+      <div class="container-xl d-flex align-items-center justify-content-between" style="min-height: 56px;">
+        <a class="ca-nav-brand" href="{% url 'landing' %}">
+          <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" fill="currentColor" viewBox="0 0 16 16">
+            <path d="M12 1a1 1 0 0 1 1 1v12a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V2a1 1 0 0 1 1-1zM4 0a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h8a2 2 0 0 0 2-2V2a2 2 0 0 0-2-2z"/>
+            <path d="M4 2.5a.5.5 0 0 1 .5-.5h7a.5.5 0 0 1 .5.5v2a.5.5 0 0 1-.5.5h-7a.5.5 0 0 1-.5-.5zm0 4a.5.5 0 0 1 .5-.5h1a.5.5 0 0 1 .5.5v1a.5.5 0 0 1-.5.5h-1a.5.5 0 0 1-.5-.5zm0 3a.5.5 0 0 1 .5-.5h1a.5.5 0 0 1 .5.5v1a.5.5 0 0 1-.5.5h-1a.5.5 0 0 1-.5-.5zm0 3a.5.5 0 0 1 .5-.5h1a.5.5 0 0 1 .5.5v1a.5.5 0 0 1-.5.5h-1a.5.5 0 0 1-.5-.5zm3-6a.5.5 0 0 1 .5-.5h1a.5.5 0 0 1 .5.5v1a.5.5 0 0 1-.5.5h-1a.5.5 0 0 1-.5-.5zm0 3a.5.5 0 0 1 .5-.5h1a.5.5 0 0 1 .5.5v1a.5.5 0 0 1-.5.5h-1a.5.5 0 0 1-.5-.5zm0 3a.5.5 0 0 1 .5-.5h1a.5.5 0 0 1 .5.5v1a.5.5 0 0 1-.5.5h-1a.5.5 0 0 1-.5-.5zm3-6a.5.5 0 0 1 .5-.5h1a.5.5 0 0 1 .5.5v1a.5.5 0 0 1-.5.5h-1a.5.5 0 0 1-.5-.5zm0 3a.5.5 0 0 1 .5-.5h1a.5.5 0 0 1 .5.5v4a.5.5 0 0 1-.5.5h-1a.5.5 0 0 1-.5-.5z"/>
+          </svg>
+          ChemicAlly
+        </a>
+
+        <!-- Desktop nav links -->
+        <div class="d-none d-lg-flex align-items-center gap-1">
+          <a class="ca-nav-link{% if current_url == 'landing' %} active{% endif %}" href="{% url 'landing' %}">Home</a>
+          <a class="ca-nav-link{% if current_url == 'molecular_weight' %} active{% endif %}" href="{% url 'molecular_weight' %}">Molecular Weight</a>
+          <a class="ca-nav-link{% if current_url == 'dilution' %} active{% endif %}" href="{% url 'dilution' %}">Dilution</a>
+          <a class="ca-nav-link{% if current_url == 'equilibria' %} active{% endif %}" href="{% url 'equilibria' %}">Equilibrium</a>
+          <a class="ca-nav-link{% if current_url == 'reaction_balancer' %} active{% endif %}" href="{% url 'reaction_balancer' %}">Reaction</a>
+          <a class="ca-nav-link{% if current_url == 'index' or current_url == 'simulator' %} active{% endif %}" href="{% url 'hplc_simulator:index' %}">HPLC</a>
+        </div>
+
+        <!-- Mobile hamburger -->
+        <button class="ca-nav-toggler d-lg-none" type="button" data-bs-toggle="collapse" data-bs-target="#mobileNav" aria-controls="mobileNav" aria-expanded="false" aria-label="Toggle navigation">
+          <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" fill="currentColor" viewBox="0 0 16 16">
+            <path fill-rule="evenodd" d="M2.5 12a.5.5 0 0 1 .5-.5h10a.5.5 0 0 1 0 1H3a.5.5 0 0 1-.5-.5zm0-4a.5.5 0 0 1 .5-.5h10a.5.5 0 0 1 0 1H3a.5.5 0 0 1-.5-.5zm0-4a.5.5 0 0 1 .5-.5h10a.5.5 0 0 1 0 1H3a.5.5 0 0 1-.5-.5z"/>
+          </svg>
+        </button>
+      </div>
+      <!-- Mobile nav drawer -->
+      <div class="collapse d-lg-none" id="mobileNav">
+        <div class="container-xl pb-2 d-flex flex-column gap-1">
+          <a class="ca-nav-link{% if current_url == 'landing' %} active{% endif %}" href="{% url 'landing' %}">Home</a>
+          <a class="ca-nav-link{% if current_url == 'molecular_weight' %} active{% endif %}" href="{% url 'molecular_weight' %}">Molecular Weight</a>
+          <a class="ca-nav-link{% if current_url == 'dilution' %} active{% endif %}" href="{% url 'dilution' %}">Dilution</a>
+          <a class="ca-nav-link{% if current_url == 'equilibria' %} active{% endif %}" href="{% url 'equilibria' %}">Equilibrium</a>
+          <a class="ca-nav-link{% if current_url == 'reaction_balancer' %} active{% endif %}" href="{% url 'reaction_balancer' %}">Reaction</a>
+          <a class="ca-nav-link{% if current_url == 'index' or current_url == 'simulator' %} active{% endif %}" href="{% url 'hplc_simulator:index' %}">HPLC</a>
+        </div>
+      </div>
+    </nav>
+
+    <!-- Breadcrumbs -->
+    {% block breadcrumbs %}
+    <div class="container-xl">
+      <nav class="ca-breadcrumbs" aria-label="Breadcrumb">
+        <a href="{% url 'landing' %}">Home</a>
+        {% block breadcrumbs_inner %}{% endblock %}
+      </nav>
+    </div>
+    {% endblock %}
+
+    <!-- Main content -->
+    <main>
+      <div id="content" class="container-xl py-4">
+        <!-- Messages -->
+        {% if messages %}
+          <div role="alert" aria-live="assertive" tabindex="-1" id="messages-container">
+            {% for message in messages %}
+              <div class="ca-alert ca-alert-{% if 'error' in message.tags or 'danger' in message.tags %}danger{% elif 'warning' in message.tags %}warning{% elif 'success' in message.tags %}success{% else %}warning{% endif %} mb-3" role="alert">
+                <span>{{ message }}</span>
+                <button type="button" class="close" data-bs-dismiss="alert" aria-label="Close">&times;</button>
+              </div>
+            {% endfor %}
+          </div>
+        {% endif %}
+        <!-- Content block -->
+        {% block main %}{% endblock %}
+      </div>
+    </main>
+
+    <!-- Footer -->
+    <footer class="ca-footer">
+      <div class="container-xl">
+        <div class="d-flex flex-wrap justify-content-between align-items-center gap-2">
+          <span>&copy; {% now "Y" %} ChemicAlly — free chemistry calculators</span>
+          <a href="https://github.com/Freston1605/chemic-ally" target="_blank" rel="noopener">GitHub</a>
+        </div>
+      </div>
+    </footer>
+
+    <!-- Bootstrap JS -->
+    <script src="https://cdn.jsdelivr.net/npm/@popperjs/core@2.11.8/dist/umd/popper.min.js" integrity="sha384-I7E8VVD/ismYTF4hNIPjVp/Zjvgyol6VFvRkX/vR+Vc4jQkC+hVqc2pM8ODewa9r" crossorigin="anonymous"></script>
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.min.js" integrity="sha384-BBtl+eGJRgqQAUMxJ7pMwbEyER4l1g+O15P+16Ep7Q9Q+zqX6gSbd85u4mG4QzX+" crossorigin="anonymous"></script>
+
+    <!-- Clipboard utility -->
+    <script src="{% static 'js/clipboard.js' %}"></script>
+    <!-- Calculator utilities (skeleton, history) -->
+    <script src="{% static 'js/calculators.js' %}"></script>
+
+    <!-- Substance tag input -->
     <script src="{% static 'js/substance_input.js' %}"></script>
     <script>
       document.addEventListener('DOMContentLoaded', function() {
@@ -34,122 +134,21 @@
         });
       });
     </script>
-    {% block extra_head %}{% endblock %}
-  </head>
 
-  <body>
-    <a href="#content" class="skip-link">Skip to main content</a>
-    <!-- Navigation bar -->
-    <header class="navbar navbar-expand-lg sticky-top bg-dark" data-bs-theme="dark">
-      <nav class="container-xxl flex-wrap flex-lg-nowrap" aria-label="Main navigation">
-        <a class="navbar-brand p-0 me-0 me-lg-2" href="{% url 'landing' %}" aria-label="ChemicAlly">
-          <svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" fill="currentColor" class="bi bi-calculator" viewBox="0 0 16 16">
-            <path d="M12 1a1 1 0 0 1 1 1v12a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V2a1 1 0 0 1 1-1zM4 0a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h8a2 2 0 0 0 2-2V2a2 2 0 0 0-2-2z" />
-            <path d="M4 2.5a.5.5 0 0 1 .5-.5h7a.5.5 0 0 1 .5.5v2a.5.5 0 0 1-.5.5h-7a.5.5 0 0 1-.5-.5zm0 4a.5.5 0 0 1 .5-.5h1a.5.5 0 0 1 .5.5v1a.5.5 0 0 1-.5.5h-1a.5.5 0 0 1-.5-.5zm0 3a.5.5 0 0 1 .5-.5h1a.5.5 0 0 1 .5.5v1a.5.5 0 0 1-.5.5h-1a.5.5 0 0 1-.5-.5zm0 3a.5.5 0 0 1 .5-.5h1a.5.5 0 0 1 .5.5v1a.5.5 0 0 1-.5.5h-1a.5.5 0 0 1-.5-.5zm3-6a.5.5 0 0 1 .5-.5h1a.5.5 0 0 1 .5.5v1a.5.5 0 0 1-.5.5h-1a.5.5 0 0 1-.5-.5zm0 3a.5.5 0 0 1 .5-.5h1a.5.5 0 0 1 .5.5v1a.5.5 0 0 1-.5.5h-1a.5.5 0 0 1-.5-.5zm0 3a.5.5 0 0 1 .5-.5h1a.5.5 0 0 1 .5.5v1a.5.5 0 0 1-.5.5h-1a.5.5 0 0 1-.5-.5zm3-6a.5.5 0 0 1 .5-.5h1a.5.5 0 0 1 .5.5v1a.5.5 0 0 1-.5.5h-1a.5.5 0 0 1-.5-.5zm0 3a.5.5 0 0 1 .5-.5h1a.5.5 0 0 1 .5.5v4a.5.5 0 0 1-.5.5h-1a.5.5 0 0 1-.5-.5z" />
-          </svg>ChemicAlly
-        </a>
-        <button class="navbar-toggler d-lg-none" type="button" data-bs-toggle="collapse" data-bs-target="#collapsibleNavId" aria-controls="collapsibleNavId" aria-expanded="false" aria-label="Toggle navigation"></button>
-        <div class="collapse navbar-collapse" id="collapsibleNavId">
-          <ul class="navbar-nav ms-auto mt-2 mt-lg-0">
-            <li class="nav-item">
-              <button type="button" class="btn btn-link nav-link" id="bd-theme" aria-label="Toggle theme">
-                <span class="theme-icon-active"></span>
-              </button>
-            </li>
-            <li class="nav-item dropdown">
-              <a class="nav-link dropdown-toggle" href="#" id="dropdownId" data-bs-toggle="dropdown" aria-haspopup="true" aria-expanded="false">Tools</a>
-              <div class="dropdown-menu" aria-labelledby="dropdownId">
-                <a class="dropdown-item{% if current_url == 'molecular_weight' %} active{% endif %}" href="{% url 'molecular_weight' %}"{% if current_url == 'molecular_weight' %} aria-current="page"{% endif %}>Molecular Weight Calculator</a>
-                <a class="dropdown-item{% if current_url == 'dilution' %} active{% endif %}" href="{% url 'dilution' %}"{% if current_url == 'dilution' %} aria-current="page"{% endif %}>Dilution Calculator</a>
-                <a class="dropdown-item{% if current_url == 'reaction_balancer' %} active{% endif %}" href="{% url 'reaction_balancer' %}"{% if current_url == 'reaction_balancer' %} aria-current="page"{% endif %}>Reaction Balancer</a>
-                <a class="dropdown-item{% if current_url == 'equilibria' %} active{% endif %}" href="{% url 'equilibria' %}"{% if current_url == 'equilibria' %} aria-current="page"{% endif %}>Chemical Equilibria Calculator</a>
-              </div>
-            </li>
-          </ul>
-        </div>
-      </nav>
-    </header>
-
-    <!-- Main content -->
-    <main class="bg-dark-subtle bg-gradient">
-      <div id="content" class="container-xl py-4">
-        <!-- Display mesagges -->
-        {% if messages %}
-          <div class="container" role="alert" aria-live="assertive" tabindex="-1" id="messages-container">
-            {% for message in messages %}
-              <div class="alert alert-dismissible fade show {% if 'success' in message.tags %}alert-success{% elif 'info' in message.tags %}alert-info{% elif 'warning' in message.tags %}alert-warning{% elif 'error' in message.tags or 'danger' in message.tags %}alert-danger{% else %}alert-secondary{% endif %}" role="alert">
-                {{ message }}
-                <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
-              </div>
-            {% endfor %}
-          </div>
-        {% endif %}
-        <!-- Content block -->
-        {% block main %}
-
-        {% endblock %}
-      </div>
-    </main>
-    <footer class="bg-body-secondary border-top py-3">
-      <div class="container">
-        <div class="row gy-2">
-          <div class="col-lg-4">
-            <a class="d-inline-flex align-items-center text-body-emphasis text-decoration-none" href="/" aria-label="ChemicAlly">
-              <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" class="bi bi-calculator me-1" viewBox="0 0 16 16">
-                <path d="M12 1a1 1 0 0 1 1 1v12a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V2a1 1 0 0 1 1-1zM4 0a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h8a2 2 0 0 0 2-2V2a2 2 0 0 0-2-2z" />
-                <path d="M4 2.5a.5.5 0 0 1 .5-.5h7a.5.5 0 0 1 .5.5v2a.5.5 0 0 1-.5.5h-7a.5.5 0 0 1-.5-.5zm0 4a.5.5 0 0 1 .5-.5h1a.5.5 0 0 1 .5.5v1a.5.5 0 0 1-.5.5h-1a.5.5 0 0 1-.5-.5zm0 3a.5.5 0 0 1 .5-.5h1a.5.5 0 0 1 .5.5v1a.5.5 0 0 1-.5.5h-1a.5.5 0 0 1-.5-.5zm0 3a.5.5 0 0 1 .5-.5h1a.5.5 0 0 1 .5.5v1a.5.5 0 0 1-.5.5h-1a.5.5 0 0 1-.5-.5zm3-6a.5.5 0 0 1 .5-.5h1a.5.5 0 0 1 .5.5v1a.5.5 0 0 1-.5.5h-1a.5.5 0 0 1-.5-.5zm0 3a.5.5 0 0 1 .5-.5h1a.5.5 0 0 1 .5.5v1a.5.5 0 0 1-.5.5h-1a.5.5 0 0 1-.5-.5zm0 3a.5.5 0 0 1 .5-.5h1a.5.5 0 0 1 .5.5v1a.5.5 0 0 1-.5.5h-1a.5.5 0 0 1-.5-.5zm3-6a.5.5 0 0 1 .5-.5h1a.5.5 0 0 1 .5.5v1a.5.5 0 0 1-.5.5h-1a.5.5 0 0 1-.5-.5zm0 3a.5.5 0 0 1 .5-.5h1a.5.5 0 0 1 .5.5v4a.5.5 0 0 1-.5.5h-1a.5.5 0 0 1-.5-.5z" />
-              </svg>
-              <span class="fs-6 fw-semibold">ChemicAlly</span>
-            </a>
-            <p class="text-muted small mb-0">
-              Code available under the <a href="https://github.com/Freston1605/chemic-ally/blob/main/LICENSE" target="_blank" rel="license noopener">GNU General Public License</a>.
-            </p>
-          </div>
-          <div class="col-6 col-lg-3 offset-lg-1">
-            <h6 class="fw-semibold mb-1">Links</h6>
-            <ul class="list-unstyled small mb-0">
-              <li><a href="{% url 'landing' %}">Home</a></li>
-              <li><a href="https://github.com/Freston1605/chemic-ally">GitHub Repository</a></li>
-            </ul>
-          </div>
-          <div class="col-6 col-lg-3 offset-lg-1">
-            <h6 class="fw-semibold mb-1">Powered By</h6>
-            <ul class="list-unstyled small mb-0">
-              <li>Django</li>
-              <li>Bootstrap</li>
-              <li>Python Anywhere</li>
-              <li>MathJax</li>
-              <li>ChemPy</li>
-            </ul>
-          </div>
-        </div>
-      </div>
-    </footer>
-    <!-- Bootstrap JavaScript Libraries -->
-    <script src="https://cdn.jsdelivr.net/npm/@popperjs/core@2.11.8/dist/umd/popper.min.js" integrity="sha384-I7E8VVD/ismYTF4hNIPjVp/Zjvgyol6VFvRkX/vR+Vc4jQkC+hVqc2pM8ODewa9r" crossorigin="anonymous"></script>
-    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.min.js" integrity="sha384-BBtl+eGJRgqQAUMxJ7pMwbEyER4l1g+O15P+16Ep7Q9Q+zqX6gSbd85u4mG4QzX+" crossorigin="anonymous"></script>
-    <!-- Clipboard utility -->
-    <script src="{% static 'js/clipboard.js' %}"></script>
-    <!-- Theme toggle -->
-    <script src="{% static 'js/dark_mode_enabler.js' %}"></script>
-    <!-- Form validation -->
-    <script src="{% static 'js/form_validation.js' %}"></script>
-    <!-- Focus management after form submission -->
+    <!-- Focus management -->
     <script>
       (function() {
-        // Focus messages if errors present
         var messages = document.getElementById('messages-container');
         if (messages) {
-          var hasError = messages.querySelector('.alert-danger');
+          var hasError = messages.querySelector('.ca-alert-danger');
           if (hasError) {
             messages.focus();
             messages.scrollIntoView({ behavior: 'smooth', block: 'center' });
           }
         }
-        // Focus result heading if result card exists
-        var resultCard = document.querySelector('.result-card');
+        var resultCard = document.querySelector('.ca-result-card');
         if (resultCard) {
-          var heading = resultCard.querySelector('h3');
+          var heading = resultCard.querySelector('h2, h3');
           if (heading) {
             heading.setAttribute('tabindex', '-1');
             heading.focus();
@@ -157,6 +156,7 @@
         }
       })();
     </script>
+
     {% block extra_scripts %}{% endblock %}
   </body>
 </html>

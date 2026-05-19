@@ -6,8 +6,8 @@ a tag/chip input with autocomplete.
 Usage:
   {% include 'webapp/calculator/_tag_input_field.html' with field=field %}
 {% endcomment %}
-<div class="mb-4">
-  <label for="fallback-{{ field.name }}" class="form-label">{{ field.label }}</label>
+<div class="ca-input-group">
+  <label for="fallback-{{ field.name }}">{{ field.label }}</label>
 
   <div
     class="substance-tag-wrapper"
@@ -28,9 +28,9 @@ Usage:
     />
   </div>
   {% for error in field.errors %}
-    <div class="form-text text-danger">{{ error }}</div>
+    <div class="ca-input-error">{{ error }}</div>
   {% endfor %}
   {% if field.help_text %}
-    <small class="text-muted">{{ field.help_text }}</small>
+    <small class="text-muted" style="color:var(--ca-text-muted);font-size:0.8rem;">{{ field.help_text }}</small>
   {% endif %}
 </div>
