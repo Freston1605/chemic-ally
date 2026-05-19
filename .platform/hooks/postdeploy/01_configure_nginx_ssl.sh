@@ -21,6 +21,7 @@ echo "[$(date -u '+%Y-%m-%dT%H:%M:%SZ')] [postdeploy] Writing nginx SSL configur
 cat > "$NGINX_CONF" << 'NGINX_HTTP'
 server {
     listen 80;
+    listen [::]:80;
     server_name chemic-ally.xyz www.chemic-ally.xyz;
 
     location /.well-known/acme-challenge/ {
@@ -36,6 +37,7 @@ NGINX_HTTP
 cat >> "$NGINX_CONF" << NGINX_HTTPS
 server {
     listen 443 ssl http2;
+    listen [::]:443 ssl http2;
     server_name chemic-ally.xyz www.chemic-ally.xyz;
 
     ssl_certificate     ${CERT_DIR}/fullchain.pem;
@@ -71,8 +73,11 @@ server {
 NGINX_HTTPS
 
 if nginx -t 2>/dev/null; then
-    systemctl reload nginx
-    echo "[$(date -u '+%Y-%m-%dT%H:%M:%SZ')] [postdeploy] nginx reloaded successfully." | tee -a "$LOG"
+    if systemctl reload nginx; then
+        echo "[$(date -u '+%Y-%m-%dT%H:%M:%SZ')] [postdeploy] nginx reloaded successfully." | tee -a "$LOG"
+    else
+        echo "[$(date -u '+%Y-%m-%dT%H:%M:%SZ')] [postdeploy] WARNING: nginx config valid, but reload failed." | tee -a "$LOG"
+    fi
 else
     echo "[$(date -u '+%Y-%m-%dT%H:%M:%SZ')] [postdeploy] ERROR: nginx config test failed." | tee -a "$LOG"
     exit 1
