@@ -3,7 +3,7 @@
 import logging
 from collections import defaultdict
 from math import log10
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Dict, List
 
 from chempy.equilibria import EqSystem
 

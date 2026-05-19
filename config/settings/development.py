@@ -1,9 +1,9 @@
-from .base import *
+from .base import *  # noqa: F403
 
 # SECURITY WARNING: don't run with debug turned on in production!
 DEBUG = True
 
-SECRET_KEY = os.environ.get("SECRET_KEY", "dev-secret-key")
+SECRET_KEY = os.environ.get("SECRET_KEY", "dev-secret-key")  # noqa: F405
 
 ALLOWED_HOSTS = [
     "localhost",
@@ -17,7 +17,7 @@ ALLOWED_HOSTS = [
 DATABASES = {
     "default": {
         "ENGINE": "django.db.backends.sqlite3",
-        "NAME": BASE_DIR / "db.sqlite3",
+        "NAME": BASE_DIR / "db.sqlite3",  # noqa: F405
     }
 }
 
@@ -26,7 +26,7 @@ DATABASES = {
 # https://docs.djangoproject.com/en/5.0/howto/static-files/
 
 STATIC_URL = 'static/'
-STATIC_ROOT = BASE_DIR / "staticfiles"
+STATIC_ROOT = BASE_DIR / "staticfiles"  # noqa: F405
 
 # Set to True for local development to avoid slow static file lookups
 WHITENOISE_AUTOREFRESH = True
@@ -35,7 +35,7 @@ WHITENOISE_AUTOREFRESH = True
 # Media files
 
 MEDIA_URL = 'media/'
-MEDIA_ROOT = BASE_DIR / 'media'
+MEDIA_ROOT = BASE_DIR / 'media'  # noqa: F405
 
 
 # STORAGES

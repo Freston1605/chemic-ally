@@ -1,0 +1,413 @@
+<!DOCTYPE html>
+<html lang="en" data-bs-theme="dark">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>ChemicAlly UX Mockup</title>
+<link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+:root {
+  --ca-bg-page: #0d1117;
+  --ca-bg-card: #161b22;
+  --ca-bg-card-alt: #21262d;
+  --ca-accent: #14b8a6;
+  --ca-accent-hover: #2dd4bf;
+  --ca-text-primary: #e6edf3;
+  --ca-text-muted: #8b949e;
+  --ca-border: #30363d;
+  --ca-success: #3fb950;
+  --ca-warning: #d29922;
+  --ca-danger: #f85149;
+  --ca-border-radius: 0.75rem;
+  --bs-body-font-family: 'Inter', system-ui, -apple-system, sans-serif;
+  --bs-body-font-size: 1.125rem;
+  --bs-body-color: var(--ca-text-primary);
+  --bs-body-bg: var(--ca-bg-page);
+}
+body { background: var(--ca-bg-page); color: var(--ca-text-primary); }
+.card { background: var(--ca-bg-card); border-color: var(--ca-border); border-radius: var(--ca-border-radius); }
+.card:hover { box-shadow: 0 4px 12px rgba(0,0,0,0.3); }
+.navbar { background: var(--ca-bg-card) !important; border-bottom: 1px solid var(--ca-border); }
+.footer { background: var(--ca-bg-card); border-top: 1px solid var(--ca-border); color: var(--ca-text-muted); }
+.accent { color: var(--ca-accent); }
+.btn-accent { background: var(--ca-accent); border-color: var(--ca-accent); color: #0d1117; font-weight: 600; }
+.btn-accent:hover { background: var(--ca-accent-hover); border-color: var(--ca-accent-hover); color: #0d1117; }
+.btn-outline-accent { border-color: var(--ca-border); color: var(--ca-text-primary); }
+.badge-accent { background: var(--ca-accent); color: #0d1117; }
+.text-muted { color: var(--ca-text-muted) !important; }
+.border-accent { border-color: var(--ca-border) !important; }
+.breadcrumb-item + .breadcrumb-item::before { color: var(--ca-text-muted); }
+.breadcrumb-item.active { color: var(--ca-accent); }
+.form-control, .form-select { background: var(--ca-bg-card-alt); border-color: var(--ca-border); color: var(--ca-text-primary); }
+.form-control:focus, .form-select:focus { border-color: var(--ca-accent); box-shadow: 0 0 0 0.2rem rgba(20, 184, 166, 0.25); }
+.progress { background: var(--ca-bg-card-alt); }
+.progress-bar-success { background: var(--ca-success); }
+.progress-bar-warning { background: var(--ca-warning); }
+.progress-bar-danger { background: var(--ca-danger); }
+.tag-chip { background: var(--ca-bg-card-alt); border-radius: 16px; padding: 2px 8px; font-size: 0.875rem; display: inline-flex; align-items: center; gap: 4px; }
+.tag-chip .remove { color: var(--ca-text-muted); cursor: pointer; }
+.tag-chip .remove:hover { color: var(--ca-danger); }
+.stat-card { text-align: center; }
+.stat-card .value { font-size: 1.75rem; font-weight: 700; }
+.stat-card .label { font-size: 0.8rem; color: var(--ca-text-muted); }
+.section-header { border-bottom: 1px solid var(--ca-border); padding-bottom: 0.5rem; margin-bottom: 1.5rem; }
+.hero-section { padding: 4rem 0 2rem; }
+.tool-emoji { font-size: 2rem; margin-bottom: 0.5rem; }
+.accordion-item { background: transparent; border-color: var(--ca-border); }
+.accordion-button { background: transparent; color: var(--ca-text-primary); box-shadow: none; }
+.accordion-button:not(.collapsed) { background: transparent; color: var(--ca-accent); }
+.accordion-button::after { filter: invert(0.8); }
+.form-range::-webkit-slider-runnable-track { background: var(--ca-bg-card-alt); }
+.form-range::-webkit-slider-thumb { background: var(--ca-accent); }
+.form-range:focus::-webkit-slider-thumb { box-shadow: 0 0 0 0.2rem rgba(20, 184, 166, 0.25); }
+</style>
+</head>
+<body>
+
+<!-- Navbar -->
+<nav class="navbar navbar-expand-lg sticky-top py-2">
+  <div class="container-xxl">
+    <a class="navbar-brand fw-bold text-light" href="#">
+      <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="me-2 accent">
+        <path d="M12 2L2 7l10 5 10-5-10-5z"/><path d="M2 17l10 5 10-5"/><path d="M2 12l10 5 10-5"/>
+      </svg>
+      ChemicAlly
+    </a>
+    <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#nav">
+      <span class="navbar-toggler-icon"></span>
+    </button>
+    <div class="collapse navbar-collapse" id="nav">
+      <ul class="navbar-nav ms-auto align-items-center gap-1">
+        <li class="nav-item"><a class="nav-link px-3 active" href="#">Home</a></li>
+        <li class="nav-item"><a class="nav-link px-3" href="#">Find a mass</a></li>
+        <li class="nav-item"><a class="nav-link px-3" href="#">Balance a reaction</a></li>
+        <li class="nav-item"><a class="nav-link px-3" href="#">How much to dilute?</a></li>
+        <li class="nav-item"><a class="nav-link px-3" href="#">Solve equilibria</a></li>
+        <li class="nav-item"><a class="nav-link px-3 accent fw-medium" href="#">HPLC Simulator</a></li>
+      </ul>
+    </div>
+  </div>
+</nav>
+
+<main>
+
+<!-- === LANDING PAGE MOCKUP === -->
+<section class="container-xxl py-4" id="landing-mockup">
+  <h2 class="h5 section-header"><span class="accent">▍</span> Landing Page</h2>
+
+  <!-- Hero -->
+  <div class="hero-section text-center">
+    <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="var(--ca-accent)" stroke-width="1.5" class="mb-3">
+      <path d="M12 2L2 7l10 5 10-5-10-5z"/><path d="M2 17l10 5 10-5"/><path d="M2 12l10 5 10-5"/>
+    </svg>
+    <h1 class="display-5 fw-bold mb-3">ChemicAlly</h1>
+    <p class="col-lg-6 mx-auto fs-5 text-muted mb-4">A chemistry workbench for the bench scientist. Find masses, balance reactions, dilute solutions, and simulate HPLC — all from your phone.</p>
+    <a href="#tool-grid" class="btn btn-accent btn-lg px-5">Browse Tools</a>
+  </div>
+
+  <!-- Tool Grid -->
+  <div class="row g-4 pb-5" id="tool-grid">
+    <div class="col-12 col-md-6 col-lg-4">
+      <div class="card h-100 border-0">
+        <div class="card-body d-flex flex-column p-4">
+          <div class="tool-emoji">⚖️</div>
+          <h3 class="h5 fw-semibold">Find a molecule's mass</h3>
+          <p class="card-text text-muted small flex-grow-1">e.g., C₆H₁₂O₆ → 180.16 g/mol</p>
+          <a href="#" class="btn btn-accent mt-3 align-self-start">Open</a>
+        </div>
+      </div>
+    </div>
+    <div class="col-12 col-md-6 col-lg-4">
+      <div class="card h-100 border-0">
+        <div class="card-body d-flex flex-column p-4">
+          <div class="tool-emoji">🔁</div>
+          <h3 class="h5 fw-semibold">Balance a reaction</h3>
+          <p class="card-text text-muted small flex-grow-1">e.g., H₂ + O₂ → H₂O</p>
+          <a href="#" class="btn btn-accent mt-3 align-self-start">Open</a>
+        </div>
+      </div>
+    </div>
+    <div class="col-12 col-md-6 col-lg-4">
+      <div class="card h-100 border-0">
+        <div class="card-body d-flex flex-column p-4">
+          <div class="tool-emoji">💧</div>
+          <h3 class="h5 fw-semibold">How much to dilute?</h3>
+          <p class="card-text text-muted small flex-grow-1">e.g., 500 µg/mL → 30 ng/µL</p>
+          <a href="#" class="btn btn-accent mt-3 align-self-start">Open</a>
+        </div>
+      </div>
+    </div>
+    <div class="col-12 col-md-6 col-lg-4">
+      <div class="card h-100 border-0">
+        <div class="card-body d-flex flex-column p-4">
+          <div class="tool-emoji">🧪</div>
+          <h3 class="h5 fw-semibold">Solve equilibria</h3>
+          <p class="card-text text-muted small flex-grow-1">Find pH and species concentrations</p>
+          <a href="#" class="btn btn-accent mt-3 align-self-start">Open</a>
+        </div>
+      </div>
+    </div>
+    <div class="col-12 col-md-6 col-lg-4">
+      <div class="card h-100 border-0" style="border-left: 3px solid var(--ca-accent) !important;">
+        <div class="card-body d-flex flex-column p-4">
+          <div class="d-flex justify-content-between align-items-start">
+            <div class="tool-emoji">📈</div>
+            <span class="badge badge-accent">Interactive</span>
+          </div>
+          <h3 class="h5 fw-semibold mt-2">HPLC Simulator</h3>
+          <p class="card-text text-muted small flex-grow-1">Master chromatographic separation</p>
+          <a href="#" class="btn btn-accent mt-3 align-self-start">Open</a>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<hr class="border-accent my-0">
+
+<!-- === CALCULATOR PAGE MOCKUP === -->
+<section class="container-xxl py-4" id="calculator-mockup">
+  <h2 class="h5 section-header"><span class="accent">▍</span> Calculator Page (Mobile Viewport)</h2>
+
+  <div class="row">
+    <!-- Form card -->
+    <div class="col-12 col-lg-6 mb-4 mb-lg-0">
+      <div class="card border-0">
+        <div class="card-body d-flex flex-column p-4">
+          <div class="d-flex align-items-center gap-2 mb-3">
+            <span class="badge badge-accent">MW</span>
+            <h2 class="h4 mb-0">Find a molecule's mass</h2>
+          </div>
+          <p class="text-muted small mb-3">Type a formula. Use parentheses for groups: Ca(OH)₂</p>
+
+          <!-- Tag input mockup -->
+          <div class="mb-3">
+            <label class="form-label small fw-medium">Formulas</label>
+            <div class="d-flex flex-wrap align-items-center gap-1 p-2 rounded" style="background: var(--ca-bg-card-alt); border: 1px solid var(--ca-border); min-height: 42px;">
+              <span class="tag-chip">C₆H₁₂O₆ <span class="remove">×</span></span>
+              <span class="tag-chip">H₂O <span class="remove">×</span></span>
+              <span class="tag-chip" style="border-color: var(--ca-danger); border: 1px solid var(--ca-danger);">NaCl? <span class="remove">×</span></span>
+              <input type="text" class="border-0 bg-transparent text-light" style="flex:1; min-width:100px; outline:none;" placeholder="Add formula..." value="CO₂">
+            </div>
+            <div class="text-danger small mt-1">"NaCl?" not recognized — check your formula</div>
+          </div>
+
+          <div class="mb-3">
+            <label class="form-label small fw-medium">Precision</label>
+            <select class="form-select form-select-sm">
+              <option>2 decimal places</option>
+              <option selected>4 decimal places</option>
+              <option>6 decimal places</option>
+            </select>
+          </div>
+
+          <!-- Calculate button at bottom (thumb zone) -->
+          <button class="btn btn-accent w-100 w-lg-auto mt-auto align-self-lg-end">
+            <span>Calculate</span>
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Result card -->
+    <div class="col-12 col-lg-6">
+      <div class="card border-0" style="animation: resultFadeIn 0.4s ease-out;">
+        <div class="card-body p-4">
+          <div class="d-flex justify-content-between align-items-start mb-3">
+            <h3 class="h5 mb-0">Results</h3>
+            <span class="text-success small fw-medium" style="background: rgba(63,185,80,0.15); padding: 2px 8px; border-radius: 4px;">✓ 3 calculated</span>
+          </div>
+
+          <div class="mb-3">
+            <table class="table table-sm table-dark table-striped mb-0 small">
+              <thead><tr><th>Molecule</th><th>Mass (g/mol)</th></tr></thead>
+              <tbody>
+                <tr><td>C₆H₁₂O₆</td><td>180.1560</td></tr>
+                <tr><td>H₂O</td><td>18.0153</td></tr>
+                <tr><td>CO₂</td><td>44.0095</td></tr>
+              </tbody>
+            </table>
+          </div>
+
+          <div class="d-flex justify-content-between align-items-center">
+            <small class="text-muted">Input: C₆H₁₂O₆ + H₂O + CO₂</small>
+            <button class="btn btn-sm btn-outline-accent">📋 Copy</button>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<hr class="border-accent my-0">
+
+<!-- === HPLC SIMULATOR MOCKUP === -->
+<section class="container-xxl py-4" id="hplc-mockup">
+  <h2 class="h5 section-header"><span class="accent">▍</span> HPLC Simulator</h2>
+
+  <nav aria-label="breadcrumb" class="mb-3">
+    <ol class="breadcrumb small">
+      <li class="breadcrumb-item"><a href="#" class="text-light">Home</a></li>
+      <li class="breadcrumb-item"><a href="#" class="text-light">HPLC Simulator</a></li>
+      <li class="breadcrumb-item active">Separation Challenge</li>
+    </ol>
+  </nav>
+
+  <div class="d-flex justify-content-between align-items-start mb-3">
+    <div>
+      <h2 class="h4 mb-1">Separation Challenge</h2>
+      <p class="text-muted small mb-0">Separate 4 analytes on a C18 column</p>
+    </div>
+    <span class="badge" style="background: var(--ca-warning); color: #0d1117;">Medium</span>
+  </div>
+
+  <div class="row g-3">
+    <!-- Controls panel -->
+    <div class="col-lg-4 col-xl-3">
+      <div class="card border-0">
+        <div class="card-header py-2 d-flex justify-content-between align-items-center" style="background: transparent; border-color: var(--ca-border);">
+          <h6 class="mb-0 small fw-semibold">Parameters</h6>
+          <button class="btn btn-sm btn-outline-accent">Reset</button>
+        </div>
+        <div class="card-body p-0">
+          <div class="accordion accordion-flush" id="hplcAccordion">
+            <!-- Mobile Phase -->
+            <div class="accordion-item">
+              <h2 class="accordion-header">
+                <button class="accordion-button collapsed py-2 small" type="button" data-bs-toggle="collapse" data-bs-target="#mpSection">Mobile Phase</button>
+              </h2>
+              <div id="mpSection" class="accordion-collapse collapse show" data-bs-parent="#hplcAccordion">
+                <div class="accordion-body py-2">
+                  <div class="form-check form-switch mb-2">
+                    <input class="form-check-input" type="checkbox" id="gradient">
+                    <label class="form-check-label small" for="gradient">Gradient Elution</label>
+                  </div>
+                  <div class="mb-2">
+                    <label class="form-label small">pH</label>
+                    <input type="range" class="form-range" min="2" max="8" step="0.1" value="3.0">
+                    <div class="d-flex justify-content-between small"><span class="text-muted">pH 3.0</span></div>
+                  </div>
+                </div>
+              </div>
+            </div>
+            <!-- Column -->
+            <div class="accordion-item">
+              <h2 class="accordion-header">
+                <button class="accordion-button collapsed py-2 small" type="button">Column</button>
+              </h2>
+            </div>
+            <!-- Operation -->
+            <div class="accordion-item">
+              <h2 class="accordion-header">
+                <button class="accordion-button collapsed py-2 small" type="button">Operation</button>
+              </h2>
+            </div>
+          </div>
+        </div>
+        <div class="card-footer py-2" style="background: transparent; border-color: var(--ca-border);">
+          <button class="btn btn-accent w-100">Inject</button>
+        </div>
+      </div>
+
+      <!-- Warning alerts -->
+      <div class="alert alert-warning py-2 mt-3 small" style="background: rgba(210,153,34,0.1); border-color: var(--ca-warning); color: var(--ca-warning);">
+        ⚠ Silica columns may degrade above pH 7.5
+      </div>
+
+      <!-- Pressure gauge -->
+      <div class="card border-0 mt-3">
+        <div class="card-body py-2">
+          <div class="d-flex justify-content-between small mb-1">
+            <span class="text-muted">Pressure</span>
+            <span>187 bar</span>
+          </div>
+          <div class="progress" style="height: 6px;">
+            <div class="progress-bar progress-bar-warning" style="width: 47%;"></div>
+          </div>
+          <div class="small text-muted mt-1">Limit: 400 bar</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Chromatogram area -->
+    <div class="col-lg-8 col-xl-9">
+      <div class="card border-0">
+        <div class="card-header py-2 d-flex justify-content-between align-items-center" style="background: transparent; border-color: var(--ca-border);">
+          <h6 class="mb-0 small fw-semibold">Chromatogram</h6>
+          <div class="btn-group btn-group-sm">
+            <button class="btn btn-outline-accent active">Auto-Scale</button>
+            <button class="btn btn-outline-accent">Inspect</button>
+          </div>
+        </div>
+        <div class="card-body p-0">
+          <!-- Mock chromatogram SVG -->
+          <svg viewBox="0 0 800 250" class="w-100" style="background: var(--ca-bg-card-alt);">
+            <!-- baseline -->
+            <line x1="20" y1="225" x2="780" y2="225" stroke="var(--ca-border)" stroke-width="1"/>
+            <!-- Peak 1 -->
+            <path d="M120 225 L140 225 Q160 225 175 80 Q190 225 210 225 L230 225 Z" fill="rgba(20,184,166,0.3)" stroke="var(--ca-accent)" stroke-width="1.5"/>
+            <!-- Peak 2 -->
+            <path d="M310 225 L330 225 Q345 225 365 45 Q385 225 400 225 L420 225 Z" fill="rgba(20,184,166,0.3)" stroke="var(--ca-accent)" stroke-width="1.5"/>
+            <!-- Peak 3 (overlapping) -->
+            <path d="M480 225 L500 225 Q515 225 530 120 Q550 225 565 225 L585 225 Z" fill="rgba(210,153,34,0.3)" stroke="var(--ca-warning)" stroke-width="1.5"/>
+            <!-- Peak 4 -->
+            <path d="M650 225 L665 225 Q680 225 695 55 Q715 225 730 225 L745 225 Z" fill="rgba(20,184,166,0.3)" stroke="var(--ca-accent)" stroke-width="1.5"/>
+          </svg>
+
+          <!-- Stats row -->
+          <div class="row g-2 p-3">
+            <div class="col-3 stat-card"><div class="label">Score</div><div class="value accent">72</div></div>
+            <div class="col-3 stat-card"><div class="label">Min Resolution</div><div class="value" style="color: var(--ca-warning);">0.89</div></div>
+            <div class="col-3 stat-card"><div class="label">Run Time</div><div class="value">9.4 min</div></div>
+            <div class="col-3 stat-card"><div class="label">Status</div><div class="value" style="color: var(--ca-danger);">FAILED</div></div>
+          </div>
+
+          <!-- Peak table -->
+          <div class="px-3 pb-3">
+            <table class="table table-sm table-dark table-striped small mb-0">
+              <thead><tr><th>Analyte</th><th>tR (min)</th><th>Width (min)</th><th>Height (mAU)</th></tr></thead>
+              <tbody>
+                <tr><td>Caffeine</td><td>2.74</td><td>0.082</td><td>1245</td></tr>
+                <tr><td>Acetaminophen</td><td>5.13</td><td>0.114</td><td>982</td></tr>
+                <tr><td>Aspirin</td><td>7.01</td><td>0.153</td><td>756</td></tr>
+                <tr><td>Ibuprofen</td><td>12.84</td><td>0.198</td><td>1102</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+</main>
+
+<!-- Footer -->
+<footer class="footer py-4 mt-5">
+  <div class="container-xxl">
+    <div class="row">
+      <div class="col-lg-4 mb-3 mb-lg-0">
+        <a class="fw-bold text-light text-decoration-none" href="#">ChemicAlly</a>
+        <p class="text-muted small mb-0 mt-1">Code available under the GNU General Public License.</p>
+      </div>
+      <div class="col-6 col-lg-3 offset-lg-1">
+        <h6 class="small fw-semibold mb-2">Links</h6>
+        <ul class="list-unstyled small mb-0">
+          <li><a href="#" class="text-muted text-decoration-none">Home</a></li>
+          <li><a href="#" class="text-muted text-decoration-none">GitHub</a></li>
+        </ul>
+      </div>
+      <div class="col-6 col-lg-3">
+        <h6 class="small fw-semibold mb-2">Powered By</h6>
+        <ul class="list-unstyled small mb-0 text-muted">
+          <li>Django · Bootstrap · ChemPy</li>
+          <li>Plotly · MathJax · Pint</li>
+        </ul>
+      </div>
+    </div>
+  </div>
+</footer>
+
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>
+</body>
+</html>
