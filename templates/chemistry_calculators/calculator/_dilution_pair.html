@@ -1,0 +1,34 @@
+<div class="row align-items-top">
+  <div class="col-8">
+    <div class="ca-input-group">
+      <label for="{{ item.field.id_for_label }}">{{ item.field.label }}</label>
+      <div class="ca-input-row">
+        <input
+          type="number"
+          step="any"
+          min="0"
+          name="{{ item.field.name }}"
+          id="{{ item.field.id_for_label }}"
+          placeholder="{{ item.field.field.widget.attrs.placeholder|default:'' }}"
+          value="{{ item.field.value|default:'' }}"
+          title="{{ item.field.help_text }}"
+        />
+      </div>
+      {% for error in item.field.errors %}
+        <div class="ca-input-error">{{ error }}</div>
+      {% endfor %}
+    </div>
+  </div>
+  <div class="col-4">
+    <div class="ca-input-group">
+      <label for="{{ item.unit.name }}">Unit</label>
+      <div class="ca-input-row">
+        <select name="{{ item.unit.name }}" id="{{ item.unit.name }}" title="{{ item.unit.help_text }}">
+          {% for choice_value, choice_label in item.unit.field.choices %}
+            <option value="{{ choice_value }}" {% if item.unit.value == choice_value %}selected{% endif %}>{{ choice_label }}</option>
+          {% endfor %}
+        </select>
+      </div>
+    </div>
+  </div>
+</div>

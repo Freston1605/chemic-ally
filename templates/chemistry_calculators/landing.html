@@ -1,0 +1,50 @@
+{% extends 'chemistry_calculators/base.html' %}
+
+{% block main %}
+  <!-- Hero -->
+  <div class="py-5">
+    <h1 class="ca-page-title">Chemistry calculators for the bench</h1>
+    <p class="ca-lead">Molecular weight, dilutions, reaction balancing — all in one place.</p>
+  </div>
+
+  <!-- Tool Grid -->
+  <div class="row g-3 pb-5">
+    <div class="col-12 col-md-6 col-lg-4">
+      <a class="ca-tool-card" href="{% url 'molecular_weight' %}">
+        <div class="emoji">⚖️</div>
+        <h3>Find a molecule's mass</h3>
+        <p>Molecular weight from formula</p>
+      </a>
+    </div>
+    <div class="col-12 col-md-6 col-lg-4">
+      <a class="ca-tool-card" href="{% url 'dilution' %}">
+        <div class="emoji">💧</div>
+        <h3>How much stock solution?</h3>
+        <p>Dilution calculator C₁V₁ = C₂V₂</p>
+      </a>
+    </div>
+    <div class="col-12 col-md-6 col-lg-4">
+      <a class="ca-tool-card" href="{% url 'equilibria' %}">
+        <div class="emoji">⚗️</div>
+        <h3>Will this reaction shift?</h3>
+        <p>Equilibrium constant + ICE table</p>
+        <span class="badge" style="background:var(--ca-accent-muted);color:var(--ca-accent);align-self:flex-start;font-size:0.75rem;font-weight:500;padding:0.125rem 0.5rem;border-radius:999px;">beta</span>
+      </a>
+    </div>
+    <div class="col-12 col-md-6 col-lg-4">
+      <a class="ca-tool-card" href="{% url 'reaction_balancer' %}">
+        <div class="emoji">↔️</div>
+        <h3>Balance this equation</h3>
+        <p>Reaction balancer with ChemPy</p>
+      </a>
+    </div>
+    <div class="col-12 col-md-6 col-lg-4">
+      <a class="ca-tool-card" href="{% url 'hplc_simulator:index' %}">
+        <div class="emoji">📊</div>
+        <h3>Simulate a chromatogram</h3>
+        <p>HPLC column parameters and gradient</p>
+        <span class="badge" style="background:var(--ca-accent-muted);color:var(--ca-accent);align-self:flex-start;font-size:0.75rem;font-weight:500;padding:0.125rem 0.5rem;border-radius:999px;">new</span>
+      </a>
+    </div>
+  </div>
+{% endblock %}

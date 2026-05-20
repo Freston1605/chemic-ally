@@ -233,7 +233,7 @@ eb ssh Chemically-env
 # Activate venv and reverse the last migration
 source /var/app/venv/*/bin/activate
 cd /var/app/current
-python manage.py migrate webapp <previous_migration_number>
+python manage.py migrate chemistry_calculators <previous_migration_number>
 ```
 
 > **WARNING:** Reversing migrations that drop columns or delete data is **not reversible**. Always backup RDS before running migrations.

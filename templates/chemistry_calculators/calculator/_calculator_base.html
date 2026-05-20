@@ -1,0 +1,78 @@
+{% extends 'chemistry_calculators/base.html' %}
+
+{% block main %}
+<div class="my-3">
+  <div class="calculator-layout{% block calculator_layout_class %}{% endblock %}">
+    <!-- Form card -->
+    <div class="form-card-col">
+      <div class="ca-form-card">
+        <h1>{% block calculator_title %}{% endblock %}</h1>
+        <div>
+          {% block calculator_form %}{% endblock %}
+        </div>
+        <button
+          type="submit"
+          form="calculator-form"
+          class="ca-btn ca-btn-success ca-btn-full mt-3"
+          id="calculate-btn"
+        >
+          <span class="btn-text">Calculate</span>
+          <span class="btn-spinner d-none" role="status" aria-hidden="true">
+            <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" fill="currentColor" viewBox="0 0 16 16" class="spin">
+              <path fill-rule="evenodd" d="M8 3a5 5 0 1 0 4.546 2.914.5.5 0 0 1 .908-.417A6 6 0 1 1 8 2z"/>
+              <path fill-rule="evenodd" d="M8 4.466V.534a.25.25 0 0 1 .41-.192l2.36 1.966c.12.1.12.284 0 .384L8.41 4.658A.25.25 0 0 1 8 4.466z"/>
+            </svg>
+          </span>
+        </button>
+      </div>
+    </div>
+    <!-- Result card: rendered by child templates -->
+    {% block calculator_result %}{% endblock %}
+
+    <!-- History panel toggle -->
+    <div style="margin-top:0.75rem;text-align:center;">
+      <button type="button" class="ca-btn ca-btn-icon" onclick="toggleHistory(this)" style="font-size:0.8125rem;" aria-expanded="false">
+        History
+      </button>
+    </div>
+    <div id="ca-history-panel" style="display:none;margin-top:0.5rem;padding:0.5rem 0.75rem;background:var(--ca-bg-card-alt);border-radius:var(--ca-border-radius);border:1px solid var(--ca-border);">
+      <div id="ca-history-list"></div>
+    </div>
+  </div>
+</div>
+
+<script>
+(function() {
+  var form = document.getElementById('calculator-form');
+  var btn = document.getElementById('calculate-btn');
+  if (!form || !btn) return;
+  form.addEventListener('submit', function() {
+    btn.disabled = true;
+    btn.querySelector('.btn-text').textContent = 'Calculating\u2026';
+    btn.querySelector('.btn-spinner').classList.remove('d-none');
+    btn.setAttribute('aria-busy', 'true');
+  });
+
+  /* Save result to history on page load if present */
+  var resultCard = document.querySelector('.ca-result-card');
+  var toolName = window.location.pathname.split('/').filter(Boolean).pop() || 'calculator';
+  if (resultCard && window.CaHistory) {
+    var resultText = resultCard.textContent.trim().substring(0, 100);
+    CaHistory.add(toolName, { summary: resultText });
+  }
+  /* Render history */
+  var listEl = document.getElementById('ca-history-list');
+  if (listEl && window.CaHistory) {
+    CaHistory.render(toolName, listEl);
+  }
+})();
+
+function toggleHistory(btn) {
+  var panel = document.getElementById('ca-history-panel');
+  if (!panel) return;
+  var expanded = btn.getAttribute('aria-expanded') === 'true';
+  btn.setAttribute('aria-expanded', !expanded);
+  panel.style.display = expanded ? 'none' : 'block';
+}
+</script>
+{% endblock %}

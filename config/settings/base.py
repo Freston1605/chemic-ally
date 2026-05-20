@@ -55,7 +55,7 @@ INSTALLED_APPS = [
     'storages',
     'rest_framework',
     # Project apps
-    'webapp',
+    'chemistry_calculators',
     'hplc_simulator',
 ]
 

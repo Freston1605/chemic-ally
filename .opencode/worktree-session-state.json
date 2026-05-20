@@ -1,0 +1,46 @@
+{
+  "sessions": {
+    "ses_1bf3f1ab4ffegW81kHiaDtSv9k": {
+      "sessionId": "ses_1bf3f1ab4ffegW81kHiaDtSv9k",
+      "createdAt": 1779202844003,
+      "branch": "feat/ux-redesign",
+      "worktreePath": "/home/franco/Projects/chemic-ally/.opencode/worktrees/feat/ux-redesign"
+    },
+    "ses_1bf34cb6fffeLdCYsZzI3dA2d0": {
+      "sessionId": "ses_1bf34cb6fffeLdCYsZzI3dA2d0",
+      "createdAt": 1779203519644
+    },
+    "ses_1bf0747c5ffeAP69YlxK6yKjWa": {
+      "sessionId": "ses_1bf0747c5ffeAP69YlxK6yKjWa",
+      "createdAt": 1779206502463
+    },
+    "ses_1bf00ec62ffeRbyNlGU5jP7c1q": {
+      "sessionId": "ses_1bf00ec62ffeRbyNlGU5jP7c1q",
+      "createdAt": 1779206919084
+    },
+    "ses_1befebff7ffeWJUW7nnpN0vWrg": {
+      "sessionId": "ses_1befebff7ffeWJUW7nnpN0vWrg",
+      "createdAt": 1779207061524
+    },
+    "ses_1befb3edcffeXphHW2lTAWI8wg": {
+      "sessionId": "ses_1befb3edcffeXphHW2lTAWI8wg",
+      "createdAt": 1779207291178
+    },
+    "ses_1bee1c981ffex4yINFZTBCfdIL": {
+      "sessionId": "ses_1bee1c981ffex4yINFZTBCfdIL",
+      "createdAt": 1779208959619
+    },
+    "ses_1beacb421ffeDFwgDx0P0fjZEd": {
+      "sessionId": "ses_1beacb421ffeDFwgDx0P0fjZEd",
+      "createdAt": 1779212438514
+    },
+    "ses_1beac56faffeVoD4oLDqwyTGwp": {
+      "sessionId": "ses_1beac56faffeVoD4oLDqwyTGwp",
+      "createdAt": 1779212462353
+    },
+    "ses_1bea511bbffeZg6olOR6ZKjY1D": {
+      "sessionId": "ses_1bea511bbffeZg6olOR6ZKjY1D",
+      "createdAt": 1779212938826
+    }
+  }
+}
