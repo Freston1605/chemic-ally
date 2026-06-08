@@ -164,8 +164,7 @@ jobs:
           tags: |
             ${{ steps.login-ecr.outputs.registry }}/${{ env.ECR_REPOSITORY }}:${{ env.IMAGE_TAG }}
             ${{ steps.login-ecr.outputs.registry }}/${{ env.ECR_REPOSITORY }}:latest
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
+          no-cache: true
 
       - name: Upload deploy metadata
         uses: actions/upload-artifact@v5
@@ -210,6 +209,7 @@ jobs:
             --stack-name chemically \
             --capabilities CAPABILITY_IAM \
             --region ${{ env.AWS_REGION }} \
+            --image-repository ${{ env.AWS_ACCOUNT_ID }}.dkr.ecr.${{ env.AWS_REGION }}.amazonaws.com/${{ env.ECR_REPOSITORY }} \
             --parameter-overrides \
               ImageTag=${{ env.IMAGE_TAG }} \
               HostedZoneId=${{ secrets.ROUTE53_HOSTED_ZONE_ID }} \
