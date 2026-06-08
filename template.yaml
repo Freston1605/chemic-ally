@@ -1,0 +1,311 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Transform: AWS::Serverless-2016-10-31
+Description: ChemicAlly - Serverless Django application
+
+Parameters:
+  DomainName:
+    Type: String
+    Default: chemic-ally.xyz
+  HostedZoneId:
+    Type: String
+    Description: Route 53 hosted zone ID for the domain
+  ImageTag:
+    Type: String
+    Default: latest
+    Description: Docker image tag to deploy
+  RDSDBName:
+    Type: AWS::SSM::Parameter::Value<String>
+    Default: /chemically/rds/db_name
+    Description: RDS PostgreSQL database name (from SSM)
+  RDSUsername:
+    Type: AWS::SSM::Parameter::Value<String>
+    Default: /chemically/rds/username
+    Description: RDS PostgreSQL username (from SSM)
+  RDSHostname:
+    Type: AWS::SSM::Parameter::Value<String>
+    Default: /chemically/rds/endpoint
+    Description: RDS PostgreSQL endpoint hostname (from SSM)
+  RDSPort:
+    Type: String
+    Default: "5432"
+    Description: RDS PostgreSQL port
+
+  # Secrets (marked NoEcho)
+  RDSPassword:
+    Type: String
+    NoEcho: true
+    Description: RDS PostgreSQL password
+  DjangoSecretKey:
+    Type: String
+    NoEcho: true
+    Description: Django SECRET_KEY
+
+Globals:
+  Function:
+    Timeout: 30
+    MemorySize: 1024
+    Environment:
+      Variables:
+        DJANGO_SETTINGS_MODULE: config.settings.production
+        ALLOWED_HOSTS: !Sub ".${DomainName}"
+        AWS_STORAGE_BUCKET_NAME: !Ref EnvironmentVariablesBucket
+        AWS_S3_REGION_NAME: !Ref AWS::Region
+        RDS_DB_NAME: !Ref RDSDBName
+        RDS_USERNAME: !Ref RDSUsername
+        RDS_PASSWORD: !Ref RDSPassword
+        RDS_HOSTNAME: !Ref RDSHostname
+        RDS_PORT: !Ref RDSPort
+        SECRET_KEY: !Ref DjangoSecretKey
+
+Resources:
+  # ─────────────────────────────────────────────
+  # ECR Repository for container images
+  # ─────────────────────────────────────────────
+  EcrRepository:
+    Type: AWS::ECR::Repository
+    Properties:
+      RepositoryName: chemically
+      ImageScanningConfiguration:
+        ScanOnPush: true
+      LifecyclePolicy:
+        RuleText: |
+          {
+            "rules": [
+              {"rulePriority": 1,"description": "Keep last 10 images","selection": {"tagStatus": "any","countType": "imageCountMoreThan","countNumber": 10},"action": {"type": "expire"}}
+            ]
+          }
+
+  # ─────────────────────────────────────────────
+  # Lambda execution role
+  # ─────────────────────────────────────────────
+  LambdaExecutionRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: lambda.amazonaws.com
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
+        - arn:aws:iam::aws:policy/service-role/AWSLambdaVPCAccessExecutionRole
+      Policies:
+        - PolicyName: S3Access
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action:
+                  - s3:GetObject
+                  - s3:PutObject
+                  - s3:DeleteObject
+                  - s3:ListBucket
+                Resource:
+                  - !Sub "arn:aws:s3:::${EnvironmentVariablesBucket}/*"
+                  - !Sub "arn:aws:s3:::${EnvironmentVariablesBucket}"
+
+  # ─────────────────────────────────────────────
+  # Lambda function (container image)
+  # ─────────────────────────────────────────────
+  DjangoFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      PackageType: Image
+      Role: !GetAtt LambdaExecutionRole.Arn
+      ImageUri: !Sub "${AWS::AccountId}.dkr.ecr.${AWS::Region}.amazonaws.com/chemically:${ImageTag}"
+      VpcConfig:
+        SecurityGroupIds:
+          - !Ref LambdaSecurityGroup
+        SubnetIds: !Ref LambdaSubnetIds
+    Metadata:
+      DockerTag: !Ref ImageTag
+      DockerContext: .
+      Dockerfile: Dockerfile
+
+  # ─────────────────────────────────────────────
+  # Lambda Function URL (public endpoint)
+  # ─────────────────────────────────────────────
+  FunctionUrl:
+    Type: AWS::Lambda::Url
+    Properties:
+      TargetFunctionArn: !Ref DjangoFunction
+      AuthType: NONE
+      Cors:
+        AllowOrigins:
+          - !Sub "https://${DomainName}"
+          - !Sub "https://www.${DomainName}"
+        AllowMethods:
+          - GET
+          - POST
+          - PUT
+          - PATCH
+          - DELETE
+          - HEAD
+          - OPTIONS
+        AllowHeaders:
+          - Content-Type
+          - X-CSRFToken
+          - Authorization
+        MaxAge: 86400
+
+  # ─────────────────────────────────────────────
+  # Resource policy to restrict Function URL to CloudFront only
+  # ─────────────────────────────────────────────
+  FunctionUrlResourcePolicy:
+    Type: AWS::Lambda::ResourcePolicy
+    Properties:
+      PolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal: "*"
+            Action: lambda:InvokeFunctionUrl
+            Condition:
+              StringEquals:
+                AWS:SourceArn: !Sub "arn:aws:cloudfront::${AWS::AccountId}:distribution/${CloudFrontDistribution}"
+          - Effect: Allow
+            Principal: "*"
+            Action: lambda:InvokeFunctionUrl
+            Condition:
+              IpAddress:
+                "AWS:SourceIp": "0.0.0.0/0"
+      Resource: !Ref DjangoFunction
+
+  FunctionUrlPermission:
+    Type: AWS::Lambda::Permission
+    Properties:
+      FunctionName: !Ref DjangoFunction
+      Action: lambda:InvokeFunctionUrl
+      Principal: "*"
+      FunctionUrlAuthType: NONE
+
+  # ─────────────────────────────────────────────
+  # Security Group for Lambda VPC access (RDS)
+  # ─────────────────────────────────────────────
+  LambdaSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: Security group for Django Lambda function
+      SecurityGroupIngress:
+        - IpProtocol: -1
+          CidrIp: 172.31.0.0/16
+      SecurityGroupEgress:
+        - IpProtocol: -1
+          CidrIp: 0.0.0.0/0
+
+  LambdaSubnetIds:
+    Type: AWS::SSM::Parameter::Value<List<AWS::EC2::Subnet::Id>>
+    Default: /chemically/lambda/subnet_ids
+
+  EnvironmentVariablesBucket:
+    Type: AWS::SSM::Parameter::Value<String>
+    Default: /chemically/environment/bucket_name
+
+  # ─────────────────────────────────────────────
+  # ACM Certificate (must be in us-east-1 for CloudFront)
+  # ─────────────────────────────────────────────
+  Certificate:
+    Type: AWS::CertificateManager::Certificate
+    Properties:
+      DomainName: !Ref DomainName
+      SubjectAlternativeNames:
+        - !Sub "www.${DomainName}"
+      ValidationMethod: DNS
+      DomainValidationOptions:
+        - DomainName: !Ref DomainName
+          HostedZoneId: !Ref HostedZoneId
+
+  # ─────────────────────────────────────────────
+  # CloudFront Distribution
+  # ─────────────────────────────────────────────
+  CloudFrontDistribution:
+    Type: AWS::CloudFront::Distribution
+    Properties:
+      DistributionConfig:
+        Aliases:
+          - !Ref DomainName
+          - !Sub "www.${DomainName}"
+        PriceClass: PriceClass_100
+        DefaultCacheBehavior:
+          TargetOriginId: DjangoLambda
+          ViewerProtocolPolicy: redirect-to-https
+          AllowedMethods:
+            - GET
+            - HEAD
+            - OPTIONS
+            - PUT
+            - POST
+            - PATCH
+            - DELETE
+          CachedMethods:
+            - GET
+            - HEAD
+            - OPTIONS
+          DefaultTTL: 0
+          MaxTTL: 0
+          MinTTL: 0
+          ForwardedValues:
+            QueryString: true
+            Cookies:
+              Forward: all
+            Headers:
+              - Host
+              - Origin
+              - Authorization
+              - X-CSRFToken
+              - CloudFront-Forwarded-Proto
+          Compress: true
+        Enabled: true
+        Origins:
+          - Id: DjangoLambda
+            DomainName: !Select [2, !Split ["/", !GetAtt FunctionUrl.FunctionUrl]]
+            CustomOriginConfig:
+              OriginProtocolPolicy: https-only
+              OriginSSLProtocols:
+                - TLSv1.2
+        ViewerCertificate:
+          AcmCertificateArn: !Ref Certificate
+          SslSupportMethod: sni-only
+        DefaultRootObject: ""
+
+  # ─────────────────────────────────────────────
+  # Route 53 A record (root domain)
+  # ─────────────────────────────────────────────
+  RootAliasRecord:
+    Type: AWS::Route53::RecordSet
+    Properties:
+      HostedZoneId: !Ref HostedZoneId
+      Name: !Ref DomainName
+      Type: A
+      AliasTarget:
+        DNSName: !GetAtt CloudFrontDistribution.DomainName
+        HostedZoneId: Z2FDTNDATAQYW2
+
+  # ─────────────────────────────────────────────
+  # Route 53 A record (www subdomain)
+  # ─────────────────────────────────────────────
+  WwwAliasRecord:
+    Type: AWS::Route53::RecordSet
+    Properties:
+      HostedZoneId: !Ref HostedZoneId
+      Name: !Sub "www.${DomainName}"
+      Type: A
+      AliasTarget:
+        DNSName: !GetAtt CloudFrontDistribution.DomainName
+        HostedZoneId: Z2FDTNDATAQYW2
+
+Outputs:
+  FunctionUrl:
+    Description: Lambda Function URL
+    Value: !GetAtt FunctionUrl.FunctionUrl
+  CloudFrontDomain:
+    Description: CloudFront distribution domain name
+    Value: !GetAtt CloudFrontDistribution.DomainName
+  EcrRepositoryUri:
+    Description: ECR repository URI for pushing images
+    Value: !GetAtt EcrRepository.RepositoryUri
+  LambdaFunctionArn:
+    Description: Lambda function ARN
+    Value: !GetAtt DjangoFunction.Arn

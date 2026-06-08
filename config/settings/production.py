@@ -3,7 +3,7 @@ Production settings for ChemicAlly.
 
 Overrides and extends base settings for the production environment.
 Expects all required secrets and credentials to be supplied via
-environment variables (injected by Elastic Beanstalk or equivalent).
+environment variables (injected by the Lambda runtime or environment).
 """
 
 import os
@@ -34,13 +34,10 @@ DEBUG = False
 
 SECRET_KEY = _required_env("SECRET_KEY")
 
-ALLOWED_HOSTS += [  # noqa: F405
-    ".elasticbeanstalk.com",
-    ".chemic-ally.xyz",
-]
+_allowed = os.environ.get("ALLOWED_HOSTS", ".chemic-ally.xyz")
+ALLOWED_HOSTS += [h.strip() for h in _allowed.split() if h.strip()]  # noqa: F405
 
 CSRF_TRUSTED_ORIGINS = [
-    "https://*.elasticbeanstalk.com",
     "https://chemic-ally.xyz",
     "https://www.chemic-ally.xyz",
 ]
@@ -52,7 +49,7 @@ CSRF_TRUSTED_ORIGINS = [
 
 SECURE_SSL_REDIRECT = True
 
-# Perfectly configured for the Nginx proxy passing X-Forwarded-Proto
+# CloudFront / Function URL passes X-Forwarded-Proto
 SECURE_PROXY_SSL_HEADER = ("HTTP_X_FORWARDED_PROTO", "https")
 
 SESSION_COOKIE_SECURE = True
@@ -77,9 +74,7 @@ DATABASES = {
         "PASSWORD": _required_env("RDS_PASSWORD"),
         "HOST": _required_env("RDS_HOSTNAME"),
         "PORT": _required_env("RDS_PORT"),
-        "CONN_MAX_AGE": 60,
-        # Ensures stale connections don't crash requests (Requires Django 4.1+)
-        "CONN_HEALTH_CHECKS": True,
+        "CONN_MAX_AGE": 0,
     }
 }
 
@@ -102,8 +97,8 @@ STORAGES = {
 # AWS S3 configuration
 # ---------------------------------------------------------------------------
 
-# Use .get() for keys. The EC2 instance should use an IAM Instance Profile
-# to access S3 automatically, rather than hardcoding access keys in env vars.
+# Use .get() for keys. The Lambda execution role handles S3 access
+# automatically — hardcoded keys should be left unset in production.
 AWS_ACCESS_KEY_ID = os.environ.get("AWS_ACCESS_KEY_ID")
 AWS_SECRET_ACCESS_KEY = os.environ.get("AWS_SECRET_ACCESS_KEY")
 
