@@ -39,6 +39,14 @@ Parameters:
     Type: String
     NoEcho: true
     Description: Django SECRET_KEY
+  LambdaSubnetIds:
+    Type: AWS::SSM::Parameter::Value<List<AWS::EC2::Subnet::Id>>
+    Default: /chemically/lambda/subnet_ids
+    Description: Subnet IDs for Lambda VPC (from SSM)
+  EnvironmentVariablesBucket:
+    Type: AWS::SSM::Parameter::Value<String>
+    Default: /chemically/environment/bucket_name
+    Description: S3 bucket name for environment variables (from SSM)
 
 Globals:
   Function:
@@ -68,7 +76,7 @@ Resources:
       ImageScanningConfiguration:
         ScanOnPush: true
       LifecyclePolicy:
-        RuleText: |
+        LifecyclePolicyText: |
           {
             "rules": [
               {"rulePriority": 1,"description": "Keep last 10 images","selection": {"tagStatus": "any","countType": "imageCountMoreThan","countNumber": 10},"action": {"type": "expire"}}
@@ -117,7 +125,7 @@ Resources:
       ImageUri: !Sub "${AWS::AccountId}.dkr.ecr.${AWS::Region}.amazonaws.com/chemically:${ImageTag}"
       VpcConfig:
         SecurityGroupIds:
-          - !Ref LambdaSecurityGroup
+          - !GetAtt LambdaSecurityGroup.GroupId
         SubnetIds: !Ref LambdaSubnetIds
     Metadata:
       DockerTag: !Ref ImageTag
@@ -143,7 +151,6 @@ Resources:
           - PATCH
           - DELETE
           - HEAD
-          - OPTIONS
         AllowHeaders:
           - Content-Type
           - X-CSRFToken
@@ -194,14 +201,6 @@ Resources:
       SecurityGroupEgress:
         - IpProtocol: -1
           CidrIp: 0.0.0.0/0
-
-  LambdaSubnetIds:
-    Type: AWS::SSM::Parameter::Value<List<AWS::EC2::Subnet::Id>>
-    Default: /chemically/lambda/subnet_ids
-
-  EnvironmentVariablesBucket:
-    Type: AWS::SSM::Parameter::Value<String>
-    Default: /chemically/environment/bucket_name
 
   # ─────────────────────────────────────────────
   # ACM Certificate (must be in us-east-1 for CloudFront)
