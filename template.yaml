@@ -43,6 +43,10 @@ Parameters:
     Type: AWS::SSM::Parameter::Value<List<AWS::EC2::Subnet::Id>>
     Default: /chemically/lambda/subnet_ids
     Description: Subnet IDs for Lambda VPC (from SSM)
+  LambdaVpcId:
+    Type: AWS::SSM::Parameter::Value<AWS::EC2::VPC::Id>
+    Default: /chemically/lambda/vpc_id
+    Description: VPC ID for Lambda security group (from SSM)
   EnvironmentVariablesBucket:
     Type: AWS::SSM::Parameter::Value<String>
     Default: /chemically/environment/bucket_name
@@ -158,6 +162,7 @@ Resources:
     Type: AWS::EC2::SecurityGroup
     Properties:
       GroupDescription: Security group for Django Lambda function
+      VpcId: !Ref LambdaVpcId
       SecurityGroupIngress:
         - IpProtocol: -1
           CidrIp: 172.31.0.0/16
