@@ -97,7 +97,7 @@ jobs:
         run: pip-audit --format json --output pip-audit-results.json || true
 
       - name: Safety check (known vulnerabilities)
-        run: safety check --json --output safety-results.json || true
+        run: safety check --output json > safety-results.json || true
 
       - name: Upload scan results
         uses: actions/upload-artifact@v5
@@ -201,7 +201,7 @@ jobs:
       - name: Deploy with SAM
         uses: aws-actions/setup-sam@v2
         with:
-          version: latest
+          version: 1.*
 
       - name: SAM deploy
         run: |
