@@ -23,8 +23,8 @@ python manage.py runserver
 flake8 .
 
 # Tests (CI runs both)
-pytest -v                      # preferred, covers webapp + hplc_simulator
-python manage.py test webapp   # Django runner, webapp only (no HPLC tests)
+pytest -v                      # preferred, covers chemistry_calculators + hplc_simulator
+python manage.py test chemistry_calculators   # Django runner, chemistry_calculators only (no HPLC tests)
 
 # CI order: lint → deploy check → pytest → Django tests → security scan
 ```
@@ -42,7 +42,7 @@ python manage.py test webapp   # Django runner, webapp only (no HPLC tests)
 
 ```
 apps/
-  webapp/                     # Original Django app — chemistry calculators
+  chemistry_calculators/      # Original Django app — chemistry calculators
     calculations/             # Engine: MolecularWeight, Reaction, Dilution, Equilibria
       units.py                # Pint unit helpers (moved here from utils/)
     utils/                    # Session persistence helpers
@@ -61,13 +61,13 @@ chemically/                   # Non-app package on sys.path
 config/                       # Django project config
   settings/                   # base.py, development.py, production.py
   storage_backends.py         # StaticStorage (public) + MediaStorage (signed URLs)
-  urls.py                     # Includes webapp (root) + hplc_simulator (/hplc/)
+  urls.py                     # Includes chemistry_calculators (root) + hplc_simulator (/hplc/)
 tests/
-  webapp/                     # webapp tests
+  chemistry_calculators/      # chemistry_calculators tests
   hplc_simulator/             # hplc_simulator tests (engine, models, validation)
 ```
 
-- `base.py` adds `apps/` and `chemically/` to `sys.path` so imports work as `webapp` and `hplc_simulator`.
+- `base.py` adds `apps/` and `chemically/` to `sys.path` so imports work as `chemistry_calculators` and `hplc_simulator`.
 - **HPLC simulator is the first app with real database models.** `python manage.py migrate` is no longer a no-op — it creates Analyte, Level, UserScore, LevelProgress tables.
 - DRF is used for the HPLC simulator API (`/hplc/api/*`). Webapp remains server-rendered.
 - No Celery, no Redis. App is server-rendered Django with Bootstrap 5.3.
@@ -86,9 +86,9 @@ tests/
 ## Deploy (AWS Elastic Beanstalk)
 
 - Platform: Python 3.14 on Amazon Linux 2023, region: us-east-2
-- Deploy branch: `eb` (see `.elasticbeanstalk/config.yml`)
-- **CI/CD pipeline** (`.github/workflows/deploy.yml`): push to `eb` → lint/test (3.11+3.12) → security scan (pip-audit, safety) → build zip → deploy via AWS CLI → health check
-- Manual fallback: `git checkout eb && git merge main && eb deploy`
+- Deploy branch: `main` (see `.elasticbeanstalk/config.yml`)
+- **CI/CD pipeline** (`.github/workflows/deploy.yml`): push to `main` → lint/test → security scan (pip-audit, safety) → build zip → deploy via AWS CLI → health check
+- Manual fallback: `git checkout main && eb deploy`
 - `.ebextensions/django.config` runs migrate + collectstatic (leader_only)
 - `.ebextensions/https-instance.config` handles certbot/Let's Encrypt SSL (DNS-01 via Route 53, HTTP-01 fallback)
 - Production requires RDS env vars (`RDS_DB_NAME`, `RDS_HOSTNAME`, etc.) — auto-injected by EB
@@ -101,7 +101,7 @@ tests/
 - Python 3.11/3.12 in CI
 - Tests use `pytest-django` with Django `TestCase` classes (not pytest-style functions)
 - Session stores substance history and calculator form state
-- Templates live in `templates/webapp/` and `templates/hplc_simulator/` (project-level `TEMPLATES.DIRS`)
+- Templates live in `templates/chemistry_calculators/` and `templates/hplc_simulator/` (project-level `TEMPLATES.DIRS`)
 - HPLC simulator has a `SCIENTIFIC_LOGIC.md` documenting physical invariants — any changes to the simulation engine must respect these constraints
 
 ## Agent Conduct

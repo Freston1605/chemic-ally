@@ -551,7 +551,9 @@ class EquilibriaViewTests(TestCase):
     def test_equilibria_view_get(self):
         response = self.client.get(reverse("equilibria"))
         self.assertEqual(response.status_code, 200)
-        self.assertTemplateUsed(response, "chemistry_calculators/calculator/equilibria.html")
+        self.assertTemplateUsed(
+            response, "chemistry_calculators/calculator/equilibria.html"
+        )
 
     def test_equilibria_view_post_valid(self):
         data = {
