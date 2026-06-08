@@ -157,29 +157,6 @@ Resources:
           - Authorization
         MaxAge: 86400
 
-  # ─────────────────────────────────────────────
-  # Resource policy to restrict Function URL to CloudFront only
-  # ─────────────────────────────────────────────
-  FunctionUrlResourcePolicy:
-    Type: AWS::Lambda::ResourcePolicy
-    Properties:
-      PolicyDocument:
-        Version: "2012-10-17"
-        Statement:
-          - Effect: Allow
-            Principal: "*"
-            Action: lambda:InvokeFunctionUrl
-            Condition:
-              StringEquals:
-                AWS:SourceArn: !Sub "arn:aws:cloudfront::${AWS::AccountId}:distribution/${CloudFrontDistribution}"
-          - Effect: Allow
-            Principal: "*"
-            Action: lambda:InvokeFunctionUrl
-            Condition:
-              IpAddress:
-                "AWS:SourceIp": "0.0.0.0/0"
-      Resource: !Ref DjangoFunction
-
   FunctionUrlPermission:
     Type: AWS::Lambda::Permission
     Properties:
