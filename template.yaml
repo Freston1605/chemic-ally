@@ -69,20 +69,6 @@ Resources:
   # ─────────────────────────────────────────────
   # ECR Repository for container images
   # ─────────────────────────────────────────────
-  EcrRepository:
-    Type: AWS::ECR::Repository
-    Properties:
-      RepositoryName: chemically
-      ImageScanningConfiguration:
-        ScanOnPush: true
-      LifecyclePolicy:
-        LifecyclePolicyText: |
-          {
-            "rules": [
-              {"rulePriority": 1,"description": "Keep last 10 images","selection": {"tagStatus": "any","countType": "imageCountMoreThan","countNumber": 10},"action": {"type": "expire"}}
-            ]
-          }
-
   # ─────────────────────────────────────────────
   # Lambda execution role
   # ─────────────────────────────────────────────
@@ -280,7 +266,7 @@ Outputs:
     Value: !GetAtt CloudFrontDistribution.DomainName
   EcrRepositoryUri:
     Description: ECR repository URI for pushing images
-    Value: !GetAtt EcrRepository.RepositoryUri
+    Value: !Sub "${AWS::AccountId}.dkr.ecr.${AWS::Region}.amazonaws.com/chemically"
   LambdaFunctionArn:
     Description: Lambda function ARN
     Value: !GetAtt DjangoFunction.Arn
