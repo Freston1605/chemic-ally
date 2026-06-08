@@ -2,7 +2,7 @@
 
 ## Project
 
-Django 5.2 web app providing chemistry calculators (molecular weight, reaction balancing, dilution, equilibria) and an HPLC chromatography simulator. Deployed on AWS Elastic Beanstalk (Python 3.14, us-east-2). Domain: chemic-ally.xyz.
+Django 5.2 web app providing chemistry calculators (molecular weight, reaction balancing, dilution, equilibria) and an HPLC chromatography simulator. Deployed on AWS Lambda (container image, Python 3.14) behind CloudFront. Domain: chemic-ally.xyz.
 
 ## Commands
 
@@ -26,17 +26,18 @@ flake8 .
 pytest -v                      # preferred, covers chemistry_calculators + hplc_simulator
 python manage.py test chemistry_calculators   # Django runner, chemistry_calculators only (no HPLC tests)
 
-# CI order: lint → deploy check → pytest → Django tests → security scan
+# CI order: lint → deploy check → pytest → Django tests → security scan → Docker build → SAM deploy
 ```
 
 ## Settings
 
 - `config/settings/base.py` — shared config. Loads `.env` via `python-dotenv`. Adds `rest_framework` and `hplc_simulator` to INSTALLED_APPS.
 - `config/settings/development.py` — SQLite, DEBUG=True, local file storage.
-- `config/settings/production.py` — PostgreSQL (RDS env vars), S3 storage, strict HTTPS. **Raises `ImproperlyConfigured`** if required env vars are missing. Uses `ALLOWED_HOSTS +=` (appends to base, does not replace).
+- `config/settings/production.py` — PostgreSQL (RDS env vars), S3 storage, strict HTTPS, `CONN_MAX_AGE=0` (Lambda-compatible). **Raises `ImproperlyConfigured** if required env vars are missing. Uses `ALLOWED_HOSTS` from env var.
+- `config/asgi.py` — ASGI application with Mangum handler for Lambda (`handler = Mangum(application)`).
 - `manage.py` defaults to `config.settings.development`.
 - `pytest.ini` also uses `config.settings.development`.
-- EB sets `DJANGO_SETTINGS_MODULE=config.settings.production`.
+- Lambda sets `DJANGO_SETTINGS_MODULE=config.settings.production`.
 
 ## Architecture
 
@@ -55,9 +56,8 @@ apps/
     management/commands/      # seed_hplc_data
     SCIENTIFIC_LOGIC.md       # Physical constraints — DO NOT violate
     tests/
-chemically/                   # Non-app package on sys.path
-  context_processors.py       # Injects previous_substances into templates
-  asgi.py
+  chemically/                   # Non-app package on sys.path
+    context_processors.py       # Injects previous_substances into templates
 config/                       # Django project config
   settings/                   # base.py, development.py, production.py
   storage_backends.py         # StaticStorage (public) + MediaStorage (signed URLs)
@@ -83,16 +83,15 @@ tests/
 | DRF (djangorestframework) | HPLC simulator API endpoints |
 | numpy + scipy | HPLC simulation engine (chromatogram generation) |
 
-## Deploy (AWS Elastic Beanstalk)
+## Deploy (AWS Lambda + CloudFront)
 
-- Platform: Python 3.14 on Amazon Linux 2023, region: us-east-2
-- Deploy branch: `main` (see `.elasticbeanstalk/config.yml`)
-- **CI/CD pipeline** (`.github/workflows/deploy.yml`): push to `main` → lint/test → security scan (pip-audit, safety) → build zip → deploy via AWS CLI → health check
-- Manual fallback: `git checkout main && eb deploy`
-- `.ebextensions/django.config` runs migrate + collectstatic (leader_only)
-- `.ebextensions/https-instance.config` handles certbot/Let's Encrypt SSL (DNS-01 via Route 53, HTTP-01 fallback)
-- Production requires RDS env vars (`RDS_DB_NAME`, `RDS_HOSTNAME`, etc.) — auto-injected by EB
-- S3 access: EC2 instance profile has S3 access; hardcoded AWS keys in EB env props are redundant
+- **Compute:** Lambda (container image, 1024MB, 30s timeout, Python 3.14) via Mangum ASGI adapter. Region: us-east-2.
+- **Deploy branch:** `main`
+- **CI/CD pipeline** (`.github/workflows/deploy.yml`): push to `main` → lint/test → security scan (pip-audit, safety) → Docker build/push to ECR → SAM deploy
+- Manual fallback: `docker build && docker push && sam deploy` (see OPS_PLAYBOOK.md)
+- **Infrastructure:** managed via SAM (`template.yaml`): Lambda + Function URL + CloudFront + ACM + Route 53
+- Production requires RDS env vars (`RDS_DB_NAME`, `RDS_HOSTNAME`, etc.) set as Lambda environment variables
+- S3 access: Lambda execution role grants S3 access to the `chemically-env` bucket
 - **OPS_PLAYBOOK.md** at repo root has full infrastructure runbook: AWS resource inventory, secrets matrix, disaster recovery, rollback procedures, security hardening priorities
 
 ## Conventions

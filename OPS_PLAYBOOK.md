@@ -2,7 +2,7 @@
 
 > **Purpose:** This document aligns engineers and operational agents on the deployment architecture, secrets management, disaster recovery, and day-to-day operational procedures for ChemicAlly.
 >
-> **Last updated:** 2026-05-17
+> **Last updated:** 2026-06-08
 > **AWS Account:** `768125641662`
 > **Region:** `us-east-2`
 
@@ -13,17 +13,16 @@
 ### Pipeline Flow
 
 ```
-┌──────────────┐     ┌──────────────────────────────────┐     ┌─────────────────────────────────────┐     ┌──────────────────────────────────────┐
-│  Developer   │────▶│  GitHub Actions Runner             │────▶│  AWS Elastic Beanstalk API           │────▶│  Production Environment              │
-│  Push to     │     │  (ubuntu-latest)                   │     │  (us-east-2)                         │     │                                      │
-│  main / eb   │     │                                    │     │                                     │     │  EC2: i-02b5039d6b1e817a1 (t3.micro)  │
-│              │     │  1. Lint & Test (3.11 + 3.12)      │     │  1. Create app version              │     │  Nginx → Gunicorn (1 proc/15 threads) │
-│              │     │  2. Security Scan (pip-audit)      │     │  2. Upload ZIP to S3                │     │  RDS: PostgreSQL 18.3 (db.t3.micro)   │
-│              │     │  3. Build ZIP artifact             │     │  3. update-environment (AllAtOnce)  │     │  S3: chemically-env (static/)         │
-│              │     │  4. Deploy via AWS CLI             │     │  4. eb-activity runs migrations     │     │  Domain: chemic-ally.xyz              │
-└──────────────┘     └──────────────────────────────────┘     └─────────────────────────────────────┘     │  Let's Encrypt SSL                  │
-                                                                                                          │  SSH: 0.0.0.0/0 (⚠ restrict)          │
-                                                                                                          └──────────────────────────────────────┘
+┌──────────────┐     ┌──────────────────────────────────┐     ┌───────────────────┐     ┌──────────────────────────┐
+│  Developer   │────▶│  GitHub Actions Runner             │────▶│  ECR + Lambda      │────▶│  Production Environment  │
+│  Push to     │     │  (ubuntu-latest)                   │     │  (us-east-2)       │     │                          │
+│  main        │     │                                    │     │                    │     │  Lambda (1024MB, 30s)    │
+│              │     │  1. Lint & Test (3.14)             │     │  1. Docker build   │     │  └─ Function URL         │
+│              │     │  2. Security Scan (pip-audit)      │     │  2. Push to ECR    │     │  CloudFront (CDN + SSL)  │
+│              │     │  3. Build Docker image             │     │  3. SAM deploy     │     │  RDS: PostgreSQL 18.3    │
+│              │     │  4. Deploy via SAM                 │     │                    │     │  S3: chemically-env      │
+│              │     │                                    │     │                    │     │  Domain: chemic-ally.xyz │
+└──────────────┘     └──────────────────────────────────┘     └───────────────────┘     └──────────────────────────┘
 ```
 
 ### Environment Matrix
@@ -32,7 +31,7 @@
 |-------------|--------|-----------------|----------|----------------|
 | **Local Dev** | Any feature branch | `config.settings.development` | SQLite (`db.sqlite3`) | N/A — `python manage.py runserver` |
 | **CI/Runner** | PR to `main` | `config.settings.development` | SQLite (ephemeral) | Push/PR to `main` |
-| **Production** | `eb` | `config.settings.production` | RDS PostgreSQL 18.3 (5GB, single-AZ) | Push to `eb` branch via CI |
+| **Production** | `main` | `config.settings.production` | RDS PostgreSQL 18.3 (5GB, single-AZ) | Push to `main` via CI |
 
 ---
 
@@ -42,62 +41,40 @@
 
 | Resource | ID | Details |
 |----------|----|---------|
-| **EB Application** | `chemically` | Platform: Python 3.14 on Amazon Linux 2023 v4.12.3 |
-| **EB Environment** | `Chemically-env` (`e-2fcyjhgyu9`) | SingleInstance, AllAtOnce deployment, Health: Green |
-| **EC2 Instance** | `i-02b5039d6b1e817a1` | t3.micro, public IP `16.58.151.186`, private `172.31.0.255` |
-| **Launch Template** | `lt-01a32455066471fcc` | — |
-| **Auto Scaling Group** | `awseb-e-2fcyjhgyu9-stack-AWSEBAutoScalingGroup-Y4sM5wLo1OMO` | Min: 1, Max: 1 |
-| **SSH Key Pair** | `aws-eb` | SSH access open to `0.0.0.0/0` on port 22 |
+| **Lambda Function** | `chemically-DjangoFunction-*` | Container image, 1024MB, 30s timeout, Python 3.14 |
+| **Function URL** | `*.lambda-url.us-east-2.on.aws` | AuthType: NONE (restricted to CloudFront) |
+| **ECR Repository** | `chemically` | Stores container images, scan on push, 10-image retention |
+| **CloudFront Distribution** | `*` | Custom domain: chemic-ally.xyz, origin: Function URL |
 
 ### Database
 
 | Resource | ID | Details |
 |----------|----|---------|
 | **RDS Instance** | `awseb-e-2fcyjhgyu9-stack-awsebrdsdatabase-7dafhgsyrlmy` | PostgreSQL 18.3, db.t3.micro, 5GB |
-| **RDS Endpoint** | `*.cb46qw8cwu75.us-east-2.rds.amazonaws.com:5432` | Auto-injected via EB env vars |
+| **RDS Endpoint** | `*.cb46qw8cwu75.us-east-2.rds.amazonaws.com:5432` | Set as Lambda env vars |
 | **Multi-AZ** | No | Single-AZ deployment |
-| **DB User** | `ebroot` | Managed by EB |
-| **DB Subnets** | `subnet-02d1ad820c19ca8d6`, `subnet-0e4ba09d65bb88c70`, `subnet-0b4991de35dfd28b0` | 3 AZs |
+| **DB User** | `ebroot` | — |
 
 ### Networking
 
 | Resource | ID | Details |
 |----------|----|---------|
 | **VPC** | `vpc-0dbf831689e8a98b9` | — |
-| **EC2 Security Group** | `sg-0d6444a7c5b4be99b` | SSH open to `0.0.0.0/0` |
-| **EB CNAME** | `Chemically-env.eba-pyxp2kzs.us-east-2.elasticbeanstalk.com` | Default EB domain |
-| **Custom Domain** | `chemic-ally.xyz` | Let's Encrypt SSL via certbot |
+| **Lambda Security Group** | Managed by SAM | Outbound: all traffic, Inbound: VPC CIDR |
+| **Custom Domain** | `chemic-ally.xyz` | SSL via ACM (auto-renewing) |
 
 ### Storage
 
 | Resource | ID | Details |
 |----------|----|---------|
 | **App S3 Bucket** | `chemically-env` | Static/media files via django-storages |
-| **EB Artifact Bucket** | `elasticbeanstalk-us-east-2-768125641662` | Deployment packages |
-| **Cross-region EB Buckets** | `elasticbeanstalk-us-east-1-*`, `elasticbeanstalk-us-west-2-*` | Legacy/backup |
 
 ### IAM
 
 | Resource | ARN | Purpose |
 |----------|-----|---------|
-| **EC2 Instance Profile** | `arn:aws:iam::768125641662:instance-profile/aws-elasticbeanstalk-ec2-role` | Attached to EC2, grants S3 access |
-| **EC2 Role** | `arn:aws:iam::768125641662:role/service-role/aws-elasticbeanstalk-ec2-role` | Policies: WebTier, WorkerTier, MulticontainerDocker |
-| **EB Service Role** | `arn:aws:iam::768125641662:role/service-role/aws-elasticbeanstalk-service-role` | EB platform management, managed updates |
-| **Deploy IAM User** | `arn:aws:iam::768125641662:user/Franco` | Used by CI/CD (access key `...6W4O`) |
-
-### Current Configuration
-
-| Setting | Value | Notes |
-|---------|-------|-------|
-| **WSGI Path** | `config.wsgi:application` | — |
-| **Gunicorn** | 1 process, 15 threads | — |
-| **Proxy** | Nginx | — |
-| **Deployment Policy** | `AllAtOnce` | Single instance, no rolling update |
-| **Health Check URL** | *(empty)* | ⚠ Should be configured |
-| **CloudWatch Logs** | Enabled, 7-day retention | Health streaming: **disabled** |
-| **Managed Updates** | Enabled, Wed 10:25, minor level | — |
-| **X-Ray** | Disabled | — |
-| **Rollback on Failure** | Disabled | ⚠ Consider enabling |
+| **Lambda Execution Role** | Managed by SAM | Grants logs (CloudWatch), S3 access, VPC access |
+| **Deploy IAM User** | `arn:aws:iam::768125641662:user/Franco` | Used by CI/CD |
 
 ---
 
@@ -109,78 +86,39 @@ Configure in **GitHub → Repository → Settings → Secrets and variables → 
 
 | Secret Name | Description | Used In | Required |
 |-------------|-------------|---------|----------|
-| `AWS_ACCESS_KEY_ID` | IAM user access key for EB deploy | Deploy job | Yes |
-| `AWS_SECRET_ACCESS_KEY` | IAM user secret key for EB deploy | Deploy job | Yes |
-| `AWS_ACCOUNT_ID` | AWS account number (`768125641662`) | Deploy job (S3 bucket name) | Yes |
-| `DJANGO_SECRET_KEY` | Django cryptographic signing key | Build job (collectstatic) | Yes |
-| `AWS_STORAGE_BUCKET_NAME` | S3 bucket for static files (`chemically-env`) | Build job (collectstatic) | Yes |
+| `AWS_ACCESS_KEY_ID` | IAM user access key | Build + Deploy | Yes |
+| `AWS_SECRET_ACCESS_KEY` | IAM user secret key | Build + Deploy | Yes |
+| `DJANGO_SECRET_KEY` | Django signing key | Build (collectstatic) | Yes |
+| `AWS_STORAGE_BUCKET_NAME` | S3 bucket for static files (`chemically-env`) | Build (collectstatic) | Yes |
+| `ROUTE53_HOSTED_ZONE_ID` | Route 53 hosted zone ID | SAM deploy | Yes |
 
-### EB Environment Properties
+### Lambda Environment Variables
 
-Configured in **AWS Console → EB → Configuration → Software → Environment properties**:
+Set in the SAM `template.yaml` under `Function.Environment.Variables` or via the Lambda console.
 
-| Variable | Current Value | Managed By | Notes |
-|----------|--------------|------------|-------|
-| `DJANGO_SETTINGS_MODULE` | `config.settings.production` | `.ebextensions/django.config` | — |
-| `SECRET_KEY` | *(set — plaintext visible)* | EB env prop | ⚠ Move to SSM Parameter Store |
-| `AWS_ACCESS_KEY_ID` | `AKIA3FV63EO7CPKILX4C` *(set — plaintext visible)* | EB env prop | ⚠ Remove — instance profile has S3 access |
-| `AWS_SECRET_ACCESS_KEY` | *(set — plaintext visible)* | EB env prop | ⚠ Remove — instance profile has S3 access |
-| `AWS_STORAGE_BUCKET_NAME` | `chemically-env` | EB env prop | Correct |
-| `AWS_S3_REGION_NAME` | `us-east-2` | EB env prop | Correct |
-| `LETSENCRYPT_EMAIL` | `franco.v.navarro@gmail.com` | EB env prop | For certbot |
-| `PYTHONPATH` | `/var/app/venv/staging-LQM1lest/bin` | EB env prop | ⚠ Venv path changes on deploy |
+| Variable | Source | Notes |
+|----------|--------|-------|
+| `DJANGO_SETTINGS_MODULE` | `config.settings.production` | Hardcoded in template |
+| `ALLOWED_HOSTS` | `.chemic-ally.xyz` | Hardcoded in template |
+| `SECRET_KEY` | SSM Parameter Store or env var | Required |
+| `AWS_STORAGE_BUCKET_NAME` | `chemically-env` | Required |
+| `AWS_S3_REGION_NAME` | `us-east-2` | Required |
+| `RDS_DB_NAME` | RDS instance value | Required |
+| `RDS_USERNAME` | `ebroot` | Required |
+| `RDS_PASSWORD` | RDS instance value | Required |
+| `RDS_HOSTNAME` | RDS endpoint | Required |
+| `RDS_PORT` | `5432` | Required |
 
-### RDS Variables (Auto-Injected by EB)
+### RDS Variables
 
-| Variable | Description | Notes |
-|----------|-------------|-------|
-| `RDS_DB_NAME` | PostgreSQL database name | Auto-injected when RDS attached |
-| `RDS_USERNAME` | PostgreSQL username (`ebroot`) | Auto-injected |
-| `RDS_PASSWORD` | PostgreSQL password | Auto-injected, masked in console |
-| `RDS_HOSTNAME` | PostgreSQL endpoint | Auto-injected |
-| `RDS_PORT` | PostgreSQL port (5432) | Auto-injected |
+Same connection details as before, now set explicitly as Lambda environment variables (EB no longer auto-injects them).
 
 ### OIDC Setup (Recommended Future Improvement)
 
-No OIDC provider currently exists. To migrate from long-lived IAM keys:
-
-1. **Create OIDC Identity Provider in AWS IAM:**
-   - Provider URL: `https://token.actions.githubusercontent.com`
-   - Audience: `sts.amazonaws.com`
-
-2. **Create IAM Role** with trust policy:
-   ```json
-   {
-     "Version": "2012-10-17",
-     "Statement": [
-       {
-         "Effect": "Allow",
-         "Principal": {
-           "Federated": "arn:aws:iam::768125641662:oidc-provider/token.actions.githubusercontent.com"
-         },
-         "Action": "sts:AssumeRoleWithWebIdentity",
-         "Condition": {
-           "StringEquals": {
-             "token.actions.githubusercontent.com:aud": "sts.amazonaws.com",
-             "token.actions.githubusercontent.com:sub": "repo:<OWNER>/chemic-ally:ref:refs/heads/eb"
-           }
-         }
-       }
-     ]
-   }
-   ```
-
-3. **Attach policy** to the role — minimum: `elasticbeanstalk:*`, `s3:PutObject`/`s3:GetObject` on EB artifact bucket.
-
-4. **In GitHub Actions**, replace credential step with:
-   ```yaml
-   - uses: aws-actions/configure-aws-credentials@v4
-     with:
-       role-to-assume: arn:aws:iam::768125641662:role/ChemicAllyDeployRole
-       aws-region: us-east-2
-   ```
-
-5. **Remove** `AWS_ACCESS_KEY_ID` and `AWS_SECRET_ACCESS_KEY` from GitHub secrets.
+Follow the same OIDC setup documented in the previous version of this playbook. Replace EB deploy permissions with:
+- ECR: `ecr:GetDownloadUrlForLayer`, `ecr:BatchGetImage`, `ecr:BatchCheckLayerAvailability`, `ecr:PutImage`, `ecr:InitiateLayerUpload`, `ecr:UploadLayerPart`, `ecr:CompleteLayerUpload`
+- Lambda: `lambda:UpdateFunctionCode`, `lambda:GetFunction`
+- CloudFormation: `cloudformation:DescribeStacks`, `cloudformation:CreateChangeSet`, `cloudformation:ExecuteChangeSet`
 
 ---
 
@@ -188,52 +126,51 @@ No OIDC provider currently exists. To migrate from long-lived IAM keys:
 
 ### Immediate Rollback (< 2 minutes)
 
-#### Option A: EB Console (Fastest)
-
-1. Open **AWS Console → Elastic Beanstalk → Environments → Chemically-env**
-2. Click **Environment actions → Rollback**
-3. Select the **previous application version** (EB retains last 1000 versions)
-4. Confirm — EB swaps to the previous version
-
-#### Option B: AWS CLI
+#### Option A: Re-deploy previous image tag
 
 ```bash
-# List recent versions
-aws elasticbeanstalk describe-application-versions \
-  --application-name chemically \
-  --region us-east-2 \
-  --max-items 10
+# Find the previous image tag in ECR
+aws ecr describe-images --repository-name chemically --region us-east-2
 
-# Deploy previous version
-aws elasticbeanstalk update-environment \
-  --environment-name Chemically-env \
-  --version-label <PREVIOUS_VERSION_LABEL> \
+# Deploy the previous image
+aws lambda update-function-code \
+  --function-name chemically-DjangoFunction-XXXXX \
+  --image-uri 768125641662.dkr.ecr.us-east-2.amazonaws.com/chemically:<PREVIOUS_TAG> \
+  --region us-east-2
+```
+
+#### Option B: SAM rollback
+
+```bash
+# List stack events to find previous version
+aws cloudformation describe-stack-events \
+  --stack-name chemically \
   --region us-east-2
 
-# Wait for completion
-aws elasticbeanstalk wait environment-updated \
-  --environment-name Chemically-env
+# Rollback via CloudFormation
+aws cloudformation rollback-stack \
+  --stack-name chemically \
+  --region us-east-2
 ```
 
 #### Option C: Git Revert
 
 ```bash
-git checkout eb
+git checkout main
 git revert HEAD
-git push origin eb
-# CI pipeline redeploys the reverted code
+git push origin main
+# CI pipeline builds and deploys the reverted code
 ```
 
 ### Database Migration Rollback
 
 ```bash
-# SSH into the EB instance
-eb ssh Chemically-env
-
-# Activate venv and reverse the last migration
-source /var/app/venv/*/bin/activate
-cd /var/app/current
+# Invoke a one-off Lambda with a management command
+# Temporarily set the handler to run migrations, or run locally:
+# (requires network access to RDS)
 python manage.py migrate chemistry_calculators <previous_migration_number>
+
+# Or via Lambda: create a custom handler that runs migrations
 ```
 
 > **WARNING:** Reversing migrations that drop columns or delete data is **not reversible**. Always backup RDS before running migrations.
@@ -260,7 +197,7 @@ aws rds restore-db-instance-from-db-snapshot \
 |------|--------|-------|
 | 1 | Identify breaking change (monitoring alert, user report) | On-call |
 | 2 | Execute rollback (Option A/B/C above) | On-call |
-| 3 | Verify rollback success — check `eb health` and smoke test | On-call |
+| 3 | Verify rollback success — smoke test the site | On-call |
 | 4 | Create incident ticket with root cause analysis | Engineering |
 | 5 | Fix issue in feature branch, re-run CI/CD pipeline | Engineering |
 | 6 | Post-incident review and update runbook | Team |
@@ -272,240 +209,163 @@ aws rds restore-db-instance-from-db-snapshot \
 ### Deploying a New Version
 
 **Automated (CI/CD):**
-1. Merge code to `eb` branch
-2. GitHub Actions pipeline: Lint → Test → Security Scan → Build → Deploy
-3. Monitor: `eb health` or AWS Console
+1. Merge code to `main` branch
+2. GitHub Actions pipeline: Lint → Test → Security Scan → Docker build/push → SAM deploy
+3. Monitor: AWS Lambda console or CloudWatch
 
 **Manual (fallback):**
 ```bash
-git checkout eb
-git merge main
-eb deploy
+# Build and push Docker image
+aws ecr get-login-password --region us-east-2 | docker login --username AWS --password-stdin 768125641662.dkr.ecr.us-east-2.amazonaws.com
+docker build -t chemically .
+docker tag chemically:latest 768125641662.dkr.ecr.us-east-2.amazonaws.com/chemically:manual-$(date +%Y%m%d%H%M%S)
+docker push 768125641662.dkr.ecr.us-east-2.amazonaws.com/chemically:manual-$(date +%Y%m%d%H%M%S)
+
+# Deploy
+sam deploy \
+  --template-file template.yaml \
+  --stack-name chemically \
+  --capabilities CAPABILITY_IAM \
+  --region us-east-2 \
+  --parameter-overrides ImageTag=manual-$(date +%Y%m%d%H%M%S)
 ```
 
-### Checking Environment Health
+### Running Django Management Commands
+
+Lambda does not have an interactive shell. Use one of:
 
 ```bash
-# EB CLI
-eb status
-eb health
+# Option 1: Invoke Lambda with a custom event (requires a handler that accepts commands)
+aws lambda invoke \
+  --function-name chemically-DjangoFunction-XXXXX \
+  --payload '{"command": "migrate"}' \
+  --region us-east-2 \
+  response.json
 
-# AWS CLI — full health details
-aws elasticbeanstalk describe-environment-health \
-  --environment-name Chemically-env \
-  --attribute-names All \
-  --region us-east-2
+# Option 2: Run locally with production settings (requires RDS network access)
+DJANGO_SETTINGS_MODULE=config.settings.production python manage.py <command>
 ```
 
 ### Viewing Application Logs
 
 ```bash
-# Recent logs via EB CLI
-eb logs
+# CloudWatch Logs (primary)
+aws logs describe-log-groups --log-group-name-prefix /aws/lambda/chemically
 
-# SSH into instance for live logs
-eb ssh Chemically-env
-tail -f /var/log/web.stdout.log
-tail -f /var/log/nginx/access.log
-tail -f /var/log/nginx/error.log
-tail -f /var/log/eb-activity.log
+# Tail recent Lambda logs
+aws logs tail /aws/lambda/chemically-DjangoFunction-XXXXX --follow --region us-east-2
+
+# CloudWatch Logs Insight query (SQL-like)
+# Fields: @timestamp, @requestId, @message, @logStream
+# Filter: { $.levelname = "ERROR" }
 ```
 
 ### Rotating Secrets
 
 1. **Django SECRET_KEY:**
    - Generate: `python -c "from django.core.management.utils import get_random_secret_key; print(get_random_secret_key())"`
+   - Update Lambda environment variable
    - Update GitHub secret `DJANGO_SECRET_KEY`
-   - Update EB environment property `SECRET_KEY`
    - Redeploy
 
 2. **AWS Credentials (CI):**
    - Rotate IAM user keys in AWS IAM Console
    - Update GitHub secrets `AWS_ACCESS_KEY_ID` / `AWS_SECRET_ACCESS_KEY`
-   - No redeploy needed (credentials used only in CI)
+   - No redeploy needed
 
-3. **AWS Credentials (EB — recommended removal):**
-   - The EC2 instance profile `aws-elasticbeanstalk-ec2-role` already has S3 access via `AWSElasticBeanstalkWebTier`
-   - Remove `AWS_ACCESS_KEY_ID` and `AWS_SECRET_ACCESS_KEY` from EB environment properties
-   - Redeploy — django-storages will use instance profile credentials automatically
+### Local Development with Lambda Emulation
+
+```bash
+# Option 1: Standard Django dev server
+python manage.py runserver
+
+# Option 2: Test the container locally
+docker build -t chemically .
+docker run -p 9000:8080 chemically:latest
+# Then visit http://localhost:9000/2015-03-31/functions/function/invocations
+# Send a test event: {"httpMethod": "GET", "path": "/", "headers": {}}
+```
 
 ---
 
-## 6. Security Hardening Recommendations
+## 6. Cost Analysis
 
-### Priority 1 — Remove Plaintext Secrets from EB
+| Item | Monthly Cost | Notes |
+|------|-------------|-------|
+| **Lambda** | ~$0.01-0.10 | Pay-per-request, ~1M requests/mo estimate |
+| **ECR** | ~$0.01 | Storage for container images |
+| **CloudFront** | ~$0 | Free tier covers low traffic |
+| **ACM** | Free | Auto-renewing SSL certificates |
+| **RDS PostgreSQL** | ~$15 | Unchanged from EB architecture |
+| **S3** | ~$0.10 | Static/media file storage |
+| **Total (exc. RDS)** | **~$0.12-0.21/mo** | |
+| **Total (inc. RDS)** | **~$15.12-15.21/mo** | |
 
-AWS credentials and Django SECRET_KEY are visible in plaintext via `describe-configuration-settings`.
-
-**Fix:**
-```bash
-# Remove hardcoded AWS keys from EB (instance profile handles S3 access)
-aws elasticbeanstalk update-environment \
-  --environment-name Chemically-env \
-  --option-settings file://remove-aws-keys.json \
-  --region us-east-2
-```
-
-Where `remove-aws-keys.json`:
-```json
-{
-  "OptionSettings": [
-    {
-      "Namespace": "aws:elasticbeanstalk:application:environment",
-      "OptionName": "AWS_ACCESS_KEY_ID",
-      "Value": ""
-    },
-    {
-      "Namespace": "aws:elasticbeanstalk:application:environment",
-      "OptionName": "AWS_SECRET_ACCESS_KEY",
-      "Value": ""
-    }
-  ]
-}
-```
-
-### Priority 2 — Restrict SSH Access
-
-Current SSH access is open to `0.0.0.0/0`. Restrict to your IP:
-
-```bash
-aws elasticbeanstalk update-environment \
-  --environment-name Chemically-env \
-  --option-settings '[{
-    "Namespace": "aws:autoscaling:launchconfiguration",
-    "OptionName": "SSHSourceRestriction",
-    "Value": "tcp,22,22,<YOUR_IP>/32"
-  }]' \
-  --region us-east-2
-```
-
-### Priority 3 — Configure Health Check URL
-
-Currently empty. Set to monitor the application:
-
-```bash
-aws elasticbeanstalk update-environment \
-  --environment-name Chemically-env \
-  --option-settings '[{
-    "Namespace": "aws:elasticbeanstalk:application",
-    "OptionName": "Application Healthcheck URL",
-    "Value": "HTTP:80/"
-  }]' \
-  --region us-east-2
-```
-
-### Priority 4 — Enable CloudWatch Health Streaming
-
-Currently disabled. Enable for better observability:
-
-```bash
-aws elasticbeanstalk update-environment \
-  --environment-name Chemically-env \
-  --option-settings '[{
-    "Namespace": "aws:elasticbeanstalk:cloudwatch:logs:health",
-    "OptionName": "HealthStreamingEnabled",
-    "Value": "true"
-  }]' \
-  --region us-east-2
-```
-
-### Priority 5 — Enable Rollback on Failure
-
-Currently disabled. Enable automatic rollback if deployment fails:
-
-```bash
-aws elasticbeanstalk update-environment \
-  --environment-name Chemically-env \
-  --option-settings '[{
-    "Namespace": "aws:elasticbeanstalk:control",
-    "OptionName": "RollbackLaunchOnFailure",
-    "Value": "true"
-  }]' \
-  --region us-east-2
-```
-
-### Priority 6 — SSL Certificate Management (Updated)
-
-The `.ebextensions/https-instance.config` manages Let's Encrypt certificates via certbot. The current setup:
-
-- **Primary validation:** DNS-01 via Route 53 (zero downtime, no port conflicts)
-- **Fallback:** HTTP-01 standalone (briefly stops nginx during validation)
-- **Renewal:** Daily cron at 3:XX AM using DNS-01 — no service interruption
-- **Monitoring:** Daily expiry check at 9 AM, logs warnings if < 14 days remain
-- **Deploy hook:** nginx reloads automatically only when a cert is actually renewed
-
-**Route 53 permissions:** The EC2 instance profile gets an inline policy (`ChemicAllyCertbotRoute53`) added automatically during deployment to allow DNS-01 validation.
-
-**Troubleshooting certbot:**
-```bash
-eb ssh Chemically-env
-cat /var/log/certbot-install.log   # Deployment-time certbot output
-cat /var/log/certbot-renew.log      # Renewal cron + expiry check logs
-certbot certificates                 # List all certs and expiry dates
-openssl x509 -enddate -noout -in /etc/letsencrypt/live/chemic-ally.xyz/cert.pem
-```
-
-### Priority 7 — Migrate to ACM + ALB (Future)
-
-When ready to move from certbot to AWS Certificate Manager:
-
-1. **Verify ACM certificate** — a pending-validation ACM cert already exists (Route 53 CNAME `_0e8c53c33aa2fe30e2c1059d78e890be` is in place). Complete validation in the ACM console.
-
-2. **Create an ALB** and attach the ACM certificate to the HTTPS listener (port 443).
-
-3. **Change the EB environment** from `SingleInstance` to `LoadBalanced`:
-   ```bash
-   aws elasticbeanstalk update-environment \
-     --environment-name Chemically-env \
-     --option-settings '[
-       {"Namespace": "aws:ec2:vpc", "OptionName": "ELBScheme", "Value": "internet-facing"},
-       {"Namespace": "aws:ec2:vpc", "OptionName": "ELBSubnets", "Value": "subnet-02d1ad820c19ca8d6,subnet-0e4ba09d65bb88c70,subnet-0b4991de35dfd28b0"},
-       {"Namespace": "aws:elasticbeanstalk:environment", "OptionName": "EnvironmentType", "Value": "LoadBalanced"},
-       {"Namespace": "aws:elbv2:listener:default", "OptionName": "ListenerEnabled", "Value": "true"},
-       {"Namespace": "aws:elbv2:listener:443", "OptionName": "ListenerEnabled", "Value": "true"},
-       {"Namespace": "aws:elbv2:listener:443", "OptionName": "Protocol", "Value": "HTTPS"},
-       {"Namespace": "aws:elbv2:listener:443", "OptionName": "SSLCertificateArns", "Value": "arn:aws:acm:us-east-2:768125641662:certificate/<CERT_ID>"}
-     ]' \
-     --region us-east-2
-   ```
-
-4. **Remove certbot** — delete `.ebextensions/https-instance.config` (or rename to `https-instance.config.disabled`).
-
-5. **Update Django settings** — `SECURE_PROXY_SSL_HEADER` in `production.py` already handles ALB-terminated SSL via `X-Forwarded-Proto`. No code changes needed.
-
-6. **Update Route 53** — change the A record alias to point to the ALB DNS name instead of the EB CNAME.
-
-**Benefits of ACM + ALB:**
-- Automatic certificate renewal (no certbot, no cron, no downtime)
-- Health checks and multi-AZ availability
-- Easy horizontal scaling (increase ASG min/max)
-- WAF integration for DDoS protection
-- HTTP/2 and TLS 1.3 handled by ALB
-
-**Cost impact:** ~$16-22/month for the ALB (in addition to existing EC2 + RDS costs).
+**Previous EB cost:** ~$23.50/mo (EC2 t3.micro $8.50 + RDS $15)
+**Lambda savings:** ~$8.30/mo (EC2 cost eliminated)
 
 ---
 
-## 7. Monitoring & Alerting
+## 7. Security Hardening
 
-### Recommended CloudWatch Alarms
+### Priority 1 — Lambda Execution Role
+
+The Lambda execution role should have least-privilege permissions:
+- S3: only the `chemically-env` bucket
+- RDS: only via VPC (no public access)
+- CloudWatch: only `CreateLogGroup`, `CreateLogStream`, `PutLogEvents`
+
+### Priority 2 — Restrict Function URL
+
+The Function URL should only accept traffic from CloudFront. The resource policy is already configured in `template.yaml` to restrict by CloudFront distribution ARN. Verify:
+
+```bash
+aws lambda get-resource-policy \
+  --function-name chemically-DjangoFunction-XXXXX \
+  --region us-east-2
+```
+
+### Priority 3 — Enable CloudWatch Alarms
 
 | Metric | Namespace | Threshold | Action |
 |--------|-----------|-----------|--------|
-| `HTTPCode_ELB_5XX_Count` | AWS/ApplicationELB | > 0 over 5 min | SNS alert |
-| `EnvironmentHealth` | AWS/ElasticBeanstalk | Red | SNS alert + auto-rollback |
-| `CPUUtilization` | AWS/EC2 | > 80% over 10 min | SNS alert |
+| `Errors` | AWS/Lambda | > 0 over 5 min | SNS alert |
+| `Throttles` | AWS/Lambda | > 0 over 5 min | SNS alert |
+| `Duration` | AWS/Lambda | > 25000 ms | SNS alert |
 | `DatabaseConnections` | AWS/RDS | > 80% of max | SNS alert |
-| `FreeStorageSpace` | AWS/RDS | < 10% | SNS alert |
-| `CPUUtilization` (RDS) | AWS/RDS | > 80% over 10 min | SNS alert |
 
-### Health Check Endpoints
+### Priority 4 — Enable Lambda Reserved Concurrency
 
-| Endpoint | Purpose | Expected Response |
-|----------|---------|-------------------|
-| `GET /` | Application availability | HTTP 200 |
-| `GET /admin/` | Admin panel + database connectivity | HTTP 200 (or 302 redirect) |
+Set reserved concurrency to prevent runaway costs:
+
+```bash
+aws lambda put-function-concurrency \
+  --function-name chemically-DjangoFunction-XXXXX \
+  --reserved-concurrent-executions 5 \
+  --region us-east-2
+```
+
+This limits concurrent executions to 5, capping worst-case monthly cost.
 
 ---
 
-*Last updated: 2026-05-17 | Maintained by: DevOps / Engineering Team*
+## 8. Migration Checklist (EB → Lambda)
+
+- [ ] Create `config/asgi.py` with Mangum
+- [ ] Add Mangum to production dependencies
+- [ ] Create `Dockerfile` for Lambda container image
+- [ ] Update `config/settings/production.py` for Lambda
+- [ ] Create `template.yaml` (SAM)
+- [ ] Update CI/CD pipeline in `.github/workflows/deploy.yml`
+- [ ] Verify CloudFront SSL certificate issues
+- [ ] Test Lambda function with Function URL
+- [ ] Update Route 53 DNS to point to CloudFront
+- [ ] Disable old EB environment (do not delete immediately)
+- [ ] Monitor for errors in CloudWatch
+- [ ] Delete EB environment + application once stable
+- [ ] Delete `.ebextensions/`, `.platform/`, `.elasticbeanstalk/` from repo
+- [ ] Update `OPS_PLAYBOOK.md`
+
+---
+
+*Last updated: 2026-06-08 | Maintained by: DevOps / Engineering Team*

@@ -16,7 +16,7 @@ env:
   AWS_REGION: us-east-2
   AWS_ACCOUNT_ID: "768125641662"
   ECR_REPOSITORY: chemically
-  IMAGE_TAG: ${{ github.sha }}
+  IMAGE_TAG: ${{ github.run_number }}
 
 jobs:
   # ─────────────────────────────────────────────

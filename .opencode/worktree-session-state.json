@@ -41,6 +41,30 @@
     "ses_1bea511bbffeZg6olOR6ZKjY1D": {
       "sessionId": "ses_1bea511bbffeZg6olOR6ZKjY1D",
       "createdAt": 1779212938826
+    },
+    "ses_1ba5959acffekXQrRohOwrgbKv": {
+      "sessionId": "ses_1ba5959acffekXQrRohOwrgbKv",
+      "createdAt": 1779285010022
+    },
+    "ses_1ba695173ffenoaQmVRHy7Rarq": {
+      "sessionId": "ses_1ba695173ffenoaQmVRHy7Rarq",
+      "createdAt": 1779290996949,
+      "branch": "chore/cleanup-branches-and-deploy",
+      "worktreePath": "/home/franco/Projects/chemic-ally/.opencode/worktrees/chore/cleanup-branches-and-deploy"
+    },
+    "ses_1584cba4bffe0fqHZb3OjyfVsD": {
+      "sessionId": "ses_1584cba4bffe0fqHZb3OjyfVsD",
+      "createdAt": 1780930004443
+    },
+    "ses_1584b9f59ffeeRFbFfIeLHHnJ3": {
+      "sessionId": "ses_1584b9f59ffeeRFbFfIeLHHnJ3",
+      "createdAt": 1780930076863,
+      "branch": "migrate/lambda-deployment",
+      "worktreePath": "/home/franco/Projects/chemic-ally/.opencode/worktrees/migrate/lambda-deployment"
+    },
+    "ses_15807e4b3ffezvetLDGI9lOW2m": {
+      "sessionId": "ses_15807e4b3ffezvetLDGI9lOW2m",
+      "createdAt": 1780934515558
     }
   }
 }
