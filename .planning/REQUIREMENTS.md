@@ -11,10 +11,10 @@ Requirements for the hardening milestone. Each maps to roadmap phases.
 
 - [x] **SEC-01**: Equilibria calculator rejects any reaction string that is not exactly a `formula = formula; K` line
 - [x] **SEC-02**: chempy parsing runs with eval locked to no-builtins globals (`{"__builtins__": {}}`), never `globals_=False` or unset
-- [ ] **SEC-03**: K values are validated as finite numbers server-side before string interpolation
-- [ ] **SEC-04**: Hidden `reactions`/`concentrations` form fields have length caps
-- [ ] **SEC-05**: Shared validation module (`calculations/security.py`) holds the formula/K regexes used by both form and engine layers (no drift)
-- [ ] **SEC-06**: Regression tests assert no side effects (no file/marker written) for payloads targeting BOTH chempy eval paths (param and kwargs)
+- [x] **SEC-03**: K values are validated as finite numbers server-side before string interpolation
+- [x] **SEC-04**: Hidden `reactions`/`concentrations` form fields have length caps
+- [x] **SEC-05**: Shared validation module (`calculations/security.py`) holds the formula/K regexes used by both form and engine layers (no drift)
+- [x] **SEC-06**: Regression tests assert no side effects (no file/marker written) for payloads targeting BOTH chempy eval paths (param and kwargs)
 
 ### API Robustness
 
@@ -27,7 +27,7 @@ Requirements for the hardening milestone. Each maps to roadmap phases.
 
 - [ ] **TEST-01**: All six `/hplc/api/*` endpoints have endpoint tests via `APIClient` + `reverse()` (happy / 400 / 404 / session-guard)
 - [ ] **TEST-02**: The progress-endpoint regression test establishes a session and POSTs a score first (no vacuous empty-list assertions)
-- [ ] **TEST-03**: RCE payload tripwires are asserted at both engine and view layers
+- [x] **TEST-03**: RCE payload tripwires are asserted at both engine and view layers
 - [ ] **TEST-04**: A per-app coverage gate (`--cov-fail-under`) enforces the API suite stays present
 - [ ] **TEST-05**: API tests disable throttling via `override_settings` so the suite is not self-429ing
 
@@ -93,17 +93,17 @@ Deferred to future release. Tracked but not in current roadmap.
 |-------------|-------|--------|
 | SEC-01 | Phase 1 | Complete |
 | SEC-02 | Phase 1 | Complete |
-| SEC-03 | Phase 1 | Pending |
-| SEC-04 | Phase 1 | Pending |
-| SEC-05 | Phase 1 | Pending |
-| SEC-06 | Phase 1 | Pending |
+| SEC-03 | Phase 1 | Complete |
+| SEC-04 | Phase 1 | Complete |
+| SEC-05 | Phase 1 | Complete |
+| SEC-06 | Phase 1 | Complete |
 | API-01 | Phase 2 | Pending |
 | API-02 | Phase 2 | Pending |
 | API-03 | Phase 2 | Pending |
 | API-04 | Phase 2 | Pending |
 | TEST-01 | Phase 3 | Pending |
 | TEST-02 | Phase 3 | Pending |
-| TEST-03 | Phase 1 | Pending |
+| TEST-03 | Phase 1 | Complete |
 | TEST-04 | Phase 3 | Pending |
 | TEST-05 | Phase 3 | Pending |
 | CI-01 | Phase 4 | Pending |

@@ -4,16 +4,16 @@ milestone: v1.0
 milestone_name: milestone
 current_phase: 01
 current_phase_name: close-the-rce
-status: executing
-stopped_at: Completed 01-01-PLAN.md
-last_updated: "2026-08-06T01:53:22.012Z"
+status: verifying
+stopped_at: Completed 01-02-PLAN.md
+last_updated: "2026-08-06T02:04:55.945Z"
 last_activity: 2026-08-05
 last_activity_desc: Phase 01 execution started
 progress:
   total_phases: 1
-  completed_phases: 0
+  completed_phases: 1
   total_plans: 2
-  completed_plans: 1
+  completed_plans: 2
 ---
 
 # Project State
@@ -29,10 +29,10 @@ See: .planning/PROJECT.md (updated 2026-08-05)
 
 Phase: 01 (close-the-rce) — EXECUTING
 Plan: 2 of 2
-Status: Ready to execute
+Status: Phase complete — ready for verification
 Last activity: 2026-08-05 — Phase 01 execution started
 
-Progress: [█████░░░░░] 50%
+Progress: [██████████] 100%
 
 ## Performance Metrics
 
@@ -59,6 +59,7 @@ Progress: [█████░░░░░] 50%
 | Plan | Duration | Tasks | Files |
 |------|----------|-------|-------|
 | Phase 01-close-the-rce P01 | 11min | 3 tasks | 4 files |
+| Phase 01 P02 | 5min | 2 tasks | 4 files |
 
 ## Accumulated Context
 
@@ -72,6 +73,8 @@ Full log in PROJECT.md Key Decisions. Recent decisions affecting current work:
 - [Phase 5]: Remove the `base.py` SECRET_KEY fallback before/with signing — a committed key makes tokens forgeable by repo readers.
 - [Phase 6]: WAF rate rule is primary enforcement; DRF `ScopedRateThrottle` on `DatabaseCache` (`NUM_PROXIES=1`) is the documented backstop. LocMemCache throttling on Lambda throttles nothing.
 - [Phase 01-close-the-rce]: Shared security module calculations/security.py is the single source of truth for chempy eval-boundary acceptance rules (SEC-05) — Both form and engine layers import the same compiled regexes/globals/constants so the layers cannot drift apart (research Pitfall 6)
+- [Phase 01]: Committed the pre-existing working-tree forms.py fix (K finite-float check, 5000-char caps, charset checks) inside the Task 1 atomic commit — it is the load-bearing SEC-03/SEC-04 validation this plan keeps untouched and was never separately committed — Committed the pre-existing working-tree forms.py fix (K finite-float check, 5000-char caps, charset checks) inside the Task 1 atomic commit — it is the load-bearing SEC-03/SEC-04 validation this plan keeps untouched and was never separately committed
+- [Phase 01]: Added assertNotIn parser-text negative assertions to the form error-copy tests — enforces the D-06 contract that JSONDecodeError parse positions never leak, beyond the plan's assertIn-only assertions — Added assertNotIn parser-text negative assertions to the form error-copy tests — enforces the D-06 contract that JSONDecodeError parse positions never leak, beyond the plan's assertIn-only assertions
 
 ### Pending Todos
 
@@ -96,6 +99,6 @@ Items acknowledged and carried forward from previous milestone close:
 
 ## Session Continuity
 
-Last session: 2026-08-06T01:53:22.002Z
-Stopped at: Completed 01-01-PLAN.md
+Last session: 2026-08-06T02:04:46.772Z
+Stopped at: Completed 01-02-PLAN.md
 Resume file: None
