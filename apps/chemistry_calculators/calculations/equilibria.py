@@ -8,7 +8,12 @@ from typing import Any, Dict, List
 from chempy.equilibria import EqSystem
 
 from .base import CalculationBase
-from .security import SAFE_EVAL_GLOBALS, is_safe_equation
+from .security import (
+    GENERIC_SOLVER_ERROR_MESSAGE,
+    SAFE_EVAL_GLOBALS,
+    UNSAFE_EQUATION_MESSAGE,
+    is_safe_equation,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -135,11 +140,24 @@ class EquilibriaCalculator(CalculationBase):
                 "success": True,
             }
 
-        except Exception as e:
+        except ValueError:
+            # Validation rejection — return the fixed constant (D-06); never
+            # interpolate attacker input into the message.
+            return {
+                "success": False,
+                "error": UNSAFE_EQUATION_MESSAGE,
+                "ph": None,
+                "species": {},
+                "sane": False,
+                "info": {},
+            }
+        except Exception:
+            # Solver/substance failures — log detail server-side, never echo
+            # exception internals to the caller (CWE-209).
             logger.exception("Equilibria calculation failed")
             return {
                 "success": False,
-                "error": str(e),
+                "error": GENERIC_SOLVER_ERROR_MESSAGE,
                 "ph": None,
                 "species": {},
                 "sane": False,

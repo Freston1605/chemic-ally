@@ -454,6 +454,51 @@ class EquilibriaCalculatorTests(SimpleTestCase):
         kwargs = m.call_args.kwargs["rxn_parse_kwargs"]
         self.assertIs(kwargs["globals_"], security.SAFE_EVAL_GLOBALS)
 
+    def test_engine_validation_rejection_returns_constant(self):
+        """Unsafe strings return the fixed constant, never exception text."""
+        result = self.calc.calculate(
+            equations=["H2O = H+ + OH-; __import__('os')"],
+            concentrations={},
+        )
+        self.assertFalse(result["success"])
+        self.assertEqual(
+            result["error"], "Unsafe or malformed reaction string"
+        )
+
+    def test_engine_solver_failure_returns_generic_message(self):
+        """Solver failures return the generic constant, never str(e)."""
+        with patch(
+            "chemistry_calculators.calculations.equilibria.EqSystem.from_string",
+            return_value=type(
+                "ExplodingEqSystem",
+                (),
+                {
+                    "substances": [],
+                    "root": lambda self, c: (_ for _ in ()).throw(
+                        RuntimeError("solver exploded")
+                    ),
+                },
+            )(),
+        ):
+            result = self.calc.calculate(
+                equations=["H2O = H+ + OH-; 10**-14/55.4"],
+                concentrations={"H2O": 55.4},
+            )
+        self.assertFalse(result["success"])
+        self.assertEqual(
+            result["error"], "The equilibrium system could not be solved."
+        )
+
+    def test_ka_mode_engine_solve(self):
+        """Ka-mode systems solve end-to-end through the engine (coverage corner)."""
+        result = self.calc.calculate(
+            equations=["CH3COOH = H+ + CH3COO-; 1.75e-5"],
+            concentrations={"CH3COOH": 0.1},
+        )
+        self.assertTrue(result["success"])
+        self.assertAlmostEqual(result["ph"], 2.88, places=1)
+        self.assertIn("H+", result["species"])
+
 
 class EquilibriumFormTests(SimpleTestCase):
     """Tests for the EquilibriumSystemForm."""
