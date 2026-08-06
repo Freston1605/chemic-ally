@@ -1,10 +1,13 @@
 import json
+import os
+from unittest.mock import patch
 
 from django.test import SimpleTestCase, TestCase, Client
 from django.urls import reverse
 from django.conf import settings
 from chempy import Substance
 
+from chemistry_calculators.calculations import security
 from chemistry_calculators.calculations.base import (
     MolecularWeightCalculator,
     ReactionBalancer,
@@ -384,6 +387,73 @@ class EquilibriaCalculatorTests(SimpleTestCase):
         self.assertIn("sane", result)
         self.assertIsInstance(result["sane"], bool)
 
+    def test_malicious_k_expr_never_evaluated(self):
+        """Even direct calculator calls must not eval attacker code."""
+        marker = "/tmp/rce_calc_marker"
+        try:
+            os.path.exists(marker) and os.remove(marker)
+        except OSError:
+            pass
+        payload = "H2O = H+ + OH-; __import__('os').system('touch %s')" % marker
+        result = self.calc.calculate(
+            equations=[payload],
+            concentrations={},
+        )
+        self.assertFalse(result["success"])
+        self.assertFalse(os.path.exists(marker))
+
+    def test_extra_semicolon_parts_rejected(self):
+        """A third ';' segment must not reach chempy's dict(...) eval."""
+        marker = "/tmp/rce_calc_marker2"
+        try:
+            os.path.exists(marker) and os.remove(marker)
+        except OSError:
+            pass
+        payload = "H2O = H+ + OH-; 1e-14; __import__('os').system('touch %s')" % marker
+        result = self.calc.calculate(
+            equations=[payload],
+            concentrations={},
+        )
+        self.assertFalse(result["success"])
+        self.assertFalse(os.path.exists(marker))
+
+    def test_restricted_globals_still_solves_legit_systems(self):
+        """Restricted eval globals must not break legitimate calculations."""
+        equations = [
+            "H2O = H+ + OH-; 10**-14/55.4",
+        ]
+        result = self.calc.calculate(
+            equations=equations,
+            concentrations={"H2O": 55.4},
+        )
+        self.assertTrue(result["success"])
+        self.assertAlmostEqual(result["ph"], 7.0, places=1)
+
+    def test_from_string_always_passes_no_builtins_globals(self):
+        """The from_string call always passes SAFE_EVAL_GLOBALS (SEC-02 pin).
+
+        Side-effect tests cannot distinguish a payload blocked by the regex
+        gate from one blocked by restricted globals — if the rxn_parse_kwargs
+        were ever dropped, every marker test would still pass. This test pins
+        the call-site contract directly: the exact SAFE_EVAL_GLOBALS object
+        must be bound to globals_, never globals_=False, never missing.
+        """
+        with patch(
+            "chemistry_calculators.calculations.equilibria.EqSystem.from_string",
+            return_value=type(
+                "FakeEqSystem",
+                (),
+                {"substances": [], "root": lambda self, c: ([], {}, True)},
+            )(),
+        ) as m:
+            self.calc.calculate(
+                equations=["H2O = H+ + OH-; 10**-14/55.4"],
+                concentrations={"H2O": 55.4},
+            )
+        m.assert_called_once()
+        kwargs = m.call_args.kwargs["rxn_parse_kwargs"]
+        self.assertIs(kwargs["globals_"], security.SAFE_EVAL_GLOBALS)
+
 
 class EquilibriumFormTests(SimpleTestCase):
     """Tests for the EquilibriumSystemForm."""
@@ -541,6 +611,66 @@ class EquilibriumFormTests(SimpleTestCase):
         expected = {"CH3COOH", "H+", "CH3COO-"}
         self.assertEqual(species, expected)
 
+    def _rce_reactions(self, k_value, reactants="H2O", products="H+ + OH-"):
+        return json.dumps([
+            {
+                "reactants": reactants,
+                "products": products,
+                "k_mode": "pKa",
+                "k_value": k_value,
+            },
+        ])
+
+    def test_rce_payload_in_k_value_rejected(self):
+        """Arbitrary Python in k_value must be rejected, never evaled."""
+        payload = "__import__('os').system('touch /tmp/rce_form_marker')"
+        form = EquilibriumSystemForm({"reactions": self._rce_reactions(payload)})
+        self.assertFalse(form.is_valid())
+        self.assertIn("reactions", form.errors)
+        self.assertFalse(os.path.exists("/tmp/rce_form_marker"))
+
+    def test_rce_semicolon_payload_in_k_value_rejected(self):
+        """A ';' smuggled into k_value must not create extra eval segments."""
+        payload = "14.0; __import__('os').system('touch /tmp/rce_form_marker2')"
+        form = EquilibriumSystemForm({"reactions": self._rce_reactions(payload)})
+        self.assertFalse(form.is_valid())
+        self.assertIn("reactions", form.errors)
+        self.assertFalse(os.path.exists("/tmp/rce_form_marker2"))
+
+    def test_rce_payload_in_reactants_rejected(self):
+        """A ';' smuggled into reactants must be rejected."""
+        payload_reactants = "H2O; __import__('os')"
+        form = EquilibriumSystemForm({
+            "reactions": self._rce_reactions("14.0", reactants=payload_reactants),
+        })
+        self.assertFalse(form.is_valid())
+        self.assertIn("reactions", form.errors)
+
+    def test_k_value_non_numeric_rejected(self):
+        for bad in ("notanumber", "", "10**-3", "1+1", "1/0"):
+            form = EquilibriumSystemForm({
+                "reactions": self._rce_reactions(bad),
+            })
+            self.assertFalse(form.is_valid(), bad)
+            self.assertIn("reactions", form.errors)
+
+    def test_k_value_non_finite_rejected(self):
+        for bad in ("nan", "inf", "1e999"):
+            form = EquilibriumSystemForm({
+                "reactions": self._rce_reactions(bad),
+            })
+            self.assertFalse(form.is_valid(), bad)
+            self.assertIn("reactions", form.errors)
+
+    def test_oversized_reactions_rejected(self):
+        reactions = json.dumps([
+            {"reactants": "H2O", "products": "H+ + OH-",
+             "k_mode": "pKa", "k_value": "14.0"},
+        ] * 2000)
+        form = EquilibriumSystemForm({"reactions": reactions})
+        self.assertFalse(form.is_valid())
+        self.assertIn("reactions", form.errors)
+
 
 class EquilibriaViewTests(TestCase):
     """Tests for the CalculateEquilibriaView."""
@@ -598,6 +728,34 @@ class EquilibriaViewTests(TestCase):
         form = response.context.get("form")
         self.assertIsNotNone(form)
         self.assertFalse(form.is_valid())
+
+    def test_equilibria_view_rejects_rce_payload(self):
+        """A full POST with a malicious k_value must fail validation, no eval."""
+        marker = "/tmp/rce_view_marker"
+        try:
+            os.path.exists(marker) and os.remove(marker)
+        except OSError:
+            pass
+        data = {
+            "reactions": json.dumps([
+                {
+                    "reactants": "H2O",
+                    "products": "H+ + OH-",
+                    "k_mode": "pKa",
+                    "k_value": "__import__('os').system('touch %s')" % marker,
+                },
+            ]),
+            "concentrations": "{}",
+            "solvent": "H2O",
+            "solvent_concentration": 55.4,
+        }
+        response = self.client.post(reverse("equilibria"), data)
+        self.assertEqual(response.status_code, 200)
+        form = response.context.get("form")
+        self.assertIsNotNone(form)
+        self.assertFalse(form.is_valid())
+        self.assertIn("reactions", form.errors)
+        self.assertFalse(os.path.exists(marker))
 
 
 class LoggingConfigTests(SimpleTestCase):

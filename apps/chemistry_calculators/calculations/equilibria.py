@@ -8,6 +8,7 @@ from typing import Any, Dict, List
 from chempy.equilibria import EqSystem
 
 from .base import CalculationBase
+from .security import SAFE_EVAL_GLOBALS, is_safe_equation
 
 logger = logging.getLogger(__name__)
 
@@ -90,6 +91,9 @@ class EquilibriaCalculator(CalculationBase):
         """
         try:
             # Build the multi-line string for EqSystem.from_string
+            for equation in equations:
+                if not is_safe_equation(equation):
+                    raise ValueError("Unsafe or malformed reaction string")
             reaction_string = "\n".join(equations)
 
             # Build the initial concentrations dict
@@ -98,8 +102,13 @@ class EquilibriaCalculator(CalculationBase):
             if solvent not in init_conc or init_conc[solvent] == 0.0:
                 init_conc[solvent] = solvent_concentration
 
-            # Create the equilibrium system
-            eqsys = EqSystem.from_string(reaction_string)
+            # Create the equilibrium system. ``globals_`` strips builtins so
+            # chempy's internal eval can only compute arithmetic on validated
+            # numeric K expressions, never execute code (CVE-style RCE fix).
+            eqsys = EqSystem.from_string(
+                reaction_string,
+                rxn_parse_kwargs={"globals_": SAFE_EVAL_GLOBALS},
+            )
             substances = eqsys.substances
 
             # Solve
