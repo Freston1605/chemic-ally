@@ -633,6 +633,29 @@ class EquilibriumFormTests(SimpleTestCase):
         self.assertFalse(form.is_valid())
         self.assertIn("concentrations", form.errors)
 
+    def test_malformed_reactions_json_generic_copy(self):
+        """Malformed reactions JSON emits fixed copy, never parser text (D-06)."""
+        form = EquilibriumSystemForm({"reactions": "{not json"})
+        self.assertFalse(form.is_valid())
+        self.assertIn(
+            "Reactions data could not be read.", form.errors["reactions"][0]
+        )
+        # The parser's parse-position text must never leak (CWE-209).
+        self.assertNotIn("Expecting", form.errors["reactions"][0])
+
+    def test_malformed_concentrations_json_generic_copy(self):
+        """Malformed concentrations JSON emits fixed copy, never parser text."""
+        form = EquilibriumSystemForm({
+            "reactions": self._rce_reactions("14.0"),
+            "concentrations": "{bad",
+        })
+        self.assertFalse(form.is_valid())
+        self.assertIn(
+            "Concentrations data could not be read.",
+            form.errors["concentrations"][0],
+        )
+        self.assertNotIn("Expecting", form.errors["concentrations"][0])
+
     def test_parse_species_from_equations(self):
         """Static method should correctly extract species from equations."""
         equations = (

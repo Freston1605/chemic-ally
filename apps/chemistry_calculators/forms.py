@@ -1,7 +1,14 @@
 import json
+import math
 import re
 
 from django import forms
+
+# Shared chemical-formula charset gate (SEC-05): the form and the engine import
+# the same compiled regex from calculations/security.py so the layers cannot
+# drift apart. Rejects semicolons and any Python syntax that could inject code
+# into chempy's eval-based parser.
+from .calculations.security import SAFE_FORMULA_RE
 
 
 class MolecularFormulaForm(forms.Form):
@@ -111,12 +118,14 @@ class EquilibriumSystemForm(forms.Form):
 
     reactions = forms.CharField(
         required=False,
+        max_length=5000,
         widget=forms.HiddenInput(),
         label="Reactions (JSON)",
         help_text="JSON array of reaction objects.",
     )
     concentrations = forms.CharField(
         required=False,
+        max_length=5000,
         widget=forms.HiddenInput(),
         label="Concentrations (JSON)",
         help_text="JSON object mapping substance → initial concentration in mol/L",
@@ -172,8 +181,10 @@ class EquilibriumSystemForm(forms.Form):
             raise forms.ValidationError("At least one reaction is required.")
         try:
             reactions = json.loads(raw)
-        except json.JSONDecodeError as e:
-            raise forms.ValidationError(f"Invalid JSON: {e}")
+        except json.JSONDecodeError:
+            # Generic fixed copy (D-06 / CWE-209): never echo the parser's
+            # attacker-controlled parse-position text.
+            raise forms.ValidationError("Reactions data could not be read.")
         if not isinstance(reactions, list) or len(reactions) == 0:
             raise forms.ValidationError("Reactions must be a non-empty array.")
         for i, rxn in enumerate(reactions, 1):
@@ -199,6 +210,29 @@ class EquilibriumSystemForm(forms.Form):
             if not rxn["k_value"] or not str(rxn["k_value"]).strip():
                 raise forms.ValidationError(
                     f"Reaction {i}: K value cannot be empty."
+                )
+            # Reject anything that is not a finite number. The K value is
+            # interpolated into a string that chempy evals, so it must never
+            # carry Python code (e.g. `__import__('os').system(...)`).
+            try:
+                k_float = float(rxn["k_value"])
+            except (TypeError, ValueError):
+                raise forms.ValidationError(
+                    f"Reaction {i}: K value must be a number."
+                )
+            if not math.isfinite(k_float):
+                raise forms.ValidationError(
+                    f"Reaction {i}: K value must be a finite number."
+                )
+            # Restrict reactants/products to a chemical-formula charset so a
+            # stray ";" can never inject extra segments into chempy's parser.
+            if not SAFE_FORMULA_RE.match(str(rxn["reactants"])):
+                raise forms.ValidationError(
+                    f"Reaction {i}: Reactants contain invalid characters."
+                )
+            if not SAFE_FORMULA_RE.match(str(rxn["products"])):
+                raise forms.ValidationError(
+                    f"Reaction {i}: Products contain invalid characters."
                 )
         return reactions
 
@@ -246,8 +280,12 @@ class EquilibriumSystemForm(forms.Form):
                             except (ValueError, TypeError):
                                 pass
                     cleaned_data["concentrations"] = result
-            except (json.JSONDecodeError, ValueError, TypeError) as e:
-                self.add_error("concentrations", f"Invalid JSON: {e}")
+            except (json.JSONDecodeError, ValueError, TypeError):
+                # Generic fixed copy (D-06 / CWE-209): never echo the parser's
+                # attacker-controlled parse-position text.
+                self.add_error(
+                    "concentrations", "Concentrations data could not be read."
+                )
         else:
             cleaned_data["concentrations"] = {}
 

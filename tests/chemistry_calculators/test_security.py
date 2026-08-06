@@ -41,3 +41,30 @@ class SecurityPredicateTests(SimpleTestCase):
         )
         for eq in reject:
             self.assertFalse(security.is_safe_equation(eq), eq)
+
+
+class SharedRegexDriftTests(SimpleTestCase):
+    """SEC-05 drift guard: form and engine reference the SAME security.py objects.
+
+    Identity (``assertIs``), not equality — a forked copy of the regex or the
+    predicate in either layer would fail this test even if it matched
+    byte-for-byte, because the threat (T-01-04) is the layers silently
+    diverging from the shared module.
+    """
+
+    def test_forms_and_engine_share_same_regex(self):
+        from chemistry_calculators.calculations.equilibria import (
+            is_safe_equation as engine_predicate,
+        )
+        from chemistry_calculators.forms import EquilibriumSystemForm
+
+        # The form's clean_reactions must resolve SAFE_FORMULA_RE to the exact
+        # object exported by security.py — a local redefinition would KeyError
+        # or reference a different compiled pattern.
+        self.assertIs(
+            security.SAFE_FORMULA_RE,
+            EquilibriumSystemForm.clean_reactions.__globals__["SAFE_FORMULA_RE"],
+        )
+        # The engine's predicate must be the security.py function object, not
+        # a local copy.
+        self.assertIs(security.is_safe_equation, engine_predicate)
