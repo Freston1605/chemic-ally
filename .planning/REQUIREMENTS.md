@@ -9,8 +9,8 @@ Requirements for the hardening milestone. Each maps to roadmap phases.
 
 ### Security — Parser Boundary (RCE)
 
-- [ ] **SEC-01**: Equilibria calculator rejects any reaction string that is not exactly a `formula = formula; K` line
-- [ ] **SEC-02**: chempy parsing runs with eval locked to no-builtins globals (`{"__builtins__": {}}`), never `globals_=False` or unset
+- [x] **SEC-01**: Equilibria calculator rejects any reaction string that is not exactly a `formula = formula; K` line
+- [x] **SEC-02**: chempy parsing runs with eval locked to no-builtins globals (`{"__builtins__": {}}`), never `globals_=False` or unset
 - [ ] **SEC-03**: K values are validated as finite numbers server-side before string interpolation
 - [ ] **SEC-04**: Hidden `reactions`/`concentrations` form fields have length caps
 - [ ] **SEC-05**: Shared validation module (`calculations/security.py`) holds the formula/K regexes used by both form and engine layers (no drift)
@@ -91,8 +91,8 @@ Deferred to future release. Tracked but not in current roadmap.
 
 | Requirement | Phase | Status |
 |-------------|-------|--------|
-| SEC-01 | Phase 1 | Pending |
-| SEC-02 | Phase 1 | Pending |
+| SEC-01 | Phase 1 | Complete |
+| SEC-02 | Phase 1 | Complete |
 | SEC-03 | Phase 1 | Pending |
 | SEC-04 | Phase 1 | Pending |
 | SEC-05 | Phase 1 | Pending |
@@ -123,6 +123,7 @@ Deferred to future release. Tracked but not in current roadmap.
 | THROT-05 | Phase 6 | Pending |
 
 **Coverage:**
+
 - v1 requirements: 30 total
 - Mapped to phases: 30
 - Unmapped: 0 ✓

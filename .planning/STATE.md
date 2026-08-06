@@ -2,18 +2,18 @@
 gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
-current_phase: 1
-current_phase_name: Close the RCE
+current_phase: 01
+current_phase_name: close-the-rce
 status: executing
-stopped_at: Phase 1 UI-SPEC approved
-last_updated: "2026-08-06T01:36:06.192Z"
+stopped_at: Completed 01-01-PLAN.md
+last_updated: "2026-08-06T01:53:22.012Z"
 last_activity: 2026-08-05
-last_activity_desc: Roadmap created; 30/30 requirements mapped across 6 phases
+last_activity_desc: Phase 01 execution started
 progress:
   total_phases: 1
   completed_phases: 0
   total_plans: 2
-  completed_plans: 0
+  completed_plans: 1
 ---
 
 # Project State
@@ -23,16 +23,16 @@ progress:
 See: .planning/PROJECT.md (updated 2026-08-05)
 
 **Core value:** Chemistry calculations and HPLC simulations must return correct, physically-sound results — and the public calculator/API endpoints must not be exploitable.
-**Current focus:** Phase 1 — Close the RCE
+**Current focus:** Phase 01 — close-the-rce
 
 ## Current Position
 
-Phase: 1 of 6 (Close the RCE)
-Plan: 0 of 0 (plans not yet created)
+Phase: 01 (close-the-rce) — EXECUTING
+Plan: 2 of 2
 Status: Ready to execute
-Last activity: 2026-08-05 — Roadmap created; 30/30 requirements mapped across 6 phases
+Last activity: 2026-08-05 — Phase 01 execution started
 
-Progress: [░░░░░░░░░░] 0%
+Progress: [█████░░░░░] 50%
 
 ## Performance Metrics
 
@@ -54,6 +54,11 @@ Progress: [░░░░░░░░░░] 0%
 | 6. Rate Limiting | TBD | - | - |
 
 *Updated after each plan completion*
+**Per-Plan Metrics:**
+
+| Plan | Duration | Tasks | Files |
+|------|----------|-------|-------|
+| Phase 01-close-the-rce P01 | 11min | 3 tasks | 4 files |
 
 ## Accumulated Context
 
@@ -66,6 +71,7 @@ Full log in PROJECT.md Key Decisions. Recent decisions affecting current work:
 - [Phase 4]: CI/CD gates must land before Phases 5-6 — they add a column (`result_token_hash`) and a cache table the pipeline must be able to apply.
 - [Phase 5]: Remove the `base.py` SECRET_KEY fallback before/with signing — a committed key makes tokens forgeable by repo readers.
 - [Phase 6]: WAF rate rule is primary enforcement; DRF `ScopedRateThrottle` on `DatabaseCache` (`NUM_PROXIES=1`) is the documented backstop. LocMemCache throttling on Lambda throttles nothing.
+- [Phase 01-close-the-rce]: Shared security module calculations/security.py is the single source of truth for chempy eval-boundary acceptance rules (SEC-05) — Both form and engine layers import the same compiled regexes/globals/constants so the layers cannot drift apart (research Pitfall 6)
 
 ### Pending Todos
 
@@ -90,6 +96,6 @@ Items acknowledged and carried forward from previous milestone close:
 
 ## Session Continuity
 
-Last session: 2026-08-06T00:53:38.304Z
-Stopped at: Phase 1 UI-SPEC approved
-Resume file: .planning/phases/01-close-the-rce/01-UI-SPEC.md
+Last session: 2026-08-06T01:53:22.002Z
+Stopped at: Completed 01-01-PLAN.md
+Resume file: None
