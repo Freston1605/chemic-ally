@@ -825,6 +825,42 @@ class EquilibriaViewTests(TestCase):
         self.assertIn("reactions", form.errors)
         self.assertFalse(os.path.exists(marker))
 
+    def test_equilibria_view_rejects_kwargs_path_payload(self):
+        """A ';' smuggled into reactants must be rejected at the view layer too.
+
+        Closes the TEST-03 view-layer kwargs gap: the 3-segment kwargs-eval
+        path (chempy parsing.py:491) is only reachable via an extra ';'
+        segment, so the payload hides it in reactants. The form charset gate
+        must reject it before any eval, and no marker file may ever be created.
+        """
+        marker = "/tmp/rce_view_marker_kwargs"
+        try:
+            os.path.exists(marker) and os.remove(marker)
+        except OSError:
+            pass
+        data = {
+            "reactions": json.dumps([
+                {
+                    "reactants": (
+                        "H2O; x=__import__('os').system('touch %s')" % marker
+                    ),
+                    "products": "H+ + OH-",
+                    "k_mode": "pKa",
+                    "k_value": "14.0",
+                },
+            ]),
+            "concentrations": "{}",
+            "solvent": "H2O",
+            "solvent_concentration": 55.4,
+        }
+        response = self.client.post(reverse("equilibria"), data)
+        self.assertEqual(response.status_code, 200)
+        form = response.context.get("form")
+        self.assertIsNotNone(form)
+        self.assertFalse(form.is_valid())
+        self.assertIn("reactions", form.errors)
+        self.assertFalse(os.path.exists(marker))
+
 
 class LoggingConfigTests(SimpleTestCase):
     def test_logging_console_handler_configured(self):

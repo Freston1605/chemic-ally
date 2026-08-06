@@ -53,9 +53,11 @@
       + Add Reaction
     </button>
 
-    {% for error in form.reactions.errors %}
-      <div class="ca-input-error">{{ error }}</div>
-    {% endfor %}
+    <div role="alert">
+      {% for error in form.reactions.errors %}
+        <div class="ca-input-error">{{ error }}</div>
+      {% endfor %}
+    </div>
     {% if form.reactions.help_text %}
       <small class="text-muted" style="color:var(--ca-text-muted);">{{ form.reactions.help_text|safe }}</small>
     {% endif %}
@@ -194,7 +196,7 @@
             </div>
           </div>
         {% else %}
-          <div class="ca-alert ca-alert-danger">
+          <div class="ca-alert ca-alert-danger" role="alert">
             <strong>Calculation Failed</strong>
             <p class="mb-0 mt-1">{{ result.error }}</p>
           </div>
