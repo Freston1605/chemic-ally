@@ -100,7 +100,7 @@ Deferred to future release. Tracked but not in current roadmap.
 | API-01 | Phase 2 | Pending |
 | API-02 | Phase 2 | Pending |
 | API-03 | Phase 2 | Pending |
-| API-04 | Phase 3 | Pending |
+| API-04 | Phase 2 | Pending |
 | TEST-01 | Phase 3 | Pending |
 | TEST-02 | Phase 3 | Pending |
 | TEST-03 | Phase 1 | Pending |
@@ -129,4 +129,4 @@ Deferred to future release. Tracked but not in current roadmap.
 
 ---
 *Requirements defined: 2026-08-05*
-*Last updated: 2026-08-05 after initial definition*
+*Last updated: 2026-08-05 after roadmap creation (API-04 remapped to Phase 2; all mappings finalized)*
