@@ -31,36 +31,41 @@ JS layer: vanilla JS only (`static/js/equilibria.js`), no framework, no build st
 
 ## Spacing Scale
 
-Bootstrap rem-based scale (1rem = 16px), granularity 0.25rem = 4px. All values are multiples of 4.
+Bootstrap rem-based scale (1rem = 16px), granularity 0.25rem = 4px. **All NEW spacing values must be multiples of 4**; the scale sits on Bootstrap's 0.25rem grid. Frozen legacy values that fall outside the named token set are declared in the Exceptions table below — the UI is frozen this phase, so they are kept, not normalized.
 
 | Token | Value | Usage (verified in codebase) |
 |-------|-------|------|
 | xs | 4px | Tag gaps, `ca-input-error` top margin, nav-link vertical padding (0.25rem) |
-| sm | 8px | Element gaps (`gap-1`, `.ca-alert` gap 0.5rem), breadcrumb gaps (0.375rem/6px) |
+| sm | 8px | Element gaps (`gap-1`, `.ca-alert` gap 0.5rem) |
 | md | 16px | Default element spacing: `mb-3`, result-card padding 1rem, button icon gap 0.5rem |
 | lg | 24px | Section spacing: `mb-4`, `calculator-layout` grid gap 1.5rem, `py-4`, button horizontal padding (1.5rem) |
 | xl | 32px | Layout gaps (no direct usage today — reserve for future) |
 | 2xl | 48px | Major section breaks (primary button min-height 48px) |
 | 3xl | 64px | Page-level spacing (no direct usage today — reserve) |
 
-In-use intermediate granularities (still multiples of 4, part of Bootstrap's 0.25rem grid — keep, do not "normalize"): **12px** (0.75rem — `.ca-btn`/`.ca-alert` vertical padding, nav-link horizontal padding, `gap-1` in nav), **20px** (1.25rem — `.ca-form-card` padding).
+**Frozen legacy exceptions — outside the named token set (keep, do NOT normalize — the UI is frozen this phase):**
 
-Exceptions: **none**.
+| Value | Token | Usage (verified in codebase) | Status |
+|-------|-------|------------------------------|--------|
+| 6px | 0.375rem | `.ca-breadcrumbs` gap (`static/css/style.css:128`); also small radii (0.375rem on `.ca-nav-link`, `.ca-nav-toggler`, `.ca-btn-icon`, `.substance-suggestions`) | Off-grid legacy value (1.5 × 0.25rem) — frozen; do not snap to 8px, do not reuse for new spacing |
+| 12px | 0.75rem | `.ca-btn`/`.ca-alert` vertical padding, `--ca-border-radius` (all component radii), `.ca-nav-link` horizontal padding | On-grid intermediate (3 × 4px) between sm and md — frozen; keep |
+| 20px | 1.25rem | `.ca-form-card` padding (also `.ca-tool-card` padding) | On-grid intermediate (5 × 4px) between md and lg — frozen; keep |
 
 ---
 
 ## Typography
 
+Active scale — **14px / 18px / 24px at 400/600** (the only sizes and weights new text in this phase may use):
+
 | Role | Size | Weight | Line Height | Usage |
 |------|------|--------|-------------|-------|
 | Body | 18px (1.125rem) | 400 | 1.5 | Page text (`--bs-body-font-size`); `.ca-nav-brand` 1.125rem |
-| Label | 14px (0.875rem) | 400 | 1.5 | Form labels (`--ca-text-muted`), table text (0.875rem), `small`, breadcrumbs, alerts (0.9375rem/15px is the only 15px outlier — keep) |
-| Error/meta | 13px (0.8rem) | 400 | 1.4 | `.ca-input-error` only (0.8rem); also 13px toggle-history label (0.8125rem) |
+| Label | 14px (0.875rem) | 400 | 1.5 | Form labels (`--ca-text-muted`), table text (0.875rem), `small`, breadcrumbs |
 | Heading | 24px (1.5rem) | 600 | 1.2 | `.ca-form-card h1`, `.ca-page-title` |
 
-**Display exception (documented, keep):** pH result value uses Bootstrap `display-4` (~2.5rem) at **weight 700** — the ONLY bold-700 usage besides the nav brand (`.ca-nav-brand` 700). These are deliberate existing accents, not part of the two-weight contract.
+**Frozen legacy values — outside the active scale (keep, do NOT extend — the UI is frozen this phase):** the **13/14/15px cluster** is deliberate pre-existing sizing and must not be extended. **15px** (0.9375rem) — `.ca-alert` font-size (the only 15px outlier). **13px** (0.8rem) — `.ca-input-error` only, plus the 13px toggle-history label (0.8125rem). **~40px** (~2.5rem) — the pH result value in Bootstrap `display-4` at **weight 700** (the ONLY bold-700 usage besides the nav brand, `.ca-nav-brand` 700). These are deliberate existing accents, not part of the active scale.
 
-Weights contract: **regular 400** (all body/label/error text) + **semibold 600** (headings, `.ca-breadcrumbs .current`, `.ca-tool-card h3`, "Calculation Failed" heading is Bootstrap `<strong>` = 700 — use `fw-semibold` class instead when editing that block, or keep `<strong>` as-is; do not introduce new 700-weight text).
+Weights contract: **regular 400** (all body/label/error text) + **semibold 600** (headings, `.ca-breadcrumbs .current`, `.ca-tool-card h3`, "Calculation Failed" heading is Bootstrap `<strong>` = 700 — use `fw-semibold` class instead when editing that block, or keep `<strong>` as-is; do not introduce new 700-weight text). The only frozen 700-weight usages are the display-4 pH value and `.ca-nav-brand` (listed above) — not part of the two-weight contract.
 
 ---
 
@@ -99,6 +104,14 @@ All copy is **server-side constants**. Per D-06, error copy must NEVER interpola
 | Destructive action | Remove-reaction `×` button — **no confirmation dialog** (row is instantly re-addable via "+ Add Reaction"; low stakes). Keeps `aria-label="Remove this reaction"`. |
 
 Rules: (1) every user-facing failure string above is a fixed literal; (2) the submitted reaction text must never appear in any error; (3) the string "Unsafe or malformed reaction string" lives in the shared `security.py` module so form and engine layers emit identical copy (SEC-05).
+
+---
+
+## Visual Focus
+
+**Primary screen anchor:** the **Calculate** primary button (`.ca-btn-success`). **Secondary anchor:** the **"+ Add Reaction"** button (accent teal). **Post-submit anchor:** the **pH value** in `display-4` (weight 700, color-banded) — as already frozen in the Success Result contract.
+
+No new visual anchors are introduced this phase; these three are the frozen existing hierarchy.
 
 ---
 
