@@ -33,7 +33,11 @@ Decimal phases appear between their surrounding integers in numeric order.
   2. A user submitting any reaction string that is not exactly `formula = formula; K` (extra segments, non-numeric K, oversized hidden `reactions`/`concentrations` fields) receives a clean validation error — the input is never evaluated.
   3. Adversarial payloads targeting both chempy eval paths (param and kwargs shapes) fail with no server side effects (no files/markers written) — asserted by regression tests at both engine and view layers.
   4. Form and engine validation draw from a single shared module (`calculations/security.py`) — validation cannot drift between layers.
-**Plans**: TBD
+**Plans**: 2 plans
+
+Plans:
+- [ ] 01-01-PLAN.md — Shared no-builtins validation boundary (security.py extraction, engine wiring, SEC-02 pin, engine error contract, predicate matrix)
+- [ ] 01-02-PLAN.md — Form/view layers join the boundary (shared regex + drift guard, generic JSON copy, kwargs view tripwire, a11y)
 **UI hint**: yes
 
 ### Phase 2: Fix Broken Endpoints
@@ -107,7 +111,7 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5 → 6
 
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
-| 1. Close the RCE | TBD | Not started | - |
+| 1. Close the RCE | 0/2 | Not started | - |
 | 2. Fix Broken Endpoints | TBD | Not started | - |
 | 3. API Test Coverage | TBD | Not started | - |
 | 4. CI/CD Deploy Gates | TBD | Not started | - |
