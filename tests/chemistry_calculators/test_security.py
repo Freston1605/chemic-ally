@@ -42,6 +42,33 @@ class SecurityPredicateTests(SimpleTestCase):
         for eq in reject:
             self.assertFalse(security.is_safe_equation(eq), eq)
 
+    def test_is_safe_equation_rejects_newline_and_non_finite(self):
+        """WR-02/WR-04: the documented rejection contract is exact.
+
+        Trailing/formula-side newlines must be rejected (WR-02 — the predicate
+        strips each ;-segment before regex matching, so only a raw ``\\n``
+        check before split/strip can flip these), and non-finite / zero-division
+        K expressions must be rejected (WR-04).
+        """
+        reject = (
+            "H2O = H+ + OH-; 10**-14\n",       # trailing newline in K segment
+            "H2O\n = H+ + OH-; 10**-14",        # newline in formula side
+            "H2O = H+ + OH-; 1e999",            # overflows to inf
+            "H2O = H+ + OH-; 1/0",              # zero division
+        )
+        for eq in reject:
+            self.assertFalse(security.is_safe_equation(eq), eq)
+
+    def test_safe_k_value_accepts_finite(self):
+        """WR-04: charset-valid K expressions that evaluate to a finite number."""
+        for k_expr in ("10**-14/55.4", "1.75e-5", "10**-9.75"):
+            self.assertTrue(security.safe_k_value(k_expr), k_expr)
+
+    def test_safe_k_value_rejects_non_finite(self):
+        """WR-04: non-finite, zero-division, or charset-violating K expressions."""
+        for k_expr in ("1e999", "1/0", "__import__('os')", "not-a-number"):
+            self.assertFalse(security.safe_k_value(k_expr), k_expr)
+
 
 class SharedRegexDriftTests(SimpleTestCase):
     """SEC-05 drift guard: form and engine reference the SAME security.py objects.

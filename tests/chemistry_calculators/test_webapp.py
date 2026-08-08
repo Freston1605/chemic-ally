@@ -499,6 +499,58 @@ class EquilibriaCalculatorTests(SimpleTestCase):
         self.assertAlmostEqual(result["ph"], 2.88, places=1)
         self.assertIn("H+", result["species"])
 
+    def test_engine_rejects_non_finite_k(self):
+        """Engine boundary rejects non-finite K expressions (WR-04).
+
+        Mirrors the form's test_k_value_non_finite_rejected: 1e999 evaluates
+        to inf under chempy's K eval, which previously returned success True
+        with a garbage pH. The engine must now reject it up front with the
+        validation message.
+        """
+        result = self.calc.calculate(
+            equations=["H2O = H+ + OH-; 1e999"],
+            concentrations={},
+        )
+        self.assertFalse(result["success"])
+        self.assertEqual(
+            result["error"], "Unsafe or malformed reaction string"
+        )
+
+    def test_solver_valueerror_returns_generic_message(self):
+        """A genuine solver ValueError logs and returns the generic message.
+
+        WR-01: the validation rejection has its own exception type
+        (UnsafeEquationError), so a solver/parser ValueError can no longer be
+        mislabeled as 'Unsafe or malformed reaction string' — it must hit the
+        generic branch, which logs at ERROR and returns the fixed generic
+        copy.
+        """
+        with patch(
+            "chemistry_calculators.calculations.equilibria.EqSystem.from_string",
+            return_value=type(
+                "ExplodingEqSystem",
+                (),
+                {
+                    "substances": [],
+                    "root": lambda self, c: (_ for _ in ()).throw(
+                        ValueError("solver blew up")
+                    ),
+                },
+            )(),
+        ):
+            with self.assertLogs(
+                "chemistry_calculators.calculations.equilibria", level="ERROR"
+            ) as cm:
+                result = self.calc.calculate(
+                    equations=["H2O = H+ + OH-; 10**-14/55.4"],
+                    concentrations={"H2O": 55.4},
+                )
+        self.assertFalse(result["success"])
+        self.assertEqual(
+            result["error"], "The equilibrium system could not be solved."
+        )
+        self.assertIn("Equilibria calculation failed", cm.output[0])
+
 
 class EquilibriumFormTests(SimpleTestCase):
     """Tests for the EquilibriumSystemForm."""
