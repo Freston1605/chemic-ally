@@ -880,11 +880,11 @@ class EquilibriumFormTests(SimpleTestCase):
             form = EquilibriumSystemForm({
                 "reactions": self._valid_reactions_json(),
             })
-        self.assertFalse(form.is_valid())
-        self.assertIn(
-            "Unsafe or malformed reaction string",
-            form.errors["reactions"][0],
-        )
+            self.assertFalse(form.is_valid())
+            self.assertIn(
+                "Unsafe or malformed reaction string",
+                form.errors["reactions"][0],
+            )
 
 
 class EquilibriaViewTests(TestCase):

@@ -7,8 +7,13 @@ from django import forms
 # Shared chemical-formula charset gate (SEC-05): the form and the engine import
 # the same compiled regex from calculations/security.py so the layers cannot
 # drift apart. Rejects semicolons and any Python syntax that could inject code
-# into chempy's eval-based parser.
-from .calculations.security import SAFE_FORMULA_RE
+# into chempy's eval-based parser. The predicate + its fixed message are shared
+# too, so clean() gates reconstructed equations with the engine's own rules.
+from .calculations.security import (
+    SAFE_FORMULA_RE,
+    UNSAFE_EQUATION_MESSAGE,
+    is_safe_equation,
+)
 
 
 class MolecularFormulaForm(forms.Form):
@@ -195,6 +200,17 @@ class EquilibriumSystemForm(forms.Form):
                     raise forms.ValidationError(
                         f"Reaction {i}: Missing '{key}' field."
                     )
+            # Reject non-string types before any str() coercion: JSON numbers
+            # would otherwise be coerced into validity here only to fail (or
+            # mislabel) at the engine boundary (WR-03 behavioral equivalence).
+            if not isinstance(rxn["reactants"], str):
+                raise forms.ValidationError(
+                    f"Reaction {i}: Reactants must be a string."
+                )
+            if not isinstance(rxn["products"], str):
+                raise forms.ValidationError(
+                    f"Reaction {i}: Products must be a string."
+                )
             if rxn["k_mode"] not in ("pKa", "Ka"):
                 raise forms.ValidationError(
                     f"Reaction {i}: k_mode must be 'pKa' or 'Ka'."
@@ -211,6 +227,11 @@ class EquilibriumSystemForm(forms.Form):
                 raise forms.ValidationError(
                     f"Reaction {i}: K value cannot be empty."
                 )
+            # Normalize once: float() tolerates surrounding whitespace but the
+            # reconstructed "10**-{k_value}" expression must match
+            # SAFE_K_VALUE_RE, which does not; stripping here makes form and
+            # engine accept the same value (WR-03).
+            rxn["k_value"] = str(rxn["k_value"]).strip()
             # Reject anything that is not a finite number. The K value is
             # interpolated into a string that chempy evals, so it must never
             # carry Python code (e.g. `__import__('os').system(...)`).
@@ -251,6 +272,16 @@ class EquilibriumSystemForm(forms.Form):
                 eq_str = f"{rxn['reactants']} = {rxn['products']}; {k_expr}"
                 equations_list.append(eq_str)
             cleaned_data["equations"] = equations_list
+            # Gate every reconstructed equation with the same predicate the
+            # engine applies: the form can never emit an equation the engine
+            # rejects, making the SEC-05 guarantee behavioral, not just
+            # pointer-identical (WR-03, D-06 fixed copy — UNSAFE_EQUATION_MESSAGE
+            # is the exact constant the engine returns for the same equation).
+            # Early return after add_error is intentional: the form is invalid.
+            for eq_str in equations_list:
+                if not is_safe_equation(eq_str):
+                    self.add_error("reactions", UNSAFE_EQUATION_MESSAGE)
+                    return cleaned_data
 
         # Parse concentrations JSON — each entry is {value: float, unit: str}
         from .calculations.units import Q_
