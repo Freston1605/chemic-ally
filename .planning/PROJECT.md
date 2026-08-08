@@ -20,10 +20,11 @@ Chemistry calculations and HPLC simulations must return correct, physically-soun
 - ✓ HPLC levels/scoring/progress — session-keyed `UserScore`/`LevelProgress`, DRF JSON API — existing
 - ✓ Serverless deployment — Lambda + Mangum + CloudFront + RDS + S3 — existing
 - ✓ Seed command (`seed_hplc_data`) for Analyte/Level content — existing
+- ✓ HARD-01: Chempy `eval()` RCE closed — shared no-builtins validation boundary, validated numeric K, length caps, dual-path adversarial tests — validated in Phase 1 (Close the RCE)
+- ✓ HARD-06: Regression tests for adversarial/malicious equilibria inputs (both eval paths, engine + view layers, no-side-effect assertions) — validated in Phase 1
 
 ### Active
 
-- [ ] HARD-01: Close the chempy `eval()` RCE in the equilibria calculator (in progress — `globals_=False`, validated numeric K values, input length caps)
 - [ ] HARD-02: Fix `LevelProgressSerializer` misconfiguration so `GET /hplc/api/progress/` returns 200 for existing sessions
 - [ ] HARD-03: Fix `BalanceChemicalReaction` implicit `None` result and `ReactionBalancer` silent failures
 - [ ] HARD-04: Require both reactants and products in the reaction-balancing form
@@ -45,7 +46,7 @@ Chemistry calculations and HPLC simulations must return correct, physically-soun
 - Domain engines are pure Python decoupled from HTTP: `apps/chemistry_calculators/calculations/` (chempy, Pint) and `apps/hplc_simulator/simulation/` (numpy, scipy, LSS + EMG).
 - Deployed on Lambda via Mangum ASGI; production settings hard-fail on missing env vars; RDS behind VPC; S3 for static/media.
 - `apps/hplc_simulator/SCIENTIFIC_LOGIC.md` is authoritative for simulation invariants — engine changes must not violate it.
-- A codebase audit (`.planning/codebase/CONCERNS.md`) found a **critical RCE** via chempy `eval()` in the equilibria calculator, a broken `/hplc/api/progress/` endpoint (500s), several smaller bugs, zero API test coverage, and no rate limiting. An RCE-hardening fix is partially implemented in the working tree.
+- A codebase audit (`.planning/codebase/CONCERNS.md`) found a **critical RCE** via chempy `eval()` in the equilibria calculator, a broken `/hplc/api/progress/` endpoint (500s), several smaller bugs, zero API test coverage, and no rate limiting. The RCE is now closed (Phase 1: shared `calculations/security.py` boundary, restricted eval globals, error-copy hygiene, adversarial regression suite — 138 tests green).
 - CI/CD (`.github/workflows/deploy.yml`) runs lint → check --deploy → pytest → security scan → Docker build → SAM deploy; there is no `manage.py migrate` step and security-scan failures are non-blocking.
 - Recent work has focused on repairing the SAM/Lambda deployment pipeline (ECR, SSM, CloudFront, security-group fixes).
 - Development uses SQLite + dev settings; `python manage.py seed_hplc_data` is required after migrate.
@@ -62,7 +63,7 @@ Chemistry calculations and HPLC simulations must return correct, physically-soun
 
 | Decision | Rationale | Outcome |
 |----------|-----------|---------|
-| Harden codebase before new features | Audit surfaced a live RCE and broken endpoint; ship those fixes first | — Pending |
+| Harden codebase before new features | Audit surfaced a live RCE and broken endpoint; ship those fixes first | ✓ Good (Phase 1 RCE closure complete) |
 | Session-based identity (no accounts) | Simplest correct model for anonymous scores; revisit for leaderboards | ✓ Good |
 | Reversed-phase only in simulator | HILIC/NP rejected by design to bound scope | ✓ Good |
 | Serverless Lambda + server-rendered Django | Cheap, no-ops deployment already in production | ✓ Good |
@@ -87,4 +88,4 @@ This document evolves at phase transitions and milestone boundaries.
 4. Update Context with current state
 
 ---
-*Last updated: 2026-08-05 after initialization from existing codebase*
+*Last updated: 2026-08-08 after Phase 1 completion*
