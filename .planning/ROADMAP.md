@@ -37,7 +37,7 @@ Decimal phases appear between their surrounding integers in numeric order.
   3. Adversarial payloads targeting both chempy eval paths (param and kwargs shapes) fail with no server side effects (no files/markers written) — asserted by regression tests at both engine and view layers.
   4. Form and engine validation draw from a single shared module (`calculations/security.py`) — validation cannot drift between layers.
 
-**Plans**: 2/2 plans executed
+**Plans**: 3 plans (2 executed + 1 gap closure)
 
 Plans:
 **Wave 1**
@@ -47,6 +47,10 @@ Plans:
 **Wave 2** *(blocked on Wave 1 completion)*
 
 - [x] 01-02-PLAN.md — Form/view layers join the boundary (shared regex + drift guard, generic JSON copy, kwargs view tripwire, a11y)
+
+**Wave 3** *(gap closure — CR-01 + WR-01..04 from 01-VERIFICATION.md)*
+
+- [ ] 01-03-PLAN.md — Gap closure: unknown-unit 500 guard, engine error classification, exact rejection contract (\Z anchors + finite-K gate), form/engine behavioral equivalence
 
 **UI hint**: yes
 
