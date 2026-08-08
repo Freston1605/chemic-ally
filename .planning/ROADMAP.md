@@ -15,7 +15,7 @@ ChemicAlly is a live Django 5.2 + DRF chemistry app on a public AWS Lambda Funct
 
 Decimal phases appear between their surrounding integers in numeric order.
 
-- [ ] **Phase 1: Close the RCE** - Gate chempy parsing behind a shared no-builtins validation boundary; lock it in with adversarial regression tests
+- [x] **Phase 1: Close the RCE** - Gate chempy parsing behind a shared no-builtins validation boundary; lock it in with adversarial regression tests (completed 2026-08-08)
 - [ ] **Phase 2: Fix Broken Endpoints** - Repair the progress endpoint 500, reaction-balancing silent failures, and exception-detail leaks
 - [ ] **Phase 3: API Test Coverage** - Endpoint-level tests for all six `/hplc/api/*` endpoints with a self-enforcing coverage gate
 - [ ] **Phase 4: CI/CD Deploy Gates** - Make security scans, deploy checks, and schema migration genuinely block the pipeline
@@ -140,7 +140,7 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5 → 6
 
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
-| 1. Close the RCE | 3/3 | In Progress|  |
+| 1. Close the RCE | 3/3 | Complete    | 2026-08-08 |
 | 2. Fix Broken Endpoints | TBD | Not started | - |
 | 3. API Test Coverage | TBD | Not started | - |
 | 4. CI/CD Deploy Gates | TBD | Not started | - |
