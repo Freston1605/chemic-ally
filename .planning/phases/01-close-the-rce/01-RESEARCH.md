@@ -514,13 +514,15 @@ def test_equilibria_view_rejects_kwargs_path_payload(self):
 | A4 | Marker files under `/tmp` are an acceptable side-effect assertion mechanism | Payload matrix | Low — pre-existing pattern in working-tree tests; OSError-guarded cleanup already present |
 | A5 | No deploy/runtime-state migration is needed this phase (Lambda keeps old image until a deploy on `main`) | Runtime State Inventory | Low — deploy pipeline is out of phase scope; the fix ships via the normal pipeline after merge |
 
-## Open Questions
+## Open Questions (RESOLVED)
 
 1. **Ka-mode engine solve coverage** — the working tree tests Ka-mode *string reconstruction* (form) but no full engine solve with a Ka value like `1.75e-5`.
    - What we know: `1.75e-5` matches `SAFE_K_VALUE_RE` and chempy evaluates numeric literals fine under restricted globals (verified for the `e`-notation in `10**-14`).
    - What's unclear: whether a Ka-mode system solves end-to-end (no test asserts it).
    - Recommendation: planner adds one small engine-layer test (acetic acid with `CH3COOH = H+ + CH3COO-; 1.75e-5`) — cheap, closes the coverage corner.
+   - **RESOLVED:** `test_ka_mode_engine_solve` (acetic acid, pH 2.88) landed in Plan 01-01 and is green in the verified 128-test suite (01-VERIFICATION.md) — Ka-mode end-to-end solve is now covered.
 2. **Hydrate `·` formula solve** — `_SAFE_FORMULA_RE` permits `\u00b7` and chempy parses `CaCl2·6H2O` (verified), but no equilibria test uses a hydrate.
    - What we know: parse verified in REPL; regex intent is hydrate support.
    - What's unclear: end-to-end solve with a hydrate substance in the system.
    - Recommendation: optional; flag as nice-to-have, not a gate.
+   - **RESOLVED (by deferral):** no hydrate solve test was added — end-to-end hydrate coverage remains a nice-to-have, not a gate, per the original recommendation.
