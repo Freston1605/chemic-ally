@@ -37,7 +37,7 @@ Decimal phases appear between their surrounding integers in numeric order.
   3. Adversarial payloads targeting both chempy eval paths (param and kwargs shapes) fail with no server side effects (no files/markers written) — asserted by regression tests at both engine and view layers.
   4. Form and engine validation draw from a single shared module (`calculations/security.py`) — validation cannot drift between layers.
 
-**Plans**: 3 plans (2 executed + 1 gap closure)
+**Plans**: 3/3 plans executed
 
 Plans:
 **Wave 1**
@@ -50,7 +50,7 @@ Plans:
 
 **Wave 3** *(gap closure — CR-01 + WR-01..04 from 01-VERIFICATION.md)*
 
-- [ ] 01-03-PLAN.md — Gap closure: unknown-unit 500 guard, engine error classification, exact rejection contract (\Z anchors + finite-K gate), form/engine behavioral equivalence
+- [x] 01-03-PLAN.md — Gap closure: unknown-unit 500 guard, engine error classification, exact rejection contract (\Z anchors + finite-K gate), form/engine behavioral equivalence
 
 **UI hint**: yes
 
@@ -140,7 +140,7 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5 → 6
 
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
-| 1. Close the RCE | 2/2 | In Progress|  |
+| 1. Close the RCE | 3/3 | In Progress|  |
 | 2. Fix Broken Endpoints | TBD | Not started | - |
 | 3. API Test Coverage | TBD | Not started | - |
 | 4. CI/CD Deploy Gates | TBD | Not started | - |
