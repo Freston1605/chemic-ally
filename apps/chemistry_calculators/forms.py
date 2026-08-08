@@ -280,9 +280,16 @@ class EquilibriumSystemForm(forms.Form):
                             except (ValueError, TypeError):
                                 pass
                     cleaned_data["concentrations"] = result
-            except (json.JSONDecodeError, ValueError, TypeError):
+            except (json.JSONDecodeError, ValueError, TypeError, AttributeError):
                 # Generic fixed copy (D-06 / CWE-209): never echo the parser's
                 # attacker-controlled parse-position text.
+                #
+                # AttributeError is here because pint 0.24.4 raises
+                # UndefinedUnitError — MRO UndefinedUnitError -> AttributeError
+                # -> PintError -> Exception — when the Q_ conversion above
+                # meets an attacker-controlled unit string the registry does
+                # not know. Without it that conversion failure escapes clean()
+                # as an HTTP 500 on the public endpoint (CR-01).
                 self.add_error(
                     "concentrations", "Concentrations data could not be read."
                 )
