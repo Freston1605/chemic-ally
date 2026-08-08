@@ -739,6 +739,27 @@ class EquilibriumFormTests(SimpleTestCase):
         self.assertFalse(form.is_valid())
         self.assertIn("reactions", form.errors)
 
+    def test_unknown_unit_concentration_rejected(self):
+        """An unknown concentration unit is a clean validation error (CR-01).
+
+        pint 0.24.4 raises UndefinedUnitError (an AttributeError subclass)
+        for units the registry does not know, so the concentration guard must
+        catch it and emit the D-06 fixed copy — never let it escape clean()
+        as an HTTP 500, and never echo the unit string into the message.
+        """
+        form = EquilibriumSystemForm({
+            "reactions": self._valid_reactions_json(),
+            "concentrations": '{"HCO3-": {"value": 0.01, "unit": "notAUnit"}}',
+        })
+        self.assertFalse(form.is_valid())
+        self.assertIn(
+            "Concentrations data could not be read.",
+            form.errors["concentrations"][0],
+        )
+        # CWE-209 negative assertion: the attacker-controlled unit string
+        # must never be interpolated into the error copy.
+        self.assertNotIn("notAUnit", form.errors["concentrations"][0])
+
 
 class EquilibriaViewTests(TestCase):
     """Tests for the CalculateEquilibriaView."""
@@ -860,6 +881,37 @@ class EquilibriaViewTests(TestCase):
         self.assertFalse(form.is_valid())
         self.assertIn("reactions", form.errors)
         self.assertFalse(os.path.exists(marker))
+
+    def test_equilibria_view_unknown_unit_no_500(self):
+        """POSTing an unknown concentration unit never returns HTTP 500 (CR-01).
+
+        The endpoint must contain the pint UndefinedUnitError raised by the
+        Q_ conversion and re-render the form invalid with the D-06 fixed copy
+        — the input class that previously escaped clean() as a 500.
+        """
+        data = {
+            "reactions": json.dumps([
+                {
+                    "reactants": "H2O",
+                    "products": "H+ + OH-",
+                    "k_mode": "pKa",
+                    "k_value": "14.0",
+                },
+            ]),
+            "concentrations": '{"H2O": {"value": 55.4, "unit": "notAUnit"}}',
+            "solvent": "H2O",
+            "solvent_concentration": 55.4,
+        }
+        response = self.client.post(reverse("equilibria"), data)
+        # The never-500 assertion — the whole point of CR-01.
+        self.assertEqual(response.status_code, 200)
+        form = response.context.get("form")
+        self.assertIsNotNone(form)
+        self.assertFalse(form.is_valid())
+        self.assertIn(
+            "Concentrations data could not be read.",
+            form.errors["concentrations"][0],
+        )
 
 
 class LoggingConfigTests(SimpleTestCase):
