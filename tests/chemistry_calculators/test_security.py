@@ -95,3 +95,10 @@ class SharedRegexDriftTests(SimpleTestCase):
         # The engine's predicate must be the security.py function object, not
         # a local copy.
         self.assertIs(security.is_safe_equation, engine_predicate)
+        # The form's clean() gate must reference the same security.py
+        # predicate object (WR-03 fix c) — a local redefinition or a
+        # different import path would KeyError or fail identity here.
+        self.assertIs(
+            security.is_safe_equation,
+            EquilibriumSystemForm.clean.__globals__["is_safe_equation"],
+        )

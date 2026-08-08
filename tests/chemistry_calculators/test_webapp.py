@@ -812,6 +812,80 @@ class EquilibriumFormTests(SimpleTestCase):
         # must never be interpolated into the error copy.
         self.assertNotIn("notAUnit", form.errors["concentrations"][0])
 
+    def test_k_value_whitespace_padded_accepted(self):
+        """Whitespace-padded K values normalize to engine-accepted equations.
+
+        WR-03 fix (a): float() tolerates surrounding whitespace but the
+        reconstructed '10**-{k_value}' expression must match SAFE_K_VALUE_RE,
+        which does not — stripping k_value before float() and before
+        reconstruction makes the form accept what the engine accepts.
+        """
+        form = EquilibriumSystemForm({
+            "reactions": self._rce_reactions(" 10.3 "),
+        })
+        self.assertTrue(form.is_valid())
+        self.assertEqual(
+            form.cleaned_data["equations"],
+            ["H2O = H+ + OH-; 10**-10.3"],
+        )
+
+    def test_non_string_reactants_products_rejected(self):
+        """Non-string JSON types fail fast with fixed copy (WR-03 fix b).
+
+        Previously str()-coerced into validity, only to fail (or mislabel)
+        at the engine — the form must reject them with the exact per-reaction
+        message.
+        """
+        reactions = json.dumps([
+            {
+                "reactants": 123,
+                "products": "H+ + OH-",
+                "k_mode": "pKa",
+                "k_value": "14.0",
+            },
+        ])
+        form = EquilibriumSystemForm({"reactions": reactions})
+        self.assertFalse(form.is_valid())
+        self.assertIn(
+            "Reaction 1: Reactants must be a string.",
+            form.errors["reactions"][0],
+        )
+
+        reactions = json.dumps([
+            {
+                "reactants": "H2O",
+                "products": 123,
+                "k_mode": "pKa",
+                "k_value": "14.0",
+            },
+        ])
+        form = EquilibriumSystemForm({"reactions": reactions})
+        self.assertFalse(form.is_valid())
+        self.assertIn(
+            "Reaction 1: Products must be a string.",
+            form.errors["reactions"][0],
+        )
+
+    def test_clean_never_emits_equation_engine_rejects(self):
+        """clean() gates every reconstructed equation with is_safe_equation.
+
+        WR-03 fix (c): with the predicate patched to reject everything, the
+        form must fail validation with the engine's own fixed message — the
+        form can never emit an equation the engine rejects (behavioral
+        SEC-05 equivalence).
+        """
+        with patch(
+            "chemistry_calculators.forms.is_safe_equation", return_value=False
+        ):
+            form = EquilibriumSystemForm({
+                "reactions": self._valid_reactions_json(),
+            })
+        self.assertFalse(form.is_valid())
+        self.assertIn(
+            "Unsafe or malformed reaction string",
+            form.errors["reactions"][0],
+        )
+
 
 class EquilibriaViewTests(TestCase):
     """Tests for the CalculateEquilibriaView."""
