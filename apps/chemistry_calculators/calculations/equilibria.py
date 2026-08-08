@@ -18,6 +18,16 @@ from .security import (
 logger = logging.getLogger(__name__)
 
 
+class UnsafeEquationError(ValueError):
+    """Raised when a reaction string fails the shared is_safe_equation gate.
+
+    Distinct from solver/parser ValueErrors so the handler can classify the
+    validation-rejection signal separately (WR-01): only this type returns
+    UNSAFE_EQUATION_MESSAGE; every other exception — including genuine
+    solver ValueErrors — logs and returns the generic message.
+    """
+
+
 class EquilibriaCalculator(CalculationBase):
     """
     Solves a system of coupled chemical equilibria in aqueous solution.
@@ -98,7 +108,9 @@ class EquilibriaCalculator(CalculationBase):
             # Build the multi-line string for EqSystem.from_string
             for equation in equations:
                 if not is_safe_equation(equation):
-                    raise ValueError("Unsafe or malformed reaction string")
+                    raise UnsafeEquationError(
+                        "Unsafe or malformed reaction string"
+                    )
             reaction_string = "\n".join(equations)
 
             # Build the initial concentrations dict
@@ -140,9 +152,11 @@ class EquilibriaCalculator(CalculationBase):
                 "success": True,
             }
 
-        except ValueError:
+        except UnsafeEquationError:
             # Validation rejection — return the fixed constant (D-06); never
-            # interpolate attacker input into the message.
+            # interpolate attacker input into the message. Only this type
+            # takes this path; genuine solver/parser ValueErrors fall through
+            # to the generic branch (WR-01).
             return {
                 "success": False,
                 "error": UNSAFE_EQUATION_MESSAGE,
