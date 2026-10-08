@@ -6,9 +6,9 @@ Parameters:
   DomainName:
     Type: String
     Default: chemic-ally.xyz
-  HostedZoneId:
+  CertificateArn:
     Type: String
-    Description: Route 53 hosted zone ID for the domain
+    Description: ARN of the pre-provisioned ACM certificate in us-east-1 covering DomainName and www (DNS-validated via Cloudflare)
   ImageTag:
     Type: String
     Default: latest
@@ -171,21 +171,12 @@ Resources:
           CidrIp: 0.0.0.0/0
 
   # ─────────────────────────────────────────────
-  # ACM Certificate (must be in us-east-1 for CloudFront)
-  # ─────────────────────────────────────────────
-  Certificate:
-    Type: AWS::CertificateManager::Certificate
-    Properties:
-      DomainName: !Ref DomainName
-      SubjectAlternativeNames:
-        - !Sub "www.${DomainName}"
-      ValidationMethod: DNS
-      DomainValidationOptions:
-        - DomainName: !Ref DomainName
-          HostedZoneId: !Ref HostedZoneId
-
-  # ─────────────────────────────────────────────
   # CloudFront Distribution
+  #
+  # The ACM certificate (us-east-1, DNS-validated via Cloudflare) is
+  # pre-provisioned out of band — see scripts/cloudflare_deploy.py — and
+  # supplied as the CertificateArn parameter. Route53 is intentionally not
+  # used; DNS for the domain lives in Cloudflare.
   # ─────────────────────────────────────────────
   CloudFrontDistribution:
     Type: AWS::CloudFront::Distribution
@@ -233,34 +224,11 @@ Resources:
               OriginSSLProtocols:
                 - TLSv1.2
         ViewerCertificate:
-          AcmCertificateArn: !Ref Certificate
+          AcmCertificateArn: !Ref CertificateArn
           SslSupportMethod: sni-only
 
-  # ─────────────────────────────────────────────
-  # Route 53 A record (root domain)
-  # ─────────────────────────────────────────────
-  RootAliasRecord:
-    Type: AWS::Route53::RecordSet
-    Properties:
-      HostedZoneId: !Ref HostedZoneId
-      Name: !Ref DomainName
-      Type: A
-      AliasTarget:
-        DNSName: !GetAtt CloudFrontDistribution.DomainName
-        HostedZoneId: Z2FDTNDATAQYW2
-
-  # ─────────────────────────────────────────────
-  # Route 53 A record (www subdomain)
-  # ─────────────────────────────────────────────
-  WwwAliasRecord:
-    Type: AWS::Route53::RecordSet
-    Properties:
-      HostedZoneId: !Ref HostedZoneId
-      Name: !Sub "www.${DomainName}"
-      Type: A
-      AliasTarget:
-        DNSName: !GetAtt CloudFrontDistribution.DomainName
-        HostedZoneId: Z2FDTNDATAQYW2
+  # DNS (apex + www) is managed in Cloudflare, not Route53.
+  # See scripts/cloudflare_deploy.py sync-records.
 
 Outputs:
   FunctionUrl:

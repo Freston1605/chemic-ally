@@ -50,10 +50,10 @@
 
 | Resource | ID | Details |
 |----------|----|---------|
-| **RDS Instance** | `awseb-e-2fcyjhgyu9-stack-awsebrdsdatabase-7dafhgsyrlmy` | PostgreSQL 18.3, db.t3.micro, 5GB |
-| **RDS Endpoint** | `*.cb46qw8cwu75.us-east-2.rds.amazonaws.com:5432` | Set as Lambda env vars |
+| **RDS Instance** | `chemically-db` | PostgreSQL 18.6, db.t3.micro, 20GB gp3, single-AZ, encrypted |
+| **RDS Endpoint** | `chemically-db.cb46qw8cwu75.us-east-2.rds.amazonaws.com:5432` | Set as Lambda env vars via SSM `/chemically/rds/endpoint` |
 | **Multi-AZ** | No | Single-AZ deployment |
-| **DB User** | `ebroot` | — |
+| **DB User** | `chemically` | DB name `chemically_db` |
 
 ### Networking
 
@@ -61,13 +61,13 @@
 |----------|----|---------|
 | **VPC** | `vpc-0dbf831689e8a98b9` | — |
 | **Lambda Security Group** | Managed by SAM | Outbound: all traffic, Inbound: VPC CIDR |
-| **Custom Domain** | `chemic-ally.xyz` | SSL via ACM (auto-renewing) |
+| **Custom Domain** | `chemic-ally.xyz` | DNS hosted in Cloudflare (free plan); SSL via ACM (auto-renewing, DNS-validated through Cloudflare) |
 
 ### Storage
 
 | Resource | ID | Details |
 |----------|----|---------|
-| **App S3 Bucket** | `chemically-env` | Static/media files via django-storages |
+| **App S3 Bucket** | `chemically-env-768125641662` | Static/media files via django-storages |
 
 ### IAM
 
@@ -90,7 +90,9 @@ Configure in **GitHub → Repository → Settings → Secrets and variables → 
 | `AWS_SECRET_ACCESS_KEY` | IAM user secret key | Build + Deploy | Yes |
 | `DJANGO_SECRET_KEY` | Django signing key | Build (collectstatic) | Yes |
 | `AWS_STORAGE_BUCKET_NAME` | S3 bucket for static files (`chemically-env`) | Build (collectstatic) | Yes |
-| `ROUTE53_HOSTED_ZONE_ID` | Route 53 hosted zone ID | SAM deploy | Yes |
+| `ROUTE53_HOSTED_ZONE_ID` | (removed) Route 53 is no longer used | — | No |
+| `CLOUDFLARE_API_TOKEN` | Cloudflare API token with `Zone:DNS:Edit` on chemic-ally.xyz | Deploy (ACM validation + DNS sync) | Yes |
+| `CLOUDFLARE_ZONE_ID` | Cloudflare zone id for chemic-ally.xyz | Deploy (ACM validation + DNS sync) | Yes |
 
 ### Lambda Environment Variables
 
@@ -296,6 +298,7 @@ docker run -p 9000:8080 chemically:latest
 | **ECR** | ~$0.01 | Storage for container images |
 | **CloudFront** | ~$0 | Free tier covers low traffic |
 | **ACM** | Free | Auto-renewing SSL certificates |
+| **DNS (Cloudflare)** | Free | Authoritative DNS on the Cloudflare free plan; replaces Route 53 ($0.50/mo) |
 | **RDS PostgreSQL** | ~$15 | Unchanged from EB architecture |
 | **S3** | ~$0.10 | Static/media file storage |
 | **Total (exc. RDS)** | **~$0.12-0.21/mo** | |
@@ -359,7 +362,7 @@ This limits concurrent executions to 5, capping worst-case monthly cost.
 - [ ] Update CI/CD pipeline in `.github/workflows/deploy.yml`
 - [ ] Verify CloudFront SSL certificate issues
 - [ ] Test Lambda function with Function URL
-- [ ] Update Route 53 DNS to point to CloudFront
+- [ ] Point Cloudflare DNS (apex + www) at CloudFront; ACM cert DNS-validated via Cloudflare
 - [ ] Disable old EB environment (do not delete immediately)
 - [ ] Monitor for errors in CloudWatch
 - [ ] Delete EB environment + application once stable
