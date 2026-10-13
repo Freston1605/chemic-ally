@@ -71,7 +71,13 @@ jobs:
         run: python manage.py check --deploy
 
       - name: Run tests (pytest)
-        run: pytest -v
+        run: |
+          pytest -v \
+            --cov=hplc_simulator.views \
+            --cov=hplc_simulator.serializers \
+            --cov=hplc_simulator.exceptions \
+            --cov-report=term-missing \
+            --cov-fail-under=99
 
   # ─────────────────────────────────────────────
   # Stage 2: Security Scan
