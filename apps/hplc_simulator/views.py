@@ -106,10 +106,10 @@ class SimulateView(APIView):
                 operation=operation_config,
                 max_pressure_bar=level.max_pressure_bar,
             )
-        except Exception as e:
+        except Exception:
             logger.exception("Simulation error")
             return Response(
-                {'error': 'Simulation failed', 'detail': str(e)},
+                {'error': 'Simulation failed'},
                 status=status.HTTP_500_INTERNAL_SERVER_ERROR,
             )
 

@@ -2,3 +2,5 @@
 pytest==8.4.0
 pytest-django==4.11.1
 flake8==7.0.0
+# Needed so tests can import config.asgi (the Lambda handler seam).
+mangum>=0.19

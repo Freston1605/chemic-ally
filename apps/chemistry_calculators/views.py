@@ -10,6 +10,7 @@ from django.views.generic.edit import FormView
 from .calculations.base import (
     DilutionCalculator,
     MolecularWeightCalculator,
+    ReactionBalanceError,
     ReactionBalancer,
 )
 from .calculations.equilibria import EquilibriaCalculator
@@ -174,13 +175,20 @@ class BalanceChemicalReaction(BaseCalculateView):
     template_name = "chemistry_calculators/calculator/reaction_balancer.html"
     form_class = ChemicalReactionForm
 
-    def process_calculation(self, form: form_class) -> str:
+    _BALANCE_ERROR_MESSAGE = (
+        "This reaction could not be balanced. "
+        "Please check the formulas and try again."
+    )
+
+    def process_calculation(self, form: form_class) -> dict:
         """
         Perform stoichiometric balancing for the submitted reaction.
 
         The cleaned form data is parsed into lists of reactant and product
         formulas. It is passed to the :class:`ReactionBalancer` calculator from
-        the class-based API. The balanced equation is returned as a LaTeX string.
+        the class-based API. The balanced equation is returned in an explicit
+        result dict so the template can branch on success instead of guessing
+        from a ``None`` return.
 
         Args:
             form (form_class):
@@ -188,7 +196,10 @@ class BalanceChemicalReaction(BaseCalculateView):
                 chemical reaction.
 
         Returns:
-            str: A string representation of the balanced chemical reaction equation.
+            dict: ``{'success': True, 'latex': <str>, 'error': None}`` on
+            success; ``{'success': False, 'latex': None, 'error': <str>}``
+            when the reaction cannot be balanced. The exception string is
+            never included in the returned dict (CWE-209).
         """
         try:
             reaction = form.cleaned_data
@@ -202,18 +213,35 @@ class BalanceChemicalReaction(BaseCalculateView):
                 reactants_balanced,
                 products_balanced,
             ) = calculator.calculate(reactants=reactants_dict, products=products_dict)
-            result = ReactionBalancer.to_latex(
+            latex = ReactionBalancer.to_latex(
                 reactants_balanced, products_balanced, reversible
             )
             add_previous_substances(self.request, reactants + products)
-            return result
-        except Exception:
+            return {"success": True, "latex": latex, "error": None}
+        except ReactionBalanceError:
             logging.exception("Reaction balancing failed:")
             messages.error(
                 self.request,
                 "Could not balance the reaction. "
                 "Please check your input and try again.",
             )
+            return {
+                "success": False,
+                "latex": None,
+                "error": self._BALANCE_ERROR_MESSAGE,
+            }
+        except Exception:
+            logging.exception("Unexpected reaction balancing failure:")
+            messages.error(
+                self.request,
+                "Could not balance the reaction. "
+                "Please check your input and try again.",
+            )
+            return {
+                "success": False,
+                "latex": None,
+                "error": self._BALANCE_ERROR_MESSAGE,
+            }
 
 
 class CalculateDilutionView(BaseCalculateView):

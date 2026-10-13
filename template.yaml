@@ -59,7 +59,12 @@ Globals:
     Environment:
       Variables:
         DJANGO_SETTINGS_MODULE: config.settings.production
-        ALLOWED_HOSTS: !Sub ".${DomainName}"
+        # CloudFront does not forward the viewer Host header (the Lambda
+        # Function URL rejects a Host that is not its own domain), so Django
+        # sees the Function URL host. Accept the apex/www hosts plus the
+        # regional Function URL namespace. Referencing FunctionUrl directly
+        # here would create a circular CloudFormation dependency.
+        ALLOWED_HOSTS: !Sub ".${DomainName} .lambda-url.${AWS::Region}.on.aws"
         AWS_STORAGE_BUCKET_NAME: !Ref EnvironmentVariablesBucket
         AWS_S3_REGION_NAME: !Ref AWS::Region
         RDS_DB_NAME: !Ref RDSDBName
@@ -155,6 +160,19 @@ Resources:
       Principal: "*"
       FunctionUrlAuthType: NONE
 
+  # A public (AuthType: NONE) function URL needs BOTH lambda:InvokeFunctionUrl
+  # and lambda:InvokeFunction. AWS added the second requirement for new function
+  # URLs in October 2025; without this statement every request to the URL fails
+  # with 403 AccessDeniedException even though the auth-type condition matches.
+  # The InvokedViaFunctionUrl condition keeps the grant scoped to URL calls.
+  FunctionUrlInvokePermission:
+    Type: AWS::Lambda::Permission
+    Properties:
+      FunctionName: !Ref DjangoFunction
+      Action: lambda:InvokeFunction
+      Principal: "*"
+      InvokedViaFunctionUrl: true
+
   # ─────────────────────────────────────────────
   # Security Group for Lambda VPC access (RDS)
   # ─────────────────────────────────────────────
@@ -208,8 +226,10 @@ Resources:
             QueryString: true
             Cookies:
               Forward: all
+            # Host is intentionally NOT forwarded: the Lambda Function URL
+            # requires Host to equal its own domain and returns 403 otherwise.
+            # CloudFront therefore sends the origin domain as Host.
             Headers:
-              - Host
               - Origin
               - Authorization
               - X-CSRFToken

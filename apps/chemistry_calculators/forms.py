@@ -66,6 +66,7 @@ class ChemicalReactionForm(forms.Form):
 
     reactant = forms.CharField(
         max_length=100,
+        required=False,
         label="Reactant(s)",
         help_text=(
             "Enter the chemical formula for all reactants separated "
@@ -75,6 +76,7 @@ class ChemicalReactionForm(forms.Form):
     )
     product = forms.CharField(
         max_length=100,
+        required=False,
         label="Product(s)",
         help_text=(
             "Enter the chemical formula for all reactants separated "
@@ -93,6 +95,10 @@ class ChemicalReactionForm(forms.Form):
         """
         Cleans and parses the input data to obtain reactants and products separately.
 
+        Both fields are optional at the field level so the form can emit a
+        specific, human-readable message instead of Django's generic
+        "This field is required." (R004).
+
         Raises:
             forms.ValidationError: Raised if neither reactant nor product is provided.
 
@@ -105,6 +111,12 @@ class ChemicalReactionForm(forms.Form):
 
         if not reactant and not product:
             raise forms.ValidationError("Reactant and product must be provided.")
+
+        if bool(reactant) != bool(product):
+            self.add_error(
+                "reactant" if not reactant else "product",
+                "Provide both reactants and products.",
+            )
 
         return cleaned_data
 

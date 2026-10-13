@@ -1,5 +1,5 @@
 from rest_framework import serializers
-from .models import Analyte, Level, UserScore
+from .models import Analyte, Level, LevelProgress, UserScore
 
 
 class AnalyteSerializer(serializers.ModelSerializer):
@@ -201,7 +201,7 @@ class LevelProgressSerializer(serializers.ModelSerializer):
     difficulty = serializers.CharField(source='level.difficulty', read_only=True)
 
     class Meta:
-        model = UserScore
+        model = LevelProgress
         fields = [
             'id', 'level_name', 'difficulty', 'best_score',
             'best_resolution', 'best_run_time', 'attempts',

@@ -54,6 +54,17 @@ class MolecularWeightCalculator(CalculationBase):
 
 
 # --- Reaction Balancer ---
+class ReactionBalanceError(Exception):
+    """Raised when a reaction cannot be balanced by chempy.
+
+    A typed failure signal (mirroring ``UnsafeEquationError`` in
+    ``calculations.equilibria``) so callers can distinguish an expected
+    balancing failure from an unexpected programming error. The original
+    chempy exception is chained as ``__cause__`` for server-side logs, but
+    the message is never forwarded to the user.
+    """
+
+
 class ReactionBalancer(CalculationBase):
     description = "Balances a chemical reaction given reactant and product formulas."
     input_spec = {"reactants": list, "products": list}
@@ -61,15 +72,21 @@ class ReactionBalancer(CalculationBase):
 
     def calculate(
         self, reactants: list, products: list
-    ) -> Optional[Tuple[Dict[str, int], Dict[str, int]]]:
+    ) -> Tuple[Dict[str, int], Dict[str, int]]:
+        """Balance a reaction, raising ``ReactionBalanceError`` on failure.
+
+        Returns a ``(reactants_balanced, products_balanced)`` tuple. Unbalanced,
+        impossible, or one-sided reactions raise ``ReactionBalanceError`` rather
+        than returning ``None``, so callers cannot silently mis-unpack a
+        ``NoneType``.
+        """
         try:
             reactants_balanced, products_balanced = balance_stoichiometry(
                 reactants=reactants, products=products
             )
             return reactants_balanced, products_balanced
-        except Exception:
-            # Log or handle error more gracefully if needed
-            return None
+        except Exception as exc:
+            raise ReactionBalanceError(str(exc)) from exc
 
     @staticmethod
     def to_latex(

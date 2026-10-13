@@ -10,6 +10,7 @@ from chempy import Substance
 from chemistry_calculators.calculations import security
 from chemistry_calculators.calculations.base import (
     MolecularWeightCalculator,
+    ReactionBalanceError,
     ReactionBalancer,
     DilutionCalculator,
 )
@@ -43,8 +44,15 @@ class CalculatorTests(SimpleTestCase):
 
     def test_reaction_balancer_invalid(self):
         calc = ReactionBalancer()
-        result = calc.calculate(["notAFormula"], ["H2O"])
-        self.assertIsNone(result)
+        with self.assertRaises(ReactionBalanceError):
+            calc.calculate(["notAFormula"], ["H2O"])
+
+    def test_reaction_balancer_one_sided_raises(self):
+        calc = ReactionBalancer()
+        # Reactants with no products is physically impossible; chempy cannot
+        # balance it, so the typed error (never a silent None) must surface.
+        with self.assertRaises(ReactionBalanceError):
+            calc.calculate({"H2O"}, set())
 
     def test_dilution_missing_v1(self):
         calc = DilutionCalculator()
@@ -122,6 +130,28 @@ class FormTests(SimpleTestCase):
         self.assertIn(
             "Reactant and product must be provided.",
             form.errors["__all__"][0],
+        )
+
+    def test_chemical_reaction_form_one_sided_missing_reactant(self):
+        """A product with no reactant gets a specific, human-readable error."""
+        form = ChemicalReactionForm(
+            {"reactant": "", "product": "H2O", "reversible": True}
+        )
+        self.assertFalse(form.is_valid())
+        self.assertIn(
+            "Provide both reactants and products.",
+            form.errors["reactant"][0],
+        )
+
+    def test_chemical_reaction_form_one_sided_missing_product(self):
+        """A reactant with no product gets a specific, human-readable error."""
+        form = ChemicalReactionForm(
+            {"reactant": "H2 O2", "product": "", "reversible": True}
+        )
+        self.assertFalse(form.is_valid())
+        self.assertIn(
+            "Provide both reactants and products.",
+            form.errors["product"][0],
         )
 
     def test_solution_form_valid(self):
@@ -218,7 +248,52 @@ class ViewTests(TestCase):
         }
         response = self.client.post(reverse("reaction_balancer"), data)
         self.assertEqual(response.status_code, 200)
-        self.assertIn("\\ce", response.context["result"])
+        self.assertTrue(response.context["result"]["success"])
+        self.assertIn("\\ce", response.context["result"]["latex"])
+
+    def test_reaction_balancer_view_post_impossible_reaction(self):
+        data = {
+            "reactant": "notAFormula",
+            "product": "H2O",
+            "reversible": True,
+        }
+        response = self.client.post(reverse("reaction_balancer"), data)
+        self.assertEqual(response.status_code, 200)
+        result = response.context["result"]
+        self.assertIsNotNone(result)
+        self.assertFalse(result["success"])
+        self.assertTrue(result["error"])
+        content = response.content.decode()
+        self.assertIn("Calculation Failed", content)
+        # CWE-209: neither a traceback nor the raw chempy exception detail
+        # (chempy's parser message begins "Expected {Re:") may reach the page.
+        self.assertNotIn("Traceback", content)
+        self.assertNotIn("Expected {Re", content)
+
+    def test_reaction_balancer_view_post_one_sided_missing_product(self):
+        """A one-sided POST re-renders the specific message, no result card."""
+        data = {"reactant": "H2 O2", "product": "", "reversible": True}
+        response = self.client.post(reverse("reaction_balancer"), data)
+        self.assertEqual(response.status_code, 200)
+        form = response.context.get("form")
+        self.assertIsNotNone(form)
+        self.assertFalse(form.is_valid())
+        content = response.content.decode()
+        self.assertIn("Provide both reactants and products.", content)
+        # The invalid form must not fall through to a calculation result.
+        self.assertIsNone(response.context.get("result"))
+
+    def test_reaction_balancer_view_post_both_empty_shows_message(self):
+        """The both-empty non-field error is visible, not silently dropped."""
+        data = {"reactant": "", "product": "", "reversible": True}
+        response = self.client.post(reverse("reaction_balancer"), data)
+        self.assertEqual(response.status_code, 200)
+        form = response.context.get("form")
+        self.assertIsNotNone(form)
+        self.assertFalse(form.is_valid())
+        content = response.content.decode()
+        self.assertIn("Reactant and product must be provided.", content)
+        self.assertIsNone(response.context.get("result"))
 
     def test_dilution_view_post(self):
         data = {
