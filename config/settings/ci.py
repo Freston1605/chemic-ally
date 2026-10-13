@@ -45,3 +45,10 @@ from config.settings.production import *  # noqa: E402,F401,F403
 # satisfies Django's app loading (models import the postgres backend) and lets
 # `check --deploy` and `makemigrations --check` run without a connection.
 DATABASES = {"default": {"ENGINE": "django.db.backends.dummy"}}
+
+
+# ─ S04-T07 gate-proof violation (deliberate, never merge) ─
+# A short, low-entropy SECRET_KEY red-lines security.W009, which
+# `manage.py check --deploy --fail-level WARNING` must promote to a
+# hard failure of the Test job. Exactly one violating change.
+SECRET_KEY = "changeme"
