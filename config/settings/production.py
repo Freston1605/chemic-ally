@@ -55,6 +55,15 @@ SECURE_PROXY_SSL_HEADER = ("HTTP_X_FORWARDED_PROTO", "https")
 SESSION_COOKIE_SECURE = True
 CSRF_COOKIE_SECURE = True
 
+# D006: the calculators are intentionally DB-less in production (no RDS
+# instance is provisioned). The default database-backed session engine would
+# make every calculator POST fail with an OperationalError inside
+# SessionMiddleware.process_response, outside the view's try/except, surfacing
+# as an HTTP 500. Sign the session data into the cookie instead so no
+# request ever needs a database. CSRF continues to use its own cookie (the
+# default); CSRF_USE_SESSIONS is deliberately left off.
+SESSION_ENGINE = 'django.contrib.sessions.backends.signed_cookies'
+
 SECURE_HSTS_SECONDS = 31536000  # 1 year — start with a smaller value when testing
 SECURE_HSTS_INCLUDE_SUBDOMAINS = True
 SECURE_HSTS_PRELOAD = True
