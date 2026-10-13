@@ -40,6 +40,12 @@ class Analyte(models.Model):
         help_text="Molar extinction coefficient (L/mol/cm) at UV absorption max"
     )
 
+    # S04-T07 gate-proof violation: field deliberately added with no
+    # migration so `makemigrations --check --dry-run` must fail CI.
+    retention_probe = models.PositiveIntegerField(
+        default=0,
+        help_text="Gate-proof-only field with no matching migration",
+    )
     class Meta:
         ordering = ['name']
 
