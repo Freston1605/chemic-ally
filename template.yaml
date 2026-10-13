@@ -128,6 +128,31 @@ Resources:
       Dockerfile: Dockerfile
 
   # ─────────────────────────────────────────────
+  # Migrator Lambda (D017, R011)
+  #
+  # Deployed from the same pushed Lambda image as DjangoFunction but runs
+  # config.migrate.handler (migrate --noinput + createcachetable) instead of
+  # the ASGI handler. Invoked by scripts/run_migrator.py from the deploy job,
+  # which only calls it when an RDS instance is actually available (D006:
+  # RDS is deliberately absent today, so no unconditional migrate step).
+  # No Metadata block needed: the image is built/pushed by CI and deployed
+  # via ``sam deploy`` with an explicit ImageUri (no ``sam build``).
+  # ─────────────────────────────────────────────
+  MigrateFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      PackageType: Image
+      Role: !GetAtt LambdaExecutionRole.Arn
+      ImageUri: !Sub "${AWS::AccountId}.dkr.ecr.${AWS::Region}.amazonaws.com/chemically:${ImageTag}"
+      ImageConfig:
+        Command:
+          - config.migrate.handler
+      VpcConfig:
+        SecurityGroupIds:
+          - !GetAtt LambdaSecurityGroup.GroupId
+        SubnetIds: !Ref LambdaSubnetIds
+
+  # ─────────────────────────────────────────────
   # Lambda Function URL (public endpoint)
   # ─────────────────────────────────────────────
   FunctionUrl:
@@ -263,3 +288,6 @@ Outputs:
   LambdaFunctionArn:
     Description: Lambda function ARN
     Value: !GetAtt DjangoFunction.Arn
+  MigrateFunctionArn:
+    Description: Migrator Lambda function ARN (R011/D017)
+    Value: !GetAtt MigrateFunction.Arn

@@ -11,6 +11,7 @@ Covers:
 from unittest.mock import MagicMock, patch
 
 from django.db import InterfaceError, OperationalError, ProgrammingError
+from django.urls import reverse
 from rest_framework.test import APIClient
 
 from hplc_simulator.exceptions import DB_UNAVAILABLE_ERROR, api_exception_handler
@@ -72,7 +73,7 @@ class TestDatabaseUnavailableWiring:
         client = APIClient()
         with patch("hplc_simulator.views.Level.objects") as mock_objects:
             mock_objects.filter.side_effect = OperationalError("boom")
-            response = client.get("/hplc/api/levels/")
+            response = client.get(reverse("hplc_simulator:api-levels"))
 
         assert response.status_code == 503
         body = response.json()
@@ -97,7 +98,7 @@ class TestSimulateViewDoesNotLeak:
             side_effect=RuntimeError("secret-detail"),
         ):
             response = client.post(
-                "/hplc/api/simulate/",
+                reverse("hplc_simulator:api-simulate"),
                 _valid_simulate_payload(),
                 format="json",
             )

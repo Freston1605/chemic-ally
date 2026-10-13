@@ -67,11 +67,29 @@ jobs:
       - name: Set up environment
         run: cp .env.example .env
 
-      - name: Django deploy checks
-        run: python manage.py check --deploy
+      # R009: run Django's deployment checklist under the production security
+      # posture (config.settings.ci) and promote every WARNING to a failure.
+      # Without --fail-level WARNING Django's default fail-level is ERROR, and
+      # every deploy check is a warning, so the step would exit 0 no matter how
+      # broken the posture is.
+      - name: Django deploy checks (production settings, fail on warning)
+        env:
+          DJANGO_SETTINGS_MODULE: config.settings.ci
+        run: python manage.py check --deploy --fail-level WARNING
+
+      # R010: a model change without a matching migration must fail CI instead
+      # of shipping silently. Runs under the job-level development settings.
+      - name: Manage check (missing migrations)
+        run: python manage.py makemigrations --check --dry-run
 
       - name: Run tests (pytest)
-        run: pytest -v
+        run: |
+          pytest -v \
+            --cov=hplc_simulator.views \
+            --cov=hplc_simulator.serializers \
+            --cov=hplc_simulator.exceptions \
+            --cov-report=term-missing \
+            --cov-fail-under=90
 
   # ─────────────────────────────────────────────
   # Stage 2: Security Scan
@@ -91,12 +109,31 @@ jobs:
         run: |
           python -m pip install --upgrade pip
           pip install -r requirements/requirements-lambda.txt
-          pip install pip-audit safety
+          # Pin the audit tool so the gate does not shift under the workflow.
+          # NOTE: OSV/PYSEC advisories evolve over time, so a blocking gate can
+          # go red without any code change. That fragility is deliberate and
+          # documented (see R008).
+          pip install pip-audit==2.10.1
+          pip install safety
 
-      - name: pip-audit (vulnerability scan)
-        run: pip-audit --format json --output pip-audit-results.json || true
+      # R008: pip-audit is THE dependency gate and must fail the pipeline.
+      # Declaration mode (-r) audits exactly what the Lambda image ships (~130
+      # deps); env mode would also audit the scan tools' own deps (pip, nltk).
+      #
+      # --ignore-vuln PYSEC-2026-3827: djangorestframework request.data bypasses
+      #   DATA_UPLOAD_MAX_MEMORY_SIZE for large multipart uploads.
+      # --ignore-vuln PYSEC-2026-3828: djangorestframework AdminRenderer
+      #   information leak on HTTP 400 responses.
+      # The DRF pin at 3.15.2 is deliberate (R020/D015). Neither advisory
+      # applies here: this API is JSON-only, accepts no file uploads, and never
+      # renders AdminRenderer.
+      - name: pip-audit (blocking dependency gate)
+        run: pip-audit -r requirements/requirements-lambda.txt --format json --output pip-audit-results.json --ignore-vuln PYSEC-2026-3827 --ignore-vuln PYSEC-2026-3828
 
-      - name: Safety check (known vulnerabilities)
+      # safety check is deprecated and exits 64; it is kept explicitly
+      # non-blocking and advisory only. R008 is satisfied by the blocking
+      # pip-audit step above.
+      - name: Safety check (known vulnerabilities, advisory only)
         run: safety check --output json > safety-results.json || true
 
       - name: Upload scan results
@@ -252,11 +289,56 @@ jobs:
           python scripts/cloudflare_deploy.py sync-records \
             --domain chemic-ally.xyz --stack chemically
 
+      # R011/D017: deliver prod migrations via the MigrateFunction Lambda.
+      # boto3 is already installed by the deploy-helpers step. The script
+      # gates on RDS availability (D006: today it prints "RDS absent (D006)
+      # - migrations skipped" and exits 0); when RDS is available it invokes
+      # the migrator Lambda and fails the job if the payload is not ok —
+      # `aws lambda invoke` exits 0 even when the function throws, so the
+      # payload must be inspected explicitly.
+      - name: Run migrator (gated on RDS availability, D006/D017)
+        run: |
+          python scripts/run_migrator.py \
+            --stack-name chemically \
+            --region ${{ env.AWS_REGION }}
+
+      # R012: real infra verification, run as its own attributable step.
+      # Replaces the old `aws lambda get-function --function-name ...-* ||
+      # echo` decoration, which could never fail the job. The script requires
+      # a healthy terminal stack status, the LambdaFunctionArn Output, an
+      # ImageTag equal to this run's tag (a normal deploy always advances it,
+      # so a stale or skipped deploy cannot pass), and Active/Successful
+      # function configs. boto3 is already installed by the deploy-helpers
+      # step. The live app probe is a separate job (live-probe) so an
+      # application regression is not confused with an
+      # infrastructure-verification failure.
       - name: Verify deployment
         run: |
-          echo "Deployment initiated. Check the AWS Lambda console for status."
-          aws lambda get-function \
-            --function-name chemically-DjangoFunction-* \
+          python scripts/verify_deploy.py \
+            --stack-name chemically \
             --region ${{ env.AWS_REGION }} \
-            --query 'Configuration.LastUpdateStatus' \
-            --output text || echo "Function still updating..."
+            --expect-tag ${{ env.IMAGE_TAG }}
+
+  # ─────────────────────────────────────────────
+  # Stage 5: Live production probe
+  # ─────────────────────────────────────────────
+  # R012: the deploy gate is not done until the real production site answers.
+  # This job runs only after the SAM deploy job (stack update + DNS sync +
+  # migrator + infra verification) succeeds and requests the deployed site:
+  # the apex must serve HTTP 200 and the trailing-slash /hplc/ route must
+  # serve HTTP 200 (scripts/live_probe.py asserts both, plus deeper
+  # browser-shaped checks, and exits non-zero — failing this job and the
+  # whole workflow run — if any check fails). A separate job keeps an
+  # application-level failure visibly distinct from an infrastructure
+  # verification failure in the run's job list.
+  live-probe:
+    name: Live production probe
+    runs-on: ubuntu-latest
+    needs: deploy
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    steps:
+      - uses: actions/checkout@v5
+
+      # live_probe.py is stdlib-only (urllib), so no pip install is needed.
+      - name: Probe deployed site (chemic-ally.xyz)
+        run: python scripts/live_probe.py
