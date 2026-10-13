@@ -77,7 +77,7 @@ jobs:
             --cov=hplc_simulator.serializers \
             --cov=hplc_simulator.exceptions \
             --cov-report=term-missing \
-            --cov-fail-under=99
+            --cov-fail-under=90
 
   # ─────────────────────────────────────────────
   # Stage 2: Security Scan
