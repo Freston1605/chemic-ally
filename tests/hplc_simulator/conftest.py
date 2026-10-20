@@ -10,6 +10,9 @@ No fixture touches the database at import time: every DB-backed fixture
 declares ``db`` explicitly so collection of the whole suite stays cheap.
 """
 
+import time
+
+import django.core.signing
 import pytest
 from django.core.cache import cache
 
@@ -144,6 +147,62 @@ def valid_simulate_payload(api_level_with_analytes):
 
 
 @pytest.fixture
+def fresh_result_token(api_level):
+    """Return a factory minting valid result tokens for ``api_level``.
+
+    S05-T03 made ``POST /hplc/api/scores/`` accept only server-signed
+    numbers, so any score test now needs a token. Minting one here -- through
+    the same ``sign_result_token`` the simulate endpoint uses, never a
+    hand-rolled HMAC -- is what lets the pre-existing score tests be UPDATED
+    in place instead of deleted, keeping their status/score_id/progress
+    assertions as the regression evidence that the write path still works.
+
+    A factory (rather than a single token) is required by the tests that
+    submit more than once: a repeated identical token is now a replay 400, so
+    each submission needs its own token.
+
+    **Each call returns a token with a DISTINCT identity.**
+    ``TimestampSigner`` stamps to whole seconds, so two calls inside one second
+    would otherwise serialize byte-identically -- same payload, same timestamp,
+    same signature -- and the replay guard (S05-T03/T04) would refuse the
+    second legitimate submission as a replay. Rewriting the token text is not
+    an option: the timestamp is inside the signed region, so a hand-shifted
+    token stops verifying. The factory therefore advances the signer's own
+    clock by the call counter, so each token is genuinely signed at a distinct
+    second and still verifies against the real verifier.
+    """
+    from hplc_simulator.tokens import sign_result_token
+
+    counter = {'n': 0}
+
+    def _make(**overrides):
+        payload = {
+            'level_id': api_level.id,
+            'total_run_time': 24.5,
+            'max_pressure_bar': 120.0,
+            'min_resolution': 1.8,
+            'critical_pair': ['Caffeine', 'Acetaminophen'],
+            'overpressure': False,
+        }
+        payload.update(overrides)
+        counter['n'] += 1
+        # Advance the clock that ``TimestampSigner.timestamp()`` reads. Django
+        # resolves ``time.time()`` from its own module global, so patching the
+        # signer instance would have no effect; the module attribute is the
+        # source of truth. The offset is small enough that every token still
+        # verifies inside ``SCORE_TOKEN_MAX_AGE_SECONDS``.
+        offset = counter['n']
+        real_time = time.time
+        django.core.signing.time.time = lambda: real_time() + offset
+        try:
+            return sign_result_token(payload)
+        finally:
+            django.core.signing.time.time = real_time
+
+    return _make
+
+
+@pytest.fixture
 def valid_score_payload(api_level):
     """Real score payload from simulator.js ``submitScore`` (< level limit)."""
     return {
@@ -154,6 +213,11 @@ def valid_score_payload(api_level):
         'max_pressure_bar': 120.0,
         'is_successful': True,
         'overpressure': False,
+        # D022: ``score``/``is_successful``/``overpressure`` above are kept so
+        # the payload still matches what simulator.js sends verbatim (they are
+        # accepted-and-ignored). ``result_token`` is the only trusted field and
+        # is overwritten per-test via the ``valid_score_payload`` factory
+        # below; the placeholder here keeps the dict shape honest.
         'mobile_phase': {
             'start_b': 5,
             'end_b': 95,

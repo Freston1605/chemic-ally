@@ -1,6 +1,7 @@
 import logging
 
 from django.core.exceptions import ValidationError
+from django.db import IntegrityError
 from django.shortcuts import get_object_or_404
 from django.views.generic import TemplateView
 from rest_framework import status
@@ -26,8 +27,73 @@ from .simulation.engine import (
     generate_chromatogram,
     calculate_score,
 )
+from .tokens import (
+    hash_result_token,
+    sign_result_token,
+    verify_result_token,
+)
 
 logger = logging.getLogger(__name__)
+
+# One response body for EVERY rejection in ScoreSubmissionView (D022).
+#
+# Tamper, expiry, replay, level mismatch and out-of-range metrics are all
+# indistinguishable to the client: a caller who can tell "bad signature" from
+# "good signature, impossible numbers" learns which part of a forgery to fix
+# next. The real reason is logged server-side instead (see ``_reject_token``),
+# so CloudWatch operators keep full diagnostic detail while the response
+# discloses nothing -- no field name, no expected value, no stack trace.
+SCORE_REJECTION_ERROR = 'Invalid or expired result token'
+
+
+def _reject_token(reason):
+    """Log ``reason`` and return the single non-disclosing 400 response.
+
+    ``reason`` is for operators only. It deliberately never reaches the
+    response body or the logs' client-visible surface.
+    """
+    logger.warning('Score submission rejected: %s', reason)
+    return Response(
+        {'error': SCORE_REJECTION_ERROR},
+        status=status.HTTP_400_BAD_REQUEST,
+    )
+
+
+def _range_check_signed_metrics(payload, level):
+    """Return a rejection reason for out-of-range signed metrics, or None.
+
+    These numbers arrived inside an authentic signature, so this is not a
+    forgery check: it is the check that the SERVER, not the client, decides
+    what a legitimate run of this level can look like. Structure mirrors the
+    model's own invariants (``UserScore.clean`` and the non-negative
+    ``CheckConstraint``s) so a signed-but-impossible result is refused with
+    the uniform 400 instead of tripping a 500 or a DB constraint later.
+
+    ``total_run_time`` must be strictly positive because it is the divisor in
+    :func:`calculate_score` and the model's ``clean()`` rejects zero.
+    ``max_pressure_bar`` must not exceed the level's own limit: a run above
+    the column limit is not a legitimate result of this level, and a signed
+    ``overpressure`` flag must not be able to launder it into an accepted one.
+    """
+    total_run_time = payload['total_run_time']
+    max_pressure_bar = payload['max_pressure_bar']
+    min_resolution = payload['min_resolution']
+    critical_pair = payload['critical_pair']
+
+    if not isinstance(total_run_time, (int, float)) or total_run_time <= 0:
+        return 'total_run_time out of range'
+    if not isinstance(min_resolution, (int, float)) or min_resolution < 0:
+        return 'min_resolution out of range'
+    if not isinstance(max_pressure_bar, (int, float)) or max_pressure_bar < 0:
+        return 'max_pressure_bar out of range'
+    if max_pressure_bar > level.max_pressure_bar:
+        return 'max_pressure_bar exceeds level limit'
+    if critical_pair is not None:
+        if not isinstance(critical_pair, list) or len(critical_pair) > 2:
+            return 'critical_pair is not a pair'
+        if any(not isinstance(name, str) for name in critical_pair):
+            return 'critical_pair members are not strings'
+    return None
 
 
 class LevelListView(APIView):
@@ -155,6 +221,25 @@ class SimulateView(APIView):
             ),
         }
 
+        # R013/D021: hand the client a server-signed summary of the run the
+        # server just computed. The token is built from the values this view
+        # produced -- notably ``level.id`` (the resolved, active level) rather
+        # than the raw request input -- so the scores endpoint later verifies
+        # numbers it can trust. The score is deliberately NOT signed: the
+        # server recomputes it from these metrics, and signing it would create
+        # a second source of truth.
+        response_data['result_token'] = sign_result_token({
+            'level_id': level.id,
+            'total_run_time': result.total_run_time,
+            'max_pressure_bar': result.max_pressure_bar,
+            'min_resolution': result.min_resolution,
+            'critical_pair': critical_pair,
+            'overpressure': result.overpressure,
+        })
+
+        # The serializer validates exactly what it will return, so the token is
+        # passed through it (and therefore appears in ``.data`` in declared
+        # field order) rather than bolted onto the response afterwards.
         response_serializer = SimulationResponseSerializer(data=response_data)
         response_serializer.is_valid(raise_exception=True)
 
@@ -165,6 +250,56 @@ class ScoreSubmissionView(APIView):
     permission_classes = [AllowAny]
 
     def post(self, request):
+        """Record a run whose numbers came from a server-signed result token.
+
+        Fixed order (D022) -- the token is verified BEFORE anything touches the
+        database. Under D006 the Level lookup raises ``OperationalError``
+        outside this view's try/except and the project's DRF handler maps it to
+        a 503, so a forged token must be refused while the request is still
+        DB-free; otherwise a tamper probe in production would observe 503
+        instead of the required 400.
+        """
+        # (a) Verify the signature first. ``request.data`` is untrusted and may
+        # not even be a mapping, so the access itself is guarded.
+        result_token = None
+        if isinstance(request.data, dict):
+            result_token = request.data.get('result_token')
+        payload = verify_result_token(result_token)
+        if payload is None:
+            return _reject_token('invalid or expired token')
+
+        # (b) ``level_id`` stays required but UNTRUSTED: it is the level the
+        # client believes it rendered. The signed value is authoritative, and
+        # a disagreement means the client is submitting against the wrong
+        # level -- refuse rather than silently scoring the signed one.
+        raw_level_id = None
+        if isinstance(request.data, dict):
+            raw_level_id = request.data.get('level_id')
+        try:
+            submitted_level_id = int(raw_level_id)
+        except (TypeError, ValueError):
+            return _reject_token('level_id missing or not an integer')
+        if submitted_level_id != payload['level_id']:
+            return _reject_token('level mismatch')
+
+        # (c) 404 for an unknown/inactive level: not a forgery signal, and the
+        # pre-existing contract for this endpoint.
+        level = get_object_or_404(
+            Level, id=payload['level_id'], is_active=True
+        )
+
+        # (d) Range-check the signed metrics before any write.
+        reason = _range_check_signed_metrics(payload, level)
+        if reason is not None:
+            return _reject_token(reason)
+
+        # (e) Defensive redundancy: step (d) already makes this unreachable,
+        # but it keeps the model's ``clean()`` invariant unviolatable if the
+        # range check is ever loosened.
+        overpressure = bool(payload['overpressure'])
+        if payload['max_pressure_bar'] > level.max_pressure_bar and not overpressure:
+            return _reject_token('overpressure flag missing')
+
         serializer = ScoreSubmissionSerializer(data=request.data)
         if not serializer.is_valid():
             return Response(
@@ -173,25 +308,50 @@ class ScoreSubmissionView(APIView):
             )
 
         data = serializer.validated_data
-        level = get_object_or_404(Level, id=data['level_id'], is_active=True)
+
+        # (f) THE authoritative values: recomputed by the server from the
+        # signed metrics. ``data['score']`` / ``data['is_successful']`` are
+        # still accepted by the serializer for backward compatibility and are
+        # never read -- that is the entire point of R014.
+        score, is_successful = calculate_score(
+            total_run_time=payload['total_run_time'],
+            min_resolution=payload['min_resolution'],
+            max_pressure_bar=payload['max_pressure_bar'],
+            pressure_limit=level.max_pressure_bar,
+            base_points=level.base_points,
+        )
 
         session_key = request.session.session_key
         if not session_key:
             request.session.create()
             session_key = request.session.session_key
 
+        # (h) Replay guard. The pre-check is the fast path; the unique column
+        # (S05-T04) is the real guarantee, and the IntegrityError branch below
+        # closes the check-then-insert race.
+        result_token_hash = hash_result_token(result_token)
+        if UserScore.objects.filter(
+            result_token_hash=result_token_hash
+        ).exists():
+            return _reject_token('replayed token')
+
+        # (g) The config objects stay descriptive request metadata: they are
+        # what the model's ``clean()`` validates and are never derived from the
+        # token (the token carries the result, not the request shape).
         score_record = UserScore(
             level=level,
             session_key=session_key,
             mobile_phase=data['mobile_phase'],
             column_config=data['column_config'],
             operation_config=data['operation_config'],
-            total_run_time=data['total_run_time'],
-            max_pressure_bar=data['max_pressure_bar'],
-            min_resolution=data['min_resolution'],
-            score=data['score'],
-            is_successful=data['is_successful'],
-            overpressure=data['overpressure'],
+            total_run_time=payload['total_run_time'],
+            max_pressure_bar=payload['max_pressure_bar'],
+            min_resolution=payload['min_resolution'],
+            critical_pair=payload['critical_pair'],
+            score=score,
+            is_successful=is_successful,
+            overpressure=overpressure,
+            result_token_hash=result_token_hash,
         )
         try:
             score_record.full_clean()
@@ -200,33 +360,42 @@ class ScoreSubmissionView(APIView):
                 {'errors': e.message_dict},
                 status=status.HTTP_400_BAD_REQUEST,
             )
-        score_record.save()
+        try:
+            score_record.save()
+        except IntegrityError:
+            # A genuine constraint bug must stay visible (D010): only a row
+            # that now holds this hash is a replay; anything else re-raises.
+            if UserScore.objects.filter(
+                result_token_hash=result_token_hash
+            ).exists():
+                return _reject_token('replayed token')
+            raise
 
         progress, created = LevelProgress.objects.get_or_create(
             level=level,
             session_key=session_key,
             defaults={
-                'best_score': data['score'],
-                'best_resolution': data['min_resolution'],
-                'best_run_time': data['total_run_time'],
+                'best_score': score,
+                'best_resolution': payload['min_resolution'],
+                'best_run_time': payload['total_run_time'],
                 'attempts': 1,
-                'completed': data['is_successful'],
+                'completed': is_successful,
             }
         )
 
         if not created:
             progress.attempts += 1
-            if data['score'] > progress.best_score:
-                progress.best_score = data['score']
-            if data['min_resolution'] > progress.best_resolution:
-                progress.best_resolution = data['min_resolution']
-            if data['is_successful']:
+            if score > progress.best_score:
+                progress.best_score = score
+            if payload['min_resolution'] > progress.best_resolution:
+                progress.best_resolution = payload['min_resolution']
+            if is_successful:
                 progress.completed = True
                 if (
-                    data['total_run_time'] < progress.best_run_time
+                    payload['total_run_time'] < progress.best_run_time
                     or progress.best_run_time == 0
                 ):
-                    progress.best_run_time = data['total_run_time']
+                    progress.best_run_time = payload['total_run_time']
             progress.save()
 
         return Response(

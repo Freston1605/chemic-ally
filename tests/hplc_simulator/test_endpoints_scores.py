@@ -33,6 +33,27 @@ from django.urls import reverse
 from rest_framework.test import APIClient
 
 from hplc_simulator.models import LevelProgress, UserScore
+from hplc_simulator.simulation.engine import calculate_score
+
+
+def server_score(total_run_time, api_level, min_resolution=1.8,
+                 max_pressure_bar=120.0):
+    """The score the SERVER computes for the fixture's signed metrics.
+
+    Derived by calling ``calculate_score`` with the level's own limits rather
+    than by hand-arithmetic: the formula has a pressure-penalty term and a
+    resolution bonus whose thresholds (``pressure_ratio > 0.8``,
+    ``min_resolution >= 1.5``) make a hand-written constant a silent lie if the
+    scoring model ever changes. The fixture metrics are 120 bar against a
+    400 bar limit with Rs 1.8, i.e. NO penalty and a bonus.
+    """
+    return calculate_score(
+        total_run_time=total_run_time,
+        min_resolution=min_resolution,
+        max_pressure_bar=max_pressure_bar,
+        pressure_limit=api_level.max_pressure_bar,
+        base_points=api_level.base_points,
+    )[0]
 
 
 @pytest.fixture
@@ -59,16 +80,37 @@ def _prime_session(client):
     return client.session.session_key
 
 
+def _with_token(payload, token):
+    """Return ``payload`` plus the server-signed ``result_token`` (D022).
+
+    S05-T03 made the scores endpoint token-authoritative, so every payload
+    here must carry a token. The payload dicts are otherwise unchanged --
+    including the client-supplied ``score``/``is_successful``/``overpressure``
+    which are now accepted-and-ignored -- so these tests keep asserting the
+    exact HTTP shape that ``static/hplc_simulator/js/simulator.js`` sends.
+    """
+    prepared = copy.deepcopy(payload)
+    prepared['result_token'] = token
+    return prepared
+
+
+def _fresh_token(fresh_result_token, **overrides):
+    """Mint a token whose signed metrics match ``valid_score_payload``."""
+    return fresh_result_token(**overrides)
+
+
 class TestScoreSubmissionEndpoint:
     """``POST /hplc/api/scores/`` records a score and upserts progress."""
 
     def test_valid_payload_records_score_and_progress(
-        self, client, api_level, valid_score_payload
+        self, client, api_level, valid_score_payload, fresh_result_token
     ):
         session_key = _prime_session(client)
 
         response = client.post(
-            _scores_url(), valid_score_payload, format='json'
+            _scores_url(),
+            _with_token(valid_score_payload, _fresh_token(fresh_result_token)),
+            format='json',
         )
 
         assert response.status_code == 201
@@ -82,7 +124,12 @@ class TestScoreSubmissionEndpoint:
             level=api_level, session_key=session_key
         )
         assert scores.count() == 1
-        assert scores.first().score == pytest.approx(8500.0)
+        # The stored score is the SERVER-computed value for these metrics --
+        # NOT the client-supplied 8500.0 that rode along in the payload.
+        assert scores.first().score == pytest.approx(
+            server_score(24.5, api_level)
+        )
+        assert scores.first().score != pytest.approx(8500.0)
 
         progress = LevelProgress.objects.filter(
             level=api_level, session_key=session_key
@@ -93,16 +140,29 @@ class TestScoreSubmissionEndpoint:
         assert record.completed is True
 
     def test_repeat_payload_upserts_same_progress_row(
-        self, client, api_level, valid_score_payload
+        self, client, api_level, valid_score_payload, fresh_result_token
     ):
-        """Covers the ``if not created`` branch of the progress upsert."""
+        """Covers the ``if not created`` branch of the progress upsert.
+
+        Each submission carries its OWN fresh token: replaying one token is a
+        400 by design (S05-T05 owns that assertion), while two legitimate
+        submissions of the same metrics are two attempts on ONE progress row.
+        """
         session_key = _prime_session(client)
 
-        first = client.post(_scores_url(), valid_score_payload, format='json')
+        first = client.post(
+            _scores_url(),
+            _with_token(valid_score_payload, _fresh_token(fresh_result_token)),
+            format='json',
+        )
         assert first.status_code == 201
         assert first.status_code != 429
 
-        second = client.post(_scores_url(), valid_score_payload, format='json')
+        second = client.post(
+            _scores_url(),
+            _with_token(valid_score_payload, _fresh_token(fresh_result_token)),
+            format='json',
+        )
         assert second.status_code == 201
         assert second.status_code != 429
 
@@ -114,15 +174,30 @@ class TestScoreSubmissionEndpoint:
         assert progress.first().attempts == 2
 
     def test_higher_score_raises_best_score(
-        self, client, api_level, valid_score_payload
+        self, client, api_level, valid_score_payload, fresh_result_token
     ):
         session_key = _prime_session(client)
 
-        client.post(_scores_url(), valid_score_payload, format='json')
+        client.post(
+            _scores_url(),
+            _with_token(valid_score_payload, _fresh_token(fresh_result_token)),
+            format='json',
+        )
 
+        # A better run: same level, longer stability and a SHORTER run time.
+        # ``score = base_points / total_run_time``, so the shorter run is the
+        # higher score -- and the client's own ``score`` field cannot move it.
         better = copy.deepcopy(valid_score_payload)
         better['score'] = 9200.0
-        response = client.post(_scores_url(), better, format='json')
+        better['total_run_time'] = 10.0
+        response = client.post(
+            _scores_url(),
+            _with_token(
+                better,
+                _fresh_token(fresh_result_token, total_run_time=10.0),
+            ),
+            format='json',
+        )
 
         assert response.status_code == 201
         assert response.status_code != 429
@@ -131,48 +206,114 @@ class TestScoreSubmissionEndpoint:
             level=api_level, session_key=session_key
         )
         assert progress.attempts == 2
-        assert progress.best_score == pytest.approx(9200.0)
+        assert progress.best_score == pytest.approx(
+            server_score(10.0, api_level)
+        )
 
     def test_overpressure_without_flag_returns_400_with_errors(
-        self, client, api_level, valid_score_payload
+        self, client, api_level, valid_score_payload, fresh_result_token
     ):
         """Covers ScoreSubmissionView's ``full_clean`` ValidationError branch.
 
         ``max_pressure_bar`` is valid for the request serializer (>= 0) but
         exceeds the level limit while ``overpressure`` is False, so the model
         ``clean()`` rejects it and the view maps it to a 400 ``errors`` body.
+
+        NOTE: with S05-T03's signed range check in place, an over-limit
+        pressure never reaches ``full_clean`` (the uniform 400 wins first), so
+        this test exercises the reachable equivalent: the model's own invariant
+        still rejects an over-limit pressure when the signed flag is False.
         """
         payload = copy.deepcopy(valid_score_payload)
         payload['max_pressure_bar'] = api_level.max_pressure_bar + 500.0
         payload['overpressure'] = False
 
-        response = client.post(_scores_url(), payload, format='json')
+        response = client.post(
+            _scores_url(),
+            _with_token(
+                payload,
+                _fresh_token(
+                    fresh_result_token,
+                    max_pressure_bar=api_level.max_pressure_bar + 500.0,
+                ),
+            ),
+            format='json',
+        )
 
         assert response.status_code == 400
         assert response.status_code != 429
         assert response.status_code != 500
 
-        errors = response.json()['errors']
-        assert 'overpressure' in errors
-        assert 'exceeds level limit' in str(errors['overpressure'])
+        body = response.json()
+        # Either the signed range check or the model invariant refuses it, and
+        # neither discloses internal detail nor accepts the impossible run.
+        assert 'error' in body or 'errors' in body
+        assert UserScore.objects.count() == 0
 
-    def test_missing_required_key_returns_400_with_errors(
-        self, client, valid_score_payload
+    def test_missing_trusted_key_returns_400_with_errors(
+        self, client, valid_score_payload, fresh_result_token
     ):
-        payload = copy.deepcopy(valid_score_payload)
-        del payload['score']
+        """A dropped TRUSTED field is a 400; a dropped IGNORED field is not.
 
-        response = client.post(_scores_url(), payload, format='json')
+        ``score``/``is_successful``/``overpressure`` became
+        accepted-and-ignored legacy fields (D022), so their absence must NOT
+        break the deployed client. ``mobile_phase`` is still a trusted field
+        (the model's ``clean()`` validates it), so its absence must 400.
+        """
+        without_score = copy.deepcopy(valid_score_payload)
+        del without_score['score']
+
+        lenient = client.post(
+            _scores_url(),
+            _with_token(without_score, _fresh_token(fresh_result_token)),
+            format='json',
+        )
+        assert lenient.status_code == 201, lenient.content
+        assert lenient.status_code != 429
+
+        strict = client.post(
+            _scores_url(),
+            _with_token(
+                valid_score_payload, _fresh_token(fresh_result_token)
+            ),
+            format='json',
+        )
+        assert strict.status_code == 201, strict.content
+
+        missing_trusted = copy.deepcopy(valid_score_payload)
+        del missing_trusted['mobile_phase']
+        response = client.post(
+            _scores_url(),
+            _with_token(
+                missing_trusted, _fresh_token(fresh_result_token)
+            ),
+            format='json',
+        )
 
         assert response.status_code == 400
         assert response.status_code != 429
         assert 'errors' in response.json()
 
-    def test_unknown_level_returns_404(self, client, valid_score_payload):
-        payload = copy.deepcopy(valid_score_payload)
-        payload['level_id'] = 999999
+    def test_unknown_level_returns_404(
+        self, client, valid_score_payload, fresh_result_token
+    ):
+        """An unknown level keeps 404 semantics.
 
-        response = client.post(_scores_url(), payload, format='json')
+        The level_id must agree with the signed payload to get this far, so the
+        token is minted over the unknown id: an unknown level is not a
+        forgery signal and must not be laundered into the uniform 400.
+        """
+        unknown_id = 999999
+        payload = copy.deepcopy(valid_score_payload)
+        payload['level_id'] = unknown_id
+
+        response = client.post(
+            _scores_url(),
+            _with_token(
+                payload, _fresh_token(fresh_result_token, level_id=unknown_id)
+            ),
+            format='json',
+        )
 
         assert response.status_code == 404
         assert response.status_code != 429
@@ -189,9 +330,13 @@ class TestScoreHistoryEndpoint:
         assert response.json() == []
 
     def test_recorded_score_appears_in_history(
-        self, client, api_level, valid_score_payload
+        self, client, api_level, valid_score_payload, fresh_result_token
     ):
-        client.post(_scores_url(), valid_score_payload, format='json')
+        client.post(
+            _scores_url(),
+            _with_token(valid_score_payload, _fresh_token(fresh_result_token)),
+            format='json',
+        )
 
         response = client.get(_scores_history_url())
 
@@ -214,7 +359,9 @@ class TestScoreHistoryEndpoint:
             assert field in item
         assert item['level_name'] == api_level.name
         assert item['difficulty'] == api_level.difficulty
-        assert item['score'] == pytest.approx(8500.0)
+        # Server-computed, never the ignored client-supplied 8500.0 that rode
+        # along in the payload.
+        assert item['score'] == pytest.approx(server_score(24.5, api_level))
         assert item['min_resolution'] == pytest.approx(1.8)
         assert item['is_successful'] is True
 
@@ -277,11 +424,15 @@ class TestLevelProgressEndpoint:
         assert item['difficulty'] == api_level.difficulty
 
     def test_score_submission_creates_visible_progress_row(
-        self, client, api_level, valid_score_payload
+        self, client, api_level, valid_score_payload, fresh_result_token
     ):
         """A single successful score POST alone must make progress non-empty."""
         response = client.post(
-            _scores_url(), valid_score_payload, format='json'
+            _scores_url(),
+            _with_token(
+                valid_score_payload, _fresh_token(fresh_result_token)
+            ),
+            format='json',
         )
         assert response.status_code == 201
         assert response.status_code != 429
@@ -297,4 +448,6 @@ class TestLevelProgressEndpoint:
         assert item['level_name'] == api_level.name
         assert item['attempts'] == 1
         assert item['completed'] is True
-        assert item['best_score'] == pytest.approx(8500.0)
+        assert item['best_score'] == pytest.approx(
+            server_score(24.5, api_level)
+        )

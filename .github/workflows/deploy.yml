@@ -72,14 +72,22 @@ jobs:
       # Without --fail-level WARNING Django's default fail-level is ERROR, and
       # every deploy check is a warning, so the step would exit 0 no matter how
       # broken the posture is.
+      # R016: base.py has no SECRET_KEY fallback and raises
+      # ImproperlyConfigured when it is unset. A per-step env var wins over the
+      # checked-out .env.example that the "Set up environment" step copies in
+      # (base.py uses load_dotenv(override=False)), so these two gates no
+      # longer depend on that file's contents.
       - name: Django deploy checks (production settings, fail on warning)
         env:
           DJANGO_SETTINGS_MODULE: config.settings.ci
+          SECRET_KEY: ci-only-insecure-key-0123456789-abcdefghij-ABCDEFGHIJ-xyz
         run: python manage.py check --deploy --fail-level WARNING
 
       # R010: a model change without a matching migration must fail CI instead
       # of shipping silently. Runs under the job-level development settings.
       - name: Manage check (missing migrations)
+        env:
+          SECRET_KEY: ci-only-insecure-key-0123456789-abcdefghij-ABCDEFGHIJ-xyz
         run: python manage.py makemigrations --check --dry-run
 
       - name: Run tests (pytest)

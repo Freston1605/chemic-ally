@@ -136,6 +136,30 @@ class UserScore(models.Model):
         help_text="Whether the run exceeded max pressure"
     )
 
+    # Identity of the server-signed result token this run was recorded from
+    # (R015). It is the sha256 hexdigest of the whole token, NOT a secret: the
+    # token is already unforgeable without the signing key, and the digest only
+    # has to be collision-free enough to enforce one submission per token.
+    #
+    # UNIQUE, not merely indexed (S05-T03/T04): the replay guard is
+    # read-then-write, so at 10x concurrency two requests bearing the same
+    # token can both pass the ``.exists()`` pre-check and both insert. The
+    # unique constraint is what makes exactly one of them win at the database
+    # level; the view catches the resulting ``IntegrityError`` and answers the
+    # loser with the same uniform 400 as any other replay.
+    #
+    # ``null=True`` is for rows written before the column existed (the
+    # migration backfills nothing): several legacy NULLs coexist under a
+    # unique index in both PostgreSQL and SQLite, so historical scores stay
+    # readable while every new row carries its token identity.
+    result_token_hash = models.CharField(
+        max_length=64,
+        unique=True,
+        null=True,
+        blank=True,
+        help_text="sha256 of the signed result token this run came from",
+    )
+
     created_at = models.DateTimeField(auto_now_add=True)
 
     class Meta:
@@ -177,7 +201,8 @@ class UserScore(models.Model):
         if self.score < 0:
             errors['score'] = 'Score cannot be negative'
         if (
-            self.max_pressure_bar > self.level.max_pressure_bar
+            self.level_id
+            and self.max_pressure_bar > self.level.max_pressure_bar
             and not self.overpressure
         ):
             errors['overpressure'] = (

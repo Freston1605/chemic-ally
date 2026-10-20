@@ -42,6 +42,52 @@ PIP_AUDIT_RUN_RE = re.compile(r"^[ \t]*run: (pip-audit .*)$", re.MULTILINE)
 # The single-line `run:` for the advisory safety step.
 SAFETY_RUN_RE = re.compile(r"^[ \t]*run: (safety .*)$", re.MULTILINE)
 
+# The exact literal that used to be the committed SECRET_KEY fallback in
+# config/settings/base.py (removed by S05-T01 for R016). Duplicated from
+# tests/test_secret_key_failfast.py on purpose: this guard must stay
+# self-contained so the CI gate file alone fails if the fallback is restored.
+OLD_SECRET_KEY_FALLBACK = "hg&fx+3xp@0sf2s^#(hi#tqrbim!q473umn#k+i!ov)55dv5v*"
+
+BASE_SETTINGS = REPO_ROOT / "config" / "settings" / "base.py"
+
+
+def _step_env_entries(workflow_text, step_name):
+    """Return the env var names a deploy.yml step declares, or None.
+
+    Parses the YAML text structurally (step boundary + ``env:`` block) with
+    regexes only -- no YAML dependency -- matching the text/regex pattern the
+    rest of this file uses. Returns None when the named step is absent.
+    """
+    start_re = re.compile(
+        r"^[ \t]*-[ \t]+name:[ \t]*" + re.escape(step_name) + r"[ \t]*$",
+        re.MULTILINE,
+    )
+    start = start_re.search(workflow_text)
+    if start is None:
+        return None
+    entries = []
+    in_env = False
+    env_indent = 0
+    for line in workflow_text[start.end():].splitlines():
+        if not line.strip():
+            continue
+        indent = len(line) - len(line.lstrip())
+        # A subsequent list item ends the step's block.
+        if re.match(r"^[ \t]*-[ \t]+name:[ \t]*\S", line):
+            break
+        if re.match(r"^[ \t]*env:[ \t]*$", line):
+            in_env = True
+            env_indent = indent
+            continue
+        if in_env:
+            if indent <= env_indent:
+                in_env = False
+                continue
+            entry = re.match(r"^[ \t]*([A-Za-z_][A-Za-z0-9_]*):", line)
+            if entry:
+                entries.append(entry.group(1))
+    return entries
+
 
 class CoverageGateWiringTests(SimpleTestCase):
     """R007: the CI test job fails below the scoped coverage threshold."""
@@ -180,7 +226,7 @@ class DeploySettingsGateTests(SimpleTestCase):
             text,
             ".github/workflows/deploy.yml must run the deploy check under "
             "config.settings.ci (not development or production) so the CI "
-            "job can load without psycopg2/RDS.",
+            "job can load without an RDS instance.",
         )
         self.assertIn(
             "python manage.py check --deploy --fail-level WARNING",
@@ -201,8 +247,76 @@ class DeploySettingsGateTests(SimpleTestCase):
             "django.db.backends.dummy",
             text,
             "config/settings/ci.py must use django.db.backends.dummy so the "
-            "CI test job (development requirements, no psycopg2) can run "
-            "check --deploy and makemigrations --check without a database.",
+            "CI test job can run check --deploy and makemigrations --check "
+            "without a database connection.",
+        )
+
+
+class R016WiringGuardTests(SimpleTestCase):
+    """R016 wiring cannot silently regress (S05-T06).
+
+    S05-T01 removed the committed SECRET_KEY fallback from base.py and gave
+    the two CI settings gates explicit per-step SECRET_KEY entries so they
+    no longer depend on the checked-out .env.example. These assertions pin
+    both halves: base.py must still raise (not default) when the key is
+    unset, and the workflow's deploy-check and makemigrations steps must
+    keep their explicit SECRET_KEY env entries or the gates would silently
+    start keying off a file that is meant to be user documentation.
+    """
+
+    def test_base_settings_have_no_hardcoded_fallback(self):
+        text = BASE_SETTINGS.read_text(encoding="utf-8")
+        self.assertNotIn(
+            OLD_SECRET_KEY_FALLBACK,
+            text,
+            "config/settings/base.py still contains the committed SECRET_KEY "
+            "fallback (R016); restore is blocked, not just discouraged.",
+        )
+
+    def test_base_settings_still_raise_improperly_configured(self):
+        text = BASE_SETTINGS.read_text(encoding="utf-8")
+        self.assertIn(
+            "from django.core.exceptions import ImproperlyConfigured",
+            text,
+        )
+        self.assertIn(
+            "SECRET_KEY environment variable must be set",
+            text,
+            "base.py must raise ImproperlyConfigured naming SECRET_KEY when "
+            "the key is unset (R016 fail-fast wiring).",
+        )
+
+    def test_deploy_check_step_declares_secret_key_env(self):
+        entries = _step_env_entries(
+            DEPLOY_WORKFLOW.read_text(encoding="utf-8"),
+            "Django deploy checks (production settings, fail on warning)",
+        )
+        self.assertIsNotNone(
+            entries,
+            "the deploy-check step must exist in deploy.yml.",
+        )
+        self.assertIn(
+            "SECRET_KEY",
+            entries,
+            "the deploy-check step must carry an explicit SECRET_KEY env "
+            "entry so it cannot silently key off .env.example (R016).",
+        )
+
+    def test_makemigrations_step_declares_secret_key_env(self):
+        entries = _step_env_entries(
+            DEPLOY_WORKFLOW.read_text(encoding="utf-8"),
+            "Manage check (missing migrations)",
+        )
+        self.assertIsNotNone(
+            entries,
+            "the makemigrations-check step must exist in deploy.yml.",
+        )
+        self.assertIn(
+            "SECRET_KEY",
+            entries,
+            "the makemigrations-check step must carry an explicit "
+            "SECRET_KEY env entry so it cannot silently key off "
+            ".env.example (R016).",
         )
 
 

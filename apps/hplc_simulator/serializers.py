@@ -159,6 +159,16 @@ class MetricsSerializer(serializers.Serializer):
 
 
 class SimulationResponseSerializer(serializers.Serializer):
+    """Response body of ``POST /hplc/api/simulate/``.
+
+    ``result_token`` (R013, D021) is the server-signed summary of the run the
+    server itself computed. Clients MUST echo this value verbatim as the
+    ``result_token`` field of ``POST /hplc/api/scores/``: it is the only
+    trusted carrier of the run's numbers, and a tampered, expired or replayed
+    token is refused there. The field is declared last so the response key
+    order stays additive for existing clients.
+    """
+
     chromatogram = serializers.DictField(
         child=serializers.ListField(child=serializers.FloatField())
     )
@@ -168,16 +178,37 @@ class SimulationResponseSerializer(serializers.Serializer):
     success = serializers.BooleanField()
     overpressure = serializers.BooleanField()
     message = serializers.CharField()
+    result_token = serializers.CharField()
 
 
 class ScoreSubmissionSerializer(serializers.Serializer):
+    """Request body of ``POST /hplc/api/scores/`` -- token-authoritative (D022).
+
+    ``result_token`` (R013/R014) is the ONLY trusted carrier of the run's
+    numbers: the view verifies it, recomputes the score server-side, and
+    stores those numbers. It is declared required, but the view checks the
+    token BEFORE consulting this serializer, so a missing token is answered by
+    the view's uniform non-disclosing 400 rather than a DRF-shaped field
+    error -- both properties (required field, uniform rejection) hold.
+
+    ``score``, ``is_successful`` and ``overpressure`` are accepted for
+    backward compatibility with the already-deployed browser client
+    (``static/hplc_simulator/js/simulator.js`` ``submitScore``, which predates
+    the token) and are **never read**: they are write-only and ignored, so a
+    stale tab keeps working while a patched one can no longer influence the
+    persisted result. ``overpressure`` is mirrored from the signed payload in
+    the view, not taken from here.
+    """
+
     level_id = serializers.IntegerField(min_value=1)
-    score = serializers.FloatField(min_value=0)
+    result_token = serializers.CharField(max_length=512)
+    # Accepted-and-ignored legacy fields (D022). Never read by the view.
+    score = serializers.FloatField(required=False, write_only=True)
+    is_successful = serializers.BooleanField(required=False, write_only=True)
+    overpressure = serializers.BooleanField(required=False, write_only=True)
     total_run_time = serializers.FloatField(min_value=0)
     min_resolution = serializers.FloatField(min_value=0)
     max_pressure_bar = serializers.FloatField(min_value=0)
-    is_successful = serializers.BooleanField()
-    overpressure = serializers.BooleanField()
     mobile_phase = serializers.JSONField()
     column_config = serializers.JSONField()
     operation_config = serializers.JSONField()

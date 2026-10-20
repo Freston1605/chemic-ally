@@ -25,6 +25,15 @@ asserts:
 Set ``CHEMICALLY_PROBE_BASE_URL`` to point the probe at a local server; it
 defaults to production. Each target prints one PASS/FAIL line; the process
 exits non-zero if any check fails.
+
+The live score-token tamper check (R013/R014) mints a real token from
+``POST /hplc/api/simulate/`` using a level id harvested from the DB-backed
+``GET /hplc/api/levels/``, submits it to ``POST /hplc/api/scores/`` (status
+recorded verbatim -- 201, or the D006 503), then submits a
+single-character-tampered copy that must be refused with the uniform
+non-disclosing 400. When the levels endpoint 503s under D006 no level id
+exists, so no token can be minted: the check then prints exactly one SKIP
+line -- never a pass, never a failure.
 """
 
 import http.cookiejar
@@ -205,6 +214,263 @@ def _validate_equilibria(status, body):
     return not problems, "; ".join(problems) or "status=200, pH solved"
 
 
+# ---------------------------------------------------------------------------
+# Live score-token tamper check (R013/R014, S05-T06)
+# ---------------------------------------------------------------------------
+
+# The browser client's simulate shape (mirrors the ``valid_simulate_payload``
+# fixture in tests/hplc_simulator/conftest.py): level_id plus mobile_phase,
+# column and operation configs.
+SIMULATE_MOBILE_PHASE = {
+    "start_b": 5,
+    "end_b": 95,
+    "ramp_time": 20,
+    "ph": 3.0,
+    "buffer_concentration_mm": 25,
+    "is_gradient": True,
+}
+SIMULATE_COLUMN = {
+    "chemistry": "C18",
+    "length_mm": 150,
+    "id_mm": 4.6,
+    "particle_size_um": 5.0,
+}
+SIMULATE_OPERATION = {
+    "flow_rate_ml_min": 1.0,
+    "temperature_c": 30,
+    "injection_volume_ul": 10,
+    "dwell_time_min": 1.0,
+}
+
+# The single uniform, non-disclosing rejection body
+# (hplc_simulator.views.SCORE_REJECTION_ERROR).
+UNIFORM_TOKEN_REJECTION = "Invalid or expired result token"
+
+# Printed verbatim (exactly one line) when the DB-backed levels endpoint is
+# the documented D006 503, so no signed token can be obtained. A SKIP is
+# neither a pass nor a failure: the tamper/replay/persistence claims stay
+# unit-proven until an environment with a database exercises them.
+SKIP_TAMPER_LINE = (
+    "SKIP: live score-token tamper check "
+    "(db-backed /hplc/api/levels/ returns 503 under D006; "
+    "no level id available) — replay/persistence claims remain unit-proven"
+)
+
+
+def _csrf_token():
+    """Return the csrftoken cookie value from the shared jar, if any.
+
+    This is exactly the harvest ``_post`` performs for the calculator form
+    pages, applied to the DRF surface: whatever the server put in the shared
+    cookie jar is what gets injected. For /hplc/api/ nothing is ever set
+    (DRF APIViews are csrf_exempt), and the probe says so instead of
+    assuming the CSRF contract.
+    """
+    for cookie in _COOKIES:
+        if cookie.name == "csrftoken":
+            return cookie.value
+    return None
+
+
+def _post_json(path, payload, csrf_token=None):
+    """POST a JSON body with an Origin header (MEM009/L001).
+
+    DRF APIViews are csrf_exempt, so no CSRF header is required; the token is
+    sent only when the server actually set the cookie, and the observation
+    is recorded in the check's output line.
+    """
+    data = json.dumps(payload).encode("utf-8")
+    request = urllib.request.Request(BASE_URL + path, data=data)
+    request.add_header("Content-Type", "application/json")
+    request.add_header("Origin", ORIGIN)
+    if csrf_token:
+        request.add_header("X-CSRFToken", csrf_token)
+    return _send(request)
+
+
+def _extract_level_id(body):
+    """First active level id from the levels payload, or None."""
+    try:
+        payload = json.loads(body)
+    except ValueError:
+        return None
+    if isinstance(payload, list):
+        levels = payload
+    elif isinstance(payload, dict):
+        levels = payload.get("results") or []
+    else:
+        return None
+    for level in levels:
+        if isinstance(level, dict) and level.get("id") is not None:
+            return level["id"]
+    return None
+
+
+def _tamper_token(token):
+    """Flip one character inside the token (index computed, not pasted)."""
+    index = len(token) // 2
+    replacement = "A" if token[index] != "A" else "B"
+    return token[:index] + replacement + token[index + 1:]
+
+
+def _validate_token_rejection(status, body, token):
+    """Assert the tampered POST got the uniform non-disclosing 400."""
+    problems = []
+    if status != 400:
+        problems.append("status={} (want 400, not 503/500)".format(status))
+    try:
+        payload = json.loads(body)
+    except ValueError:
+        payload = None
+        problems.append("body is not JSON")
+    if payload is not None:
+        if set(payload) != {"error"}:
+            problems.append(
+                "body keys={} (want exactly ['error'])".format(sorted(payload))
+            )
+        elif payload["error"] != UNIFORM_TOKEN_REJECTION:
+            problems.append(
+                "body error={!r} (want {!r})".format(
+                    payload["error"], UNIFORM_TOKEN_REJECTION
+                )
+            )
+    if token and token in body:
+        problems.append("rejection body echoes the submitted token")
+    leaked = [marker for marker in LEAK_MARKERS if marker in body]
+    if leaked:
+        problems.append("leaked marker(s): " + ", ".join(leaked))
+    return not problems, "; ".join(problems) or "uniform non-disclosing 400"
+
+
+def _live_score_token_tamper_check():
+    """Live proof that the deployed site refuses a forged result_token.
+
+    Returns True (PASS), False (FAIL), or None (SKIP: the DB-backed
+    ``/hplc/api/levels/`` endpoint returns the D006 503, so no level id --
+    and therefore no server-signed token -- can be obtained).
+    """
+    try:
+        # 1. A level id from the real, DB-backed levels endpoint. Under D006
+        #    this endpoint answers the non-leaking 503 and the check cannot
+        #    run: SKIP with exactly one line. Never invent a level id, and
+        #    never treat the 503 as a pass of the tamper contract.
+        levels_status, levels_body = _request(
+            "/hplc/api/levels/", origin=ORIGIN
+        )
+        if levels_status == 503:
+            print(SKIP_TAMPER_LINE)
+            return None
+        level_id = _extract_level_id(levels_body) if levels_status == 200 else None
+        if level_id is None:
+            print(
+                "FAIL: live score-token tamper check (levels endpoint "
+                "returned status={} with no usable level id)".format(
+                    levels_status
+                )
+            )
+            return False
+
+        # 2. Mint a real token from the live simulate endpoint, using the
+        #    browser client's payload shape and the shared-jar CSRF harvest.
+        simulate_payload = {
+            "level_id": level_id,
+            "mobile_phase": SIMULATE_MOBILE_PHASE,
+            "column": SIMULATE_COLUMN,
+            "operation": SIMULATE_OPERATION,
+        }
+        _request("/hplc/api/simulate/", origin=ORIGIN)
+        csrf = _csrf_token()
+        sim_status, sim_body = _post_json(
+            "/hplc/api/simulate/", simulate_payload, csrf_token=csrf
+        )
+        try:
+            sim = json.loads(sim_body)
+        except ValueError:
+            sim = {}
+        token = sim.get("result_token") if isinstance(sim, dict) else None
+        if sim_status != 200 or not isinstance(token, str) or not token:
+            print(
+                "FAIL: live score-token tamper check (simulate endpoint "
+                "returned status={} body={!r})".format(
+                    sim_status, sim_body[:200]
+                )
+            )
+            return False
+
+        # 3. The legitimate submission: 201 is the goal; the D006 503 is
+        #    tolerated and recorded verbatim, because token verification runs
+        #    before any DB access and the 400 below is the actual contract.
+        metrics = sim.get("metrics") or {}
+        submission = {
+            "result_token": token,
+            "level_id": level_id,
+            "total_run_time": metrics.get("total_run_time"),
+            "min_resolution": metrics.get("min_resolution"),
+            "max_pressure_bar": metrics.get("max_pressure_bar"),
+            "mobile_phase": SIMULATE_MOBILE_PHASE,
+            "column_config": SIMULATE_COLUMN,
+            "operation_config": SIMULATE_OPERATION,
+        }
+        _request("/hplc/api/scores/", origin=ORIGIN)
+        csrf = _csrf_token()
+        valid_status, valid_body = _post_json(
+            "/hplc/api/scores/", submission, csrf_token=csrf
+        )
+        if valid_status not in (201, 503):
+            print(
+                "FAIL: live score-token tamper check (valid token POST "
+                "returned status={} body={!r})".format(
+                    valid_status, valid_body[:200]
+                )
+            )
+            return False
+
+        # 4. The tamper: one flipped character must be refused with the
+        #    uniform non-disclosing 400 -- before any DB access, so this
+        #    assertion holds even in the D006-degraded production.
+        tampered = _tamper_token(token)
+        submission["result_token"] = tampered
+        tampered_status, tampered_body = _post_json(
+            "/hplc/api/scores/", submission, csrf_token=csrf
+        )
+        ok, rejection_detail = _validate_token_rejection(
+            tampered_status, tampered_body, tampered
+        )
+        if csrf:
+            csrf_note = (
+                "csrftoken cookie set by /hplc/api/; sent as X-CSRFToken"
+            )
+        else:
+            csrf_note = (
+                "no csrftoken cookie set by /hplc/api/; no CSRF header sent "
+                "-- CSRF not required, observed empirically"
+            )
+        if valid_status == 201:
+            valid_note = "accepted (201)"
+        else:
+            valid_note = "D006 503 recorded verbatim"
+        detail = (
+            "valid token POST -> {} ({}); tampered token POST -> {} ({}); "
+            "[{}]".format(
+                valid_status, valid_note, tampered_status, rejection_detail,
+                csrf_note,
+            )
+        )
+        print(
+            "{}: live score-token tamper check ({})".format(
+                "PASS" if ok else "FAIL", detail
+            )
+        )
+        return ok
+    except Exception as exc:  # noqa: BLE001 - probe reports, never raises
+        print(
+            "FAIL: live score-token tamper check (transport error: {!r})".format(
+                exc
+            )
+        )
+        return False
+
+
 def main():
     checks = (
         (
@@ -243,8 +509,26 @@ def main():
     for label, fn, validate in checks:
         all_ok = _run(label, fn, validate) and all_ok
 
+    # The tamper check runs outside ``_run``: it owns its one-line SKIP
+    # output, and a SKIP is neither a pass nor a failure.
+    skipped = False
+    tamper_outcome = _live_score_token_tamper_check()
+    if tamper_outcome is False:
+        all_ok = False
+    elif tamper_outcome is None:
+        skipped = True
+
     print("---")
-    print("RESULT: " + ("ALL PASS" if all_ok else "FAILURES PRESENT"))
+    if all_ok:
+        if skipped:
+            print(
+                "RESULT: ALL PASS "
+                "(1 check skipped: live score-token tamper check)"
+            )
+        else:
+            print("RESULT: ALL PASS")
+    else:
+        print("RESULT: FAILURES PRESENT")
     return 0 if all_ok else 1
 
 

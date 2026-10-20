@@ -14,10 +14,24 @@ import os
 import sys
 from pathlib import Path
 
+from django.core.exceptions import ImproperlyConfigured
 from dotenv import load_dotenv
 
-# Load the environment variables
-load_dotenv()
+# Load the environment variables.
+#
+# R016: anchored deliberately to THIS project's .env instead of dotenv's
+# default upward search. ``load_dotenv()`` calls ``find_dotenv()``, which walks
+# parent directories and would happily load an unrelated ``.env`` from any
+# ancestor directory — silently supplying SECRET_KEY (and any other setting)
+# from outside the checkout and defeating the missing-key guard below.
+# ``DOTENV_PATH`` lets a hermetic caller (notably the fail-fast test) point
+# dotenv elsewhere or disable it with an empty value.
+_dotenv_path = os.environ.get("DOTENV_PATH")
+if _dotenv_path is None:
+    load_dotenv(dotenv_path=Path(__file__).resolve().parent.parent.parent / ".env")
+elif _dotenv_path:
+    load_dotenv(dotenv_path=Path(_dotenv_path))
+# else: DOTENV_PATH="" disables .env loading entirely.
 
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
 BASE_DIR = Path(__file__).resolve().parent.parent.parent
@@ -28,10 +42,15 @@ sys.path.insert(0, str(BASE_DIR / 'chemically'))
 # Quick-start development settings - unsuitable for production
 # See https://docs.djangoproject.com/en/5.0/howto/deployment/checklist/
 
-# SECURITY WARNING: keep the secret key used in production secret!
-SECRET_KEY = os.environ.get(
-    "SECRET_KEY", "hg&fx+3xp@0sf2s^#(hi#tqrbim!q473umn#k+i!ov)55dv5v*"
-)
+# SECURITY WARNING: the secret key is MANDATORY and must never be committed.
+# R016: there is no hard-coded fallback. A missing SECRET_KEY must fail fast
+# rather than silently signing cookies, CSRF tokens, and result_tokens with a
+# public value. Rotation of the deployed DJANGO_SECRET_KEY is tracked
+# separately (see S05-T01 follow-up).
+_secret_key = os.environ.get("SECRET_KEY")
+if not _secret_key:
+    raise ImproperlyConfigured("SECRET_KEY environment variable must be set.")
+SECRET_KEY = _secret_key
 
 # SECURITY WARNING: don't run with debug turned on in production!
 DEBUG = False
@@ -151,6 +170,16 @@ STATICFILES_DIRS = [
 # https://docs.djangoproject.com/en/5.0/ref/settings/#default-auto-field
 
 DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
+
+
+# Score result tokens (R013, D021)
+#
+# Lifetime of the HMAC-signed ``result_token`` that POST /hplc/api/simulate/
+# hands back and POST /hplc/api/scores/ accepts. The token contract lives in
+# ``hplc_simulator.tokens``; this setting is only its clock, read at call time
+# so tests can override it (see ``tokens.verify_result_token``) and production
+# can shorten or extend the window without a code change.
+SCORE_TOKEN_MAX_AGE_SECONDS = 900
 
 
 # Django REST Framework

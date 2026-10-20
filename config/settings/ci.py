@@ -4,8 +4,9 @@ This module exists solely for the GitHub Actions ``test`` job. It reuses the
 production security posture (``config.settings.production``) so that
 ``manage.py check --deploy --fail-level WARNING`` genuinely gates on Django's
 deployment checklist, but it swaps the PostgreSQL database for Django's
-``dummy`` backend because the test job installs ``requirements/development.txt``
-only and therefore has no ``psycopg2``.
+``dummy`` backend because the CI job has no RDS instance to connect to (the
+driver itself ships via ``requirements/development.txt`` -- S05-T06's settings
+matrix boots the production module in a subprocess, which imports it).
 
 **This module is CI-only and is never deployed.** The Lambda container sets
 ``DJANGO_SETTINGS_MODULE=config.settings.production`` (see ``template.yaml``);
@@ -40,8 +41,10 @@ os.environ.setdefault("AWS_STORAGE_BUCKET_NAME", "ci-placeholder-bucket")
 
 from config.settings.production import *  # noqa: E402,F401,F403
 
-# No database is available in the CI test job: requirements/development.txt has
-# no psycopg2, and D006 leaves RDS absent in production. The dummy backend
-# satisfies Django's app loading (models import the postgres backend) and lets
-# `check --deploy` and `makemigrations --check` run without a connection.
+# No database is available in the CI test job (D006 leaves RDS absent in
+# production too), so the dummy backend lets `check --deploy` and
+# `makemigrations --check` run without a connection. The postgres driver is
+# still installed via requirements/development.txt -- S05-T06's settings
+# matrix boots config.settings.production in a subprocess, and importing the
+# models under the postgresql ENGINE requires it.
 DATABASES = {"default": {"ENGINE": "django.db.backends.dummy"}}

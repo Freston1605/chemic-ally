@@ -2,6 +2,15 @@
 pytest==8.4.0
 pytest-django==4.11.1
 pytest-cov==6.1.1
+# R016: base.py requires SECRET_KEY (no hard-coded fallback); pytest-env
+# injects the test key declared in pytest.ini's `env =` line.
+pytest-env==1.1.5
 flake8==7.0.0
 # Needed so tests can import config.asgi (the Lambda handler seam).
 mangum>=0.19
+# S05-T06 settings matrix: booting config.settings.production in a subprocess
+# imports the PostgreSQL backend (models import creates a connection), so the
+# dev/CI environment needs the driver too. Mirrors the Lambda ship set
+# (requirements/production.txt, requirements/requirements-lambda.txt), which
+# already carries psycopg2-binary; pinned here so CI cannot drift.
+psycopg2-binary==2.9.13
