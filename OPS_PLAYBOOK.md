@@ -267,6 +267,30 @@ cannot create. The edge stack is the only home of the rate limit.
 3. Verify the association exists against the live distribution -- a detached
    control must never pass silently.
 
+**Keep the distribution's identity on record.** The edge stack is handed the
+distribution's ARN once. CloudFormation updates a CloudFront distribution IN
+PLACE while its logical ID is unchanged, so the ID -- and the ARN -- survive
+an ordinary deploy; they change only if the stack is deleted and recreated.
+Capture the identity before a deploy and compare after it, so a replaced
+distribution is caught instead of silently detaching the edge association:
+
+```bash
+# BEFORE the app-stack deploy: capture the live identity
+python scripts/verify_distribution_identity.py --region us-east-2 \
+  | tee /tmp/distribution-before.txt
+BEFORE_ID=$(grep '^DISTRIBUTION_ID=' /tmp/distribution-before.txt | cut -d= -f2)
+
+# AFTER the app-stack deploy: the ID must be unchanged
+python scripts/verify_distribution_identity.py --region us-east-2 \
+  --expect-distribution-id "$BEFORE_ID"
+```
+
+The script is read-only (`cloudformation:DescribeStacks` and
+`cloudfront:ListDistributions`) and exits non-zero when the stack is not in
+a state that describes the live deployment, when the exported
+`DistributionArn` does not match the live distribution, or when the
+distribution ID changed.
+
 ```bash
 # 1. App stack (us-east-2)
 sam deploy \
