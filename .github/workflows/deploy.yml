@@ -240,6 +240,19 @@ jobs:
     needs: build
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     environment: production
+    env:
+      # The edge rule's action (M007/S02). Count measures the traffic
+      # without touching a single request - the canary mode and the safe
+      # default; Block refuses a request that trips the limit at the edge.
+      # Switching to Block is ONE reviewed change to this setting, so the
+      # edge rule can never start blocking by accident. A manual
+      # `sam deploy ... WafAction=Block` is reverted by the next CI run
+      # unless this setting is changed at the same time.
+      WAF_ACTION: Count
+      # The edge stack's name. It is declared once so the deploy step and
+      # the verification step can never disagree about which stack holds the
+      # CloudFront rate rule.
+      EDGE_STACK_NAME: chemically-edge
     steps:
       - uses: actions/checkout@v5
 
@@ -310,6 +323,54 @@ jobs:
               DjangoSecretKey=${{ secrets.DJANGO_SECRET_KEY }} \
               OriginSecret=${{ secrets.ORIGIN_SECRET }} \
             --no-fail-on-empty-changeset
+
+      # ─────────────────────────────────────────────
+      # M007/S02: the edge stack (us-east-1).
+      #
+      # AWS accepts WAFv2 web ACLs with Scope CLOUDFRONT only in us-east-1,
+      # while the app stack deploys to us-east-2 (D015/D018), so the CloudFront
+      # rate limit lives in its own stack: `chemically-edge`.
+      #
+      # The distribution ARN is read from the app stack we JUST deployed, so
+      # the association can never point at a stale distribution - the edge
+      # stack is re-deployed after every app deploy for exactly that reason.
+      # The credentials are account-wide, so only the region differs.
+      # ─────────────────────────────────────────────
+      - name: Deploy the edge stack (us-east-1)
+        run: |
+          set -euo pipefail
+
+          dist_arn=$(aws cloudformation describe-stacks \
+            --stack-name chemically \
+            --region "${{ env.AWS_REGION }}" \
+            --query "Stacks[0].Outputs[?OutputKey=='DistributionArn'].OutputValue" \
+            --output text)
+          if [ -z "$dist_arn" ] || [ "$dist_arn" = "None" ]; then
+            echo "::error::The chemically stack did not export DistributionArn; the edge stack cannot be associated with the live distribution."
+            exit 1
+          fi
+          echo "Deploying the edge stack against ${dist_arn} (action: ${WAF_ACTION})"
+
+          sam deploy \
+            --template-file edge-template.yaml \
+            --stack-name "$EDGE_STACK_NAME" \
+            --region us-east-1 \
+            --parameter-overrides \
+              DistributionArn="$dist_arn" \
+              WafRateLimit=2000 \
+              WafAction="$WAF_ACTION" \
+            --no-fail-on-empty-changeset
+
+      # A detached association is a security control that looks deployed and
+      # is not: the edge stack must be bound to the distribution that is
+      # actually live. This check is read-only and fails the job loudly.
+      - name: Verify the edge association
+        run: |
+          python scripts/verify_edge.py \
+            --app-stack-name chemically \
+            --app-region "${{ env.AWS_REGION }}" \
+            --edge-stack-name "${{ env.EDGE_STACK_NAME }}" \
+            --edge-region us-east-1
 
       # Point the apex and www records at the (possibly recreated) CloudFront
       # distribution. A rebuilt stack gets a new *.cloudfront.net domain, so
