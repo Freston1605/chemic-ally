@@ -342,6 +342,17 @@ sam deploy --template-file edge-template.yaml --stack-name chemically-edge \
 refuses it at the edge, before Lambda. The same parameter change is the
 rollback, so the canary never needs a code change.
 
+**CI owns the edge stack's action.** The deploy job sets the action from
+ONE workflow setting, `WAF_ACTION` (default `Count`), in
+`.github/workflows/deploy.yml`, and it re-deploys the edge stack after every
+app deploy (the app stack's `DistributionArn` is re-read on each run). A
+manual `sam deploy ... WafAction=Block` is therefore **reverted by the next
+CI run**, which redeploys the edge stack with `WAF_ACTION=Count`, unless
+that workflow setting is changed to `Block` at the same time. To switch the
+canary for real: change `WAF_ACTION` in the workflow and push to `main`.
+A manual deploy alone does not survive the next CI run, so a rollback that
+must hold has to be made in the workflow.
+
 **Credentials:** the deploy principal needs WAFv2 and CloudFormation
 permissions in us-east-1 in addition to us-east-2. The GitHub Actions
 credentials (`AWS_ACCESS_KEY_ID` / `AWS_SECRET_ACCESS_KEY`) are account-wide,

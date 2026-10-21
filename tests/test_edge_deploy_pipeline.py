@@ -36,6 +36,7 @@ from django.test import SimpleTestCase
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 DEPLOY_WORKFLOW = REPO_ROOT / ".github" / "workflows" / "deploy.yml"
+RUNBOOK = REPO_ROOT / "OPS_PLAYBOOK.md"
 
 APP_STACK_STEP = "SAM deploy"
 EDGE_STACK_STEP = "Deploy the edge stack (us-east-1)"
@@ -89,6 +90,25 @@ def _job_env(text):
     if following is not None:
         block = block[:following.start()]
     return block
+
+
+def _runbook_states_the_ci_reverts_a_manual_block(text):
+    """The runbook must warn that a manual Block deploy is reverted by CI.
+
+    The action is owned by ONE workflow setting, so the edge stack is
+    redeployed with that setting on every CI run. An operator who deploys
+    ``WafAction=Block`` by hand and does not read the runbook would
+    otherwise believe the rule is blocking when the next CI run has already
+    put it back into Count.
+    """
+    flat = re.sub(r"\s+", " ", text)
+    if "WafAction=Block" not in flat:
+        return False
+    if "reverted by the next CI run" not in flat:
+        return False
+    if "WAF_ACTION" not in flat:
+        return False
+    return ".github/workflows/deploy.yml" in flat
 
 
 def _edge_stack_is_deployed_after_the_app_stack(text):
@@ -253,6 +273,15 @@ class EdgeDeployPipelineTests(SimpleTestCase):
             "us-east-1 edge stack.",
         )
 
+    def test_runbook_warns_that_ci_reverts_a_manual_block_deploy(self):
+        runbook = RUNBOOK.read_text(encoding="utf-8")
+        self.assertTrue(
+            _runbook_states_the_ci_reverts_a_manual_block(runbook),
+            "the runbook must state that a manual "
+            "`sam deploy ... WafAction=Block` is reverted by the next CI "
+            "run unless the WAF_ACTION workflow setting is changed too.",
+        )
+
 
 class EdgeDeployPipelineNegativeTests(SimpleTestCase):
     """The guards above must fail when the wiring is removed or weakened.
@@ -267,6 +296,7 @@ class EdgeDeployPipelineNegativeTests(SimpleTestCase):
     def setUpClass(cls):
         super().setUpClass()
         cls.workflow = DEPLOY_WORKFLOW.read_text(encoding="utf-8")
+        cls.runbook = RUNBOOK.read_text(encoding="utf-8")
 
     def _mutate(self, old, new):
         self.assertIn(
@@ -366,4 +396,21 @@ class EdgeDeployPipelineNegativeTests(SimpleTestCase):
             _edge_verification_is_wired_to_the_script(mutated),
             "the verification guard must fail when the step stops running "
             "scripts/verify_edge.py.",
+        )
+
+    def test_runbook_without_the_revert_warning_is_detected(self):
+        flat = re.sub(r"\s+", " ", self.runbook)
+        self.assertIn(
+            "reverted by the next CI run",
+            flat,
+            "the runbook no longer contains the revert warning; the "
+            "negative case cannot be constructed and needs to be updated.",
+        )
+        mutated = flat.replace(
+            "reverted by the next CI run", "kept until the next CI run", 1
+        )
+        self.assertFalse(
+            _runbook_states_the_ci_reverts_a_manual_block(mutated),
+            "the runbook guard must fail when the warning that a manual "
+            "Block deploy is reverted by the next CI run is removed.",
         )
