@@ -19,8 +19,9 @@ These guards pin the wiring in ``.github/workflows/deploy.yml``:
   rule action;
 * the action comes from ONE workflow setting whose default is ``Count``, so
   the edge rule can never start blocking by accident;
-* the post-deploy verification runs after the edge deploy and fails the job
-  when the association is missing or points at another distribution.
+* the post-deploy verification is its OWN step directly after the edge
+  deploy, and it cannot be swallowed (``|| true`` / ``continue-on-error``),
+  so a detached association always fails the job.
 
 Following the convention of ``tests/test_ci_gate.py``, the assertions are
 expressed as named guard functions and each one is proved non-vacuous by a
@@ -64,6 +65,93 @@ def _step_body(text, step_name):
     if following is not None:
         body = body[:following.start()]
     return body
+
+
+def _step_block(text, step_name):
+    """Return the (start, end) line bounds of the named step's own block.
+
+    The block is the ``- name:`` line plus everything up to the next list
+    item, with the trailing blank lines and the comment banner that
+    belongs to the NEXT step trimmed away. Blank lines inside a ``run: |``
+    body are kept: they are part of the step.
+    """
+    lines = text.splitlines(keepends=True)
+    start = None
+    for index, line in enumerate(lines):
+        if re.match(
+            r"^[ \t]{6}-[ \t]+name:[ \t]*" + re.escape(step_name) + r"[ \t]*$",
+            line,
+        ):
+            start = index
+            break
+    if start is None:
+        return None
+    end = len(lines)
+    for index in range(start + 1, len(lines)):
+        if re.match(r"^[ \t]{6}-[ \t]", lines[index]):
+            end = index
+            break
+    while end > start + 1:
+        candidate = lines[end - 1]
+        if not candidate.strip():
+            end -= 1
+            continue
+        indent = len(candidate) - len(candidate.lstrip())
+        if indent <= 6 and candidate.lstrip().startswith("#"):
+            end -= 1
+            continue
+        break
+    return start, end
+
+
+def _next_step_item(text, after_line):
+    """Return the name of the next list item after the given line index.
+
+    Returns ``None`` when the next list item has no ``name:`` key (a
+    ``uses:`` step) or when there is no further list item.
+    """
+    lines = text.splitlines(keepends=True)
+    for index in range(after_line, len(lines)):
+        line = lines[index]
+        if not line.strip():
+            continue
+        if not re.match(r"^[ \t]{6}-[ \t]", line):
+            continue
+        match = re.match(
+            r"^[ \t]{6}-[ \t]+name:[ \t]*(\S.*?)[ \t]*$", line
+        )
+        if match is None:
+            return None
+        return match.group(1)
+    return None
+
+
+def _move_step_before(text, step_name, before_step_name):
+    """Return the workflow with ``step_name`` moved before ``before_step_name``.
+
+    This is the honest mutation for an ordering guard: renaming a step
+    away only proves the guard notices a MISSING step, while moving the
+    step proves the guard notices a step in the WRONG PLACE.
+    """
+    lines = text.splitlines(keepends=True)
+    bounds = _step_block(text, step_name)
+    if bounds is None:
+        return None
+    start, end = bounds
+    block = lines[start:end]
+    rest = lines[:start] + lines[end:]
+    target = None
+    for index, line in enumerate(rest):
+        if re.match(
+            r"^[ \t]{6}-[ \t]+name:[ \t]*" + re.escape(before_step_name)
+            + r"[ \t]*$",
+            line,
+        ):
+            target = index
+            break
+    if target is None:
+        return None
+    return "".join(rest[:target] + block + rest[target:])
 
 
 def _step_index(text, step_name):
@@ -208,6 +296,38 @@ def _edge_verification_is_wired_to_the_script(text):
     return "--edge-region us-east-1" in body
 
 
+def _edge_verification_is_the_step_directly_after_the_edge_deploy(text):
+    """The check must be the very next step: an attributable edge check.
+
+    The verifier's whole value is that the operator can read the live
+    edge mode in the CI log. A step in between (or a check folded into the
+    deploy step) is neither attributable nor guaranteed to run before the
+    job moves on to the next stage.
+    """
+    bounds = _step_block(text, EDGE_STACK_STEP)
+    if bounds is None:
+        return False
+    following = _next_step_item(text, bounds[1])
+    return following == EDGE_VERIFY_STEP
+
+
+def _edge_verification_cannot_be_swallowed(text):
+    """The check must be able to fail the job.
+
+    ``|| true`` or ``continue-on-error: true`` would turn the association
+    check into a report: the job would go green with a detached control
+    attached to a distribution that no longer serves traffic.
+    """
+    body = _step_body(text, EDGE_VERIFY_STEP)
+    if not body:
+        return False
+    if "|| true" in body:
+        return False
+    if "continue-on-error" in body:
+        return False
+    return True
+
+
 class EdgeDeployPipelineTests(SimpleTestCase):
     """M007/S02: the deploy job must deploy both stacks, in order."""
 
@@ -273,6 +393,24 @@ class EdgeDeployPipelineTests(SimpleTestCase):
             "us-east-1 edge stack.",
         )
 
+    def test_edge_verification_is_the_step_directly_after_the_edge_deploy(self):
+        self.assertTrue(
+            _edge_verification_is_the_step_directly_after_the_edge_deploy(
+                self.workflow
+            ),
+            "the association check must be its own step directly after the "
+            "edge deploy so the CI log attributes the edge state to a "
+            "named step.",
+        )
+
+    def test_edge_verification_cannot_be_swallowed(self):
+        self.assertTrue(
+            _edge_verification_cannot_be_swallowed(self.workflow),
+            "the association check must be able to fail the job: '|| true' "
+            "or 'continue-on-error' would let a detached control pass "
+            "silently.",
+        )
+
     def test_runbook_warns_that_ci_reverts_a_manual_block_deploy(self):
         runbook = RUNBOOK.read_text(encoding="utf-8")
         self.assertTrue(
@@ -308,6 +446,30 @@ class EdgeDeployPipelineNegativeTests(SimpleTestCase):
         return self.workflow.replace(old, new, 1)
 
     def test_edge_deploy_before_the_app_deploy_is_detected(self):
+        mutated = _move_step_before(
+            self.workflow, EDGE_STACK_STEP, APP_STACK_STEP
+        )
+        self.assertIsNotNone(
+            mutated,
+            "the workflow no longer contains the edge deploy step; the "
+            "negative case cannot be constructed and needs to be updated.",
+        )
+        # The mutation must MOVE the step, not delete it: otherwise the
+        # guard would fail for the wrong reason (a missing step) and the
+        # ordering assertion would never be exercised.
+        self.assertIn(EDGE_STACK_STEP, mutated)
+        self.assertLess(
+            _step_index(mutated, EDGE_STACK_STEP),
+            _step_index(mutated, APP_STACK_STEP),
+            "the mutation must place the edge step before the app deploy.",
+        )
+        self.assertFalse(
+            _edge_stack_is_deployed_after_the_app_stack(mutated),
+            "the ordering guard must fail when the edge step is moved "
+            "BEFORE the app deploy: the ARN it reads would not exist yet.",
+        )
+
+    def test_renamed_edge_step_is_detected(self):
         mutated = self._mutate(
             "      - name: Deploy the edge stack (us-east-1)",
             "      - name: Edge stack placeholder (us-east-1)",
@@ -315,7 +477,7 @@ class EdgeDeployPipelineNegativeTests(SimpleTestCase):
         self.assertFalse(
             _edge_stack_is_deployed_after_the_app_stack(mutated),
             "the ordering guard must fail when the edge step is renamed "
-            "away or moved.",
+            "away: the stack would no longer be deployed at all.",
         )
 
     def test_hardcoded_distribution_arn_is_detected(self):
@@ -396,6 +558,45 @@ class EdgeDeployPipelineNegativeTests(SimpleTestCase):
             _edge_verification_is_wired_to_the_script(mutated),
             "the verification guard must fail when the step stops running "
             "scripts/verify_edge.py.",
+        )
+
+    def test_a_step_between_the_edge_deploy_and_the_check_is_detected(self):
+        mutated = self._mutate(
+            "      - name: Verify the edge association",
+            "      - name: Announce the edge stack\n"
+            "        run: echo 'edge stack deployed'\n"
+            "\n"
+            "      - name: Verify the edge association",
+        )
+        self.assertFalse(
+            _edge_verification_is_the_step_directly_after_the_edge_deploy(
+                mutated
+            ),
+            "the adjacency guard must fail when another step is inserted "
+            "between the edge deploy and the association check.",
+        )
+
+    def test_swallowing_the_verification_is_detected(self):
+        mutated = self._mutate(
+            "          python scripts/verify_edge.py \\",
+            "          python scripts/verify_edge.py || true \\",
+        )
+        self.assertFalse(
+            _edge_verification_cannot_be_swallowed(mutated),
+            "the guard must fail when the association check is made "
+            "non-blocking with '|| true'.",
+        )
+
+    def test_continue_on_error_verification_is_detected(self):
+        mutated = self._mutate(
+            "      - name: Verify the edge association",
+            "      - name: Verify the edge association\n"
+            "        continue-on-error: true",
+        )
+        self.assertFalse(
+            _edge_verification_cannot_be_swallowed(mutated),
+            "the guard must fail when the association check is made "
+            "non-blocking with 'continue-on-error'.",
         )
 
     def test_runbook_without_the_revert_warning_is_detected(self):
