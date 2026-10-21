@@ -33,6 +33,15 @@ Description: >
 # that can be deployed in a state where it does nothing is worse than a
 # deploy that fails, because the failure is visible and the disablement is
 # not.
+#
+# NOTE ON TEMPLATE STYLE: the intrinsics below are written in their LONG
+# form (Ref:, Fn::GetAtt:, Fn::Sub:, Fn::If:, Fn::Equals:) instead of the
+# YAML short tags (!Ref, !GetAtt, ...). The short form is idiomatic, but it
+# makes the file unreadable by a plain YAML loader (PyYAML raises on the
+# unknown tags), and this template is read by tooling as well as by
+# CloudFormation -- including the verification that asserts the WafAction
+# default is Count. The deployed result is identical either way; keep the
+# long form.
 # ─────────────────────────────────────────────
 Parameters:
   DistributionArn:
@@ -67,7 +76,18 @@ Parameters:
 Conditions:
   # The rule's action is the canary switch: Count by default, Block once
   # the count metrics have been reviewed against real traffic.
-  UseBlockAction: !Equals [!Ref WafAction, "Block"]
+  #
+  # This is the ONLY condition in the stack, and it gates no resource: the
+  # web ACL and the association are created unconditionally (D015/D018/
+  # D022), so the control either exists and works or the deploy fails
+  # loudly. A Fn::FindInMap cannot replace it -- CloudFormation Mappings
+  # values must be strings or lists of strings, so a mapping cannot hold
+  # the {Block: {}} / {Count: {}} action object the rule's Action property
+  # requires.
+  UseBlockAction:
+    Fn::Equals:
+      - Ref: WafAction
+      - "Block"
 
 Resources:
   # ─────────────────────────────────────────────
@@ -85,7 +105,8 @@ Resources:
   WafWebACL:
     Type: AWS::WAFv2::WebACL
     Properties:
-      Name: !Sub "${AWS::StackName}-rate-limit"
+      Name:
+        Fn::Sub: "${AWS::StackName}-rate-limit"
       Scope: CLOUDFRONT
       Description: >-
         Edge rate limit for the HPLC API and the equilibria calculator -
@@ -104,10 +125,15 @@ Resources:
         - Name: EdgeRateLimit
           Priority: 0
           # The canary switch: Count (default) measures, Block refuses.
-          Action: !If [UseBlockAction, {Block: {}}, {Count: {}}]
+          Action:
+            Fn::If:
+              - UseBlockAction
+              - Block: {}
+              - Count: {}
           Statement:
             RateBasedStatement:
-              Limit: !Ref WafRateLimit
+              Limit:
+                Ref: WafRateLimit
               # 300 s = the 5-minute evaluation window the limit is
               # measured over (AWS WAF allowed values: 60, 120, 300, 600).
               EvaluationWindowSec: 300
@@ -144,19 +170,25 @@ Resources:
   WafWebACLAssociation:
     Type: AWS::WAFv2::WebACLAssociation
     Properties:
-      WebACLArn: !GetAtt WafWebACL.Arn
-      ResourceArn: !Ref DistributionArn
+      WebACLArn:
+        Fn::GetAtt: WafWebACL.Arn
+      ResourceArn:
+        Ref: DistributionArn
 
 Outputs:
   WebACLArn:
     Description: ARN of the edge web ACL
-    Value: !GetAtt WafWebACL.Arn
+    Value:
+      Fn::GetAtt: WafWebACL.Arn
   WebACLId:
     Description: Id of the edge web ACL
-    Value: !GetAtt WafWebACL.Id
+    Value:
+      Fn::GetAtt: WafWebACL.Id
   RateLimit:
     Description: The deployed rate limit (requests per IP per 300 s)
-    Value: !Ref WafRateLimit
+    Value:
+      Ref: WafRateLimit
   Action:
     Description: The deployed rule action (Count or Block)
-    Value: !Ref WafAction
+    Value:
+      Ref: WafAction

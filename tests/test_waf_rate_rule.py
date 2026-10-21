@@ -137,10 +137,16 @@ def _has_rate_based_rule(text):
     return True
 
 
+def _fn_if_branches(text_block):
+    """Return the branch list of the first Fn::If in ``text_block``."""
+    match = re.search(r"Fn::If:[ \t]*\n((?:[ \t]+-[^\n]*\n)+)", text_block)
+    return match.group(1) if match else ""
+
+
 def _has_parameterized_limit(text):
     """The limit must come from a reviewable template parameter."""
     acl = _resource(text, "WafWebACL")
-    if re.search(r"Limit:[ \t]*!Ref[ \t]+WafRateLimit", acl) is None:
+    if re.search(r"Limit:[ \t]*(?:\n[ \t]+)?Ref:[ \t]*WafRateLimit", acl) is None:
         return False
     parameter = _parameter(text, "WafRateLimit")
     if not parameter:
@@ -195,21 +201,51 @@ def _action_is_the_parameter_switch(text):
     to Block as a parameter change on the edge stack. A hard-coded Block
     would enforce an unproven ceiling on the first deploy; a hard-coded
     Count could never be flipped without a code change.
+
+    The switch must therefore be driven by a REAL parameter: the
+    ``WafAction`` parameter has to exist, default to Count (the canary)
+    and offer Block as an allowed value. A switch wired to a parameter
+    that does not exist, or whose default is Block, would look wired in
+    the template while the deployed behaviour is something else.
+
+    The switch is an Fn::If over a condition that compares the WafAction
+    parameter with "Block". A Fn::FindInMap cannot be used instead:
+    CloudFormation Mappings values must be strings or lists of strings,
+    so a mapping cannot produce the WAF action OBJECT ({Block: {}} /
+    {Count: {}}) that the rule's Action property requires. The condition
+    selects the action only -- no resource is gated on it (D015/D018/
+    D022), which is why the resources stay unconditional.
     """
     acl = _resource(text, "WafWebACL")
-    action = re.search(
-        r"Action:[ \t]*!If\s*\[\s*UseBlockAction\s*,"
-        r"\s*\{Block:\s*\{\}\}\s*,\s*\{Count:\s*\{\}\}\s*\]",
-        acl,
-    )
-    if action is None:
+    if re.search(r"Action:[ \t]*(?:\n[ \t]+)?Fn::If:", acl) is None:
+        return False
+    branches = _fn_if_branches(acl)
+    if re.search(r"-[ \t]+UseBlockAction[ \t]*$", branches, re.MULTILINE) is None:
+        return False
+    if re.search(r"-[ \t]+Block:[ \t]*\{\}", branches) is None:
+        return False
+    if re.search(r"-[ \t]+Count:[ \t]*\{\}", branches) is None:
         return False
     condition = re.search(
-        r"UseBlockAction:[ \t]*!Equals\s*\[!Ref[ \t]+WafAction,[ \t]*"
-        r"\"Block\"\]",
+        r"UseBlockAction:[ \t]*(?:\n[ \t]+)?Fn::Equals:[ \t]*"
+        r"(?:\n[ \t]+)?-[ \t]+Ref:[ \t]+WafAction"
+        r"(?:\n[ \t]+)?-[ \t]+\"Block\"",
         text,
     )
-    return condition is not None
+    if condition is None:
+        return False
+    # The parameter behind the switch must exist, default to Count (the
+    # canary) and keep Block reachable.
+    parameter = _parameter(text, "WafAction")
+    if not parameter:
+        return False
+    if re.search(r"Type:[ \t]*String", parameter) is None:
+        return False
+    default = re.search(r"Default:[ \t]*(\w+)", parameter)
+    if default is None or default.group(1) != DEFAULT_ACTION:
+        return False
+    allowed = _allowed_values(parameter)
+    return DEFAULT_ACTION in allowed and BLOCKING_ACTION in allowed
 
 
 def _association_binds_distribution(text):
@@ -219,14 +255,19 @@ def _association_binds_distribution(text):
         return False
     if "Type: AWS::WAFv2::WebACLAssociation" not in association:
         return False
-    if re.search(r"WebACLArn:[ \t]*!GetAtt[ \t]+WafWebACL\.Arn", association) is None:
-        return False
-    target = re.search(r"ResourceArn:[ \t]*(.+)$", association, re.MULTILINE)
-    if target is None:
+    if re.search(
+        r"WebACLArn:[ \t]*(?:\n[ \t]+)?Fn::GetAtt:[ \t]*WafWebACL\.Arn",
+        association,
+    ) is None:
         return False
     # The ARN must come from the parameter the app stack exports, so the
     # two stacks cannot drift apart (a hard-coded ARN would let them).
-    return target.group(1).strip() == "!Ref DistributionArn"
+    target = re.search(
+        r"ResourceArn:[ \t]*(?:\n[ \t]+)?Ref:[ \t]*DistributionArn[ \t]*$",
+        association,
+        re.MULTILINE,
+    )
+    return target is not None
 
 
 class WafRateRuleWiringTests(SimpleTestCase):
@@ -355,7 +396,10 @@ class WafRateRuleGuardNegativeTests(SimpleTestCase):
         )
 
     def test_hardcoded_limit_is_detected(self):
-        mutated = self._mutate("Limit: !Ref WafRateLimit", "Limit: 1000000")
+        mutated = self._mutate(
+            "              Limit:\n                Ref: WafRateLimit",
+            "              Limit: 1000000",
+        )
         self.assertFalse(
             _has_parameterized_limit(mutated),
             "the limit guard must fail when the limit is hard-coded instead "
@@ -416,7 +460,11 @@ class WafRateRuleGuardNegativeTests(SimpleTestCase):
 
     def test_hardcoded_block_action_is_detected(self):
         mutated = self._mutate(
-            "          Action: !If [UseBlockAction, {Block: {}}, {Count: {}}]",
+            "          Action:\n"
+            "            Fn::If:\n"
+            "              - UseBlockAction\n"
+            "              - Block: {}\n"
+            "              - Count: {}",
             "          Action:\n            Block: {}",
         )
         self.assertFalse(
@@ -427,13 +475,90 @@ class WafRateRuleGuardNegativeTests(SimpleTestCase):
 
     def test_hardcoded_count_action_is_detected(self):
         mutated = self._mutate(
-            "          Action: !If [UseBlockAction, {Block: {}}, {Count: {}}]",
+            "          Action:\n"
+            "            Fn::If:\n"
+            "              - UseBlockAction\n"
+            "              - Block: {}\n"
+            "              - Count: {}",
             "          Action:\n            Count: {}",
         )
         self.assertFalse(
             _action_is_the_parameter_switch(mutated),
             "the action guard must fail when the rule can never be switched "
             "to Block.",
+        )
+
+    def test_unreachable_block_position_is_detected(self):
+        """The switch must be able to reach Block.
+
+        A condition that never compares the parameter with "Block" would
+        deploy fine in Count mode and then keep counting forever -- the
+        operator would believe enforcement was on while nothing was
+        blocked.
+        """
+        mutated = self._mutate(
+            "      - Ref: WafAction\n      - \"Block\"",
+            "      - Ref: WafAction\n      - \"Never\"",
+        )
+        self.assertFalse(
+            _action_is_the_parameter_switch(mutated),
+            "the action guard must fail when the Block position of the "
+            "switch is unreachable.",
+        )
+
+    def test_non_ip_aggregation_is_detected(self):
+        """The rule must aggregate per source IP.
+
+        CloudFront-scoped rate rules aggregate per IP only; a rule that
+        counted per connection or per forwarded address would hand the
+        budget to a different key than the one the abuse ceiling assumes.
+        """
+        mutated = self._mutate(
+            "AggregateKeyType: IP", "AggregateKeyType: CONST"
+        )
+        self.assertFalse(
+            _has_rate_based_rule(mutated),
+            "the rate-rule guard must fail when the aggregation key is not "
+            "the source IP.",
+        )
+
+    def test_missing_waf_action_parameter_is_detected(self):
+        """The switch must be driven by a parameter that exists.
+
+        A switch wired to a parameter the template does not declare
+        would deploy into a fixed, unreviewed action.
+        """
+        mutated = self._mutate(
+            "  WafAction:\n    Type: String\n",
+            "  WafActionSwitch:\n    Type: String\n",
+        )
+        self.assertFalse(
+            _action_is_the_parameter_switch(mutated),
+            "the action guard must fail when the WafAction parameter the "
+            "switch reads is not declared.",
+        )
+
+    def test_block_as_the_waf_action_default_is_detected(self):
+        """The switch must ship counting; Block is opt-in."""
+        mutated = self._mutate(
+            "    Default: Count", "    Default: Block"
+        )
+        self.assertFalse(
+            _action_is_the_parameter_switch(mutated),
+            "the action guard must fail when the WafAction default is "
+            "Block: the canary must count first.",
+        )
+
+    def test_block_not_allowed_by_the_waf_action_parameter_is_detected(self):
+        """Block must stay reachable as a parameter change."""
+        mutated = self._mutate(
+            "    AllowedValues:\n      - Count\n      - Block\n",
+            "    AllowedValues:\n      - Count\n",
+        )
+        self.assertFalse(
+            _action_is_the_parameter_switch(mutated),
+            "the action guard must fail when Block is no longer an allowed "
+            "value: the switch would be unreachable.",
         )
 
     def test_removed_association_is_detected(self):
@@ -449,7 +574,7 @@ class WafRateRuleGuardNegativeTests(SimpleTestCase):
 
     def test_hardcoded_distribution_arn_is_detected(self):
         mutated = self._mutate(
-            "      ResourceArn: !Ref DistributionArn",
+            "      ResourceArn:\n        Ref: DistributionArn",
             "      ResourceArn: arn:aws:cloudfront::123456789012:distribution/"
             "E1EXAMPLE",
         )

@@ -222,6 +222,35 @@ def _edge_template_action_defaults_to_count(text):
     return "Count" in allowed and "Block" in allowed
 
 
+def _edge_template_resources_are_unconditional(text):
+    """No resource may be gated on a Condition, and no disable switch.
+
+    D015/D018/D022: the control must either be created and working or
+    the deploy must fail loudly. Gating a resource on a Condition (or
+    adding a "deploy it disabled" parameter) would let the stack come up
+    green with the rule absent -- the silent-disablement state those
+    decisions reject. The template's only condition is the Count/Block
+    action switch, which selects the rule's behaviour and gates no
+    resource; a Fn::FindInMap cannot replace it, because CloudFormation
+    Mappings values must be strings or lists of strings and cannot hold
+    the {Block: {}} / {Count: {}} action object.
+    """
+    for body in _entry_bodies(text, "Resources").values():
+        if re.search(r"^[ \t]+Condition:[ \t]*\S", body, re.MULTILINE):
+            return False
+    for parameter_name in _entry_bodies(text, "Parameters"):
+        if re.search(r"Enable|Disable", parameter_name):
+            return False
+    # The only condition may be the action switch: any other condition
+    # would be a control that can be switched off without a deploy.
+    declared = re.findall(
+        r"^  ([A-Za-z0-9_]+):[ \t]*(?:\n[ \t]+)?(?:!Equals|Fn::Equals:)",
+        text,
+        re.MULTILINE,
+    )
+    return all(name == "UseBlockAction" for name in declared)
+
+
 def _workflow_lints_both_templates(text):
     """CI must validate BOTH templates against the CloudFormation schemas.
 
@@ -322,6 +351,15 @@ class EdgeStackContractTests(SimpleTestCase):
             "on cold and the rollback is the same parameter change.",
         )
 
+    def test_edge_stack_gates_no_resource_on_a_condition(self):
+        self.assertTrue(
+            _edge_template_resources_are_unconditional(self.template),
+            "edge-template.yaml must not gate a resource on a Condition and "
+            "must not carry a disable switch: the WAF control has to be "
+            "created and working or the deploy has to fail loudly, never "
+            "come up green with the rule absent (D015/D018/D022).",
+        )
+
     def test_ci_lints_both_templates(self):
         self.assertTrue(
             _workflow_lints_both_templates(
@@ -383,6 +421,27 @@ class EdgeStackContractNegativeTests(SimpleTestCase):
             "configured in the app stack as well as in the edge stack.",
         )
 
+    def test_renamed_distribution_logical_id_is_detected(self):
+        """The distribution must not move to another logical ID.
+
+        CloudFormation replaces a resource whose logical ID changes, and a
+        replaced distribution gets a NEW id -- and therefore a NEW ARN.
+        The edge stack's imported ARN would then point at a distribution
+        that no longer serves traffic, silently detaching the WAF
+        association.
+        """
+        mutated = self._mutate(
+            self.app,
+            "  CloudFrontDistribution:\n    Type: AWS::CloudFront::Distribution",
+            "  ChemicAllyDistribution:\n    Type: AWS::CloudFront::Distribution",
+        )
+        self.assertFalse(
+            _app_stack_keeps_the_distribution(mutated),
+            "the stable-identity guard must fail when the distribution moves "
+            "to another logical ID: it would be replaced and its ARN would "
+            "change.",
+        )
+
     def test_missing_distribution_arn_output_is_detected(self):
         mutated = self._mutate(
             self.app,
@@ -437,8 +496,8 @@ class EdgeStackContractNegativeTests(SimpleTestCase):
     def test_hardcoded_distribution_in_the_edge_stack_is_detected(self):
         mutated = self._mutate(
             self.edge,
-            "      ResourceArn: !Ref DistributionArn",
-            "      ResourceArn: !Sub "
+            "      ResourceArn:\n        Ref: DistributionArn",
+            "      ResourceArn:\n        Fn::Sub: "
             '"arn:aws:cloudfront::${AWS::AccountId}:distribution/'
             '${CloudFrontDistribution}"',
         )
@@ -467,6 +526,32 @@ class EdgeStackContractNegativeTests(SimpleTestCase):
             _edge_template_action_defaults_to_count(mutated),
             "the action guard must fail when the rule would ship blocking: "
             "the canary must count first.",
+        )
+
+    def test_conditional_resource_in_the_edge_stack_is_detected(self):
+        mutated = self._mutate(
+            self.edge,
+            "    Type: AWS::WAFv2::WebACL\n",
+            "    Type: AWS::WAFv2::WebACL\n"
+            "    Condition: UseBlockAction\n",
+        )
+        self.assertFalse(
+            _edge_template_resources_are_unconditional(mutated),
+            "the edge-stack guard must fail when a resource is gated on a "
+            "Condition: the control must not be conditionally creatable.",
+        )
+
+    def test_disable_switch_parameter_in_the_edge_stack_is_detected(self):
+        mutated = self._mutate(
+            self.edge,
+            "  WafAction:\n",
+            "  EnableWaf:\n    Type: String\n    Default: \"false\"\n"
+            "  WafAction:\n",
+        )
+        self.assertFalse(
+            _edge_template_resources_are_unconditional(mutated),
+            "the edge-stack guard must fail when a disable switch is added: "
+            "the control must not ship in a state where it does nothing.",
         )
 
     def test_linting_only_the_app_template_is_detected(self):
