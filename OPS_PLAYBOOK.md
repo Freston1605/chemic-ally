@@ -2,9 +2,9 @@
 
 > **Purpose:** This document aligns engineers and operational agents on the deployment architecture, secrets management, disaster recovery, and day-to-day operational procedures for ChemicAlly.
 >
-> **Last updated:** 2026-06-08
+> **Last updated:** 2026-10-21
 > **AWS Account:** `768125641662`
-> **Region:** `us-east-2`
+> **Region:** `us-east-2` (application stack) / `us-east-1` (edge stack)
 
 ---
 
@@ -230,6 +230,9 @@ docker push 768125641662.dkr.ecr.us-east-2.amazonaws.com/chemically:manual-$(dat
 # NOTE: the OriginSecret parameter has no default on purpose -- it carries the
 # CloudFront origin header guard secret and must never be committed. Supply it
 # from the secret store (or read it back from the current stack).
+# NOTE (M007/S01): the app stack contains NO WAFv2 resource. A CloudFront-scoped
+# web ACL can only be created in us-east-1, so the edge rate limit lives in the
+# separate us-east-1 edge stack -- see the section below.
 sam deploy \
   --template-file template.yaml \
   --stack-name chemically \
@@ -239,6 +242,90 @@ sam deploy \
     ImageTag=manual-$(date +%Y%m%d%H%M%S) \
     OriginSecret="$ORIGIN_SECRET"
 ```
+
+### The two-stack deployment: app stack (us-east-2) and edge stack (us-east-1)
+
+**Why two stacks.** AWS accepts WAFv2 web ACLs with `Scope: CLOUDFRONT` only
+in us-east-1, while the application stack (Lambda, VPC, RDS) lives in
+us-east-2 (D015/D018). The edge rate limit therefore lives in its own stack,
+`chemically-edge`, and takes the live distribution's ARN as a parameter. The
+app stack (`chemically`) keeps the distribution and exports its ARN.
+
+| Stack | Template | Region | Contents |
+|-------|----------|--------|----------|
+| `chemically` | `template.yaml` | us-east-2 | Lambda, VPC, RDS, S3, the CloudFront distribution (exports `DistributionArn`) |
+| `chemically-edge` | `edge-template.yaml` | us-east-1 | the WAF web ACL and its `WebACLAssociation` (takes `DistributionArn`) |
+
+Since M007/S01 the app stack declares **no** `AWS::WAFv2` resource at all:
+declaring one in us-east-2 makes every deploy fail on a resource that region
+cannot create. The edge stack is the only home of the rate limit.
+
+**Order (never reversed):**
+1. Deploy the app stack (us-east-2). It owns the distribution and exports
+   `DistributionArn`.
+2. Deploy the edge stack (us-east-1) with that ARN.
+3. Verify the association exists against the live distribution -- a detached
+   control must never pass silently.
+
+```bash
+# 1. App stack (us-east-2)
+sam deploy \
+  --template-file template.yaml \
+  --stack-name chemically \
+  --capabilities CAPABILITY_IAM \
+  --region us-east-2 \
+  --parameter-overrides \
+    ImageTag="$IMAGE_TAG" \
+    CertificateArn="$CERTIFICATE_ARN" \
+    RDSPassword="$RDS_PASSWORD" \
+    DjangoSecretKey="$DJANGO_SECRET_KEY" \
+    OriginSecret="$ORIGIN_SECRET"
+
+# 2. Read the live distribution ARN out of the app stack's outputs
+DIST_ARN=$(aws cloudformation describe-stacks \
+  --stack-name chemically --region us-east-2 \
+  --query "Stacks[0].Outputs[?OutputKey=='DistributionArn'].OutputValue" \
+  --output text)
+
+# 3. Edge stack (us-east-1) -- Count mode (the canary)
+sam deploy \
+  --template-file edge-template.yaml \
+  --stack-name chemically-edge \
+  --region us-east-1 \
+  --parameter-overrides \
+    DistributionArn="$DIST_ARN" \
+    WafRateLimit=2000 \
+    WafAction=Count \
+  --no-fail-on-empty-changeset
+
+# 4. Verify the association exists
+EDGE_ACL=$(aws cloudformation describe-stacks \
+  --stack-name chemically-edge --region us-east-1 \
+  --query "Stacks[0].Outputs[?OutputKey=='WebACLArn'].OutputValue" \
+  --output text)
+aws wafv2 list-resources-for-web-acl --web-acl-arn "$EDGE_ACL" --region us-east-1
+```
+
+**Switching the rule from Count to Block (the canary, and the rollback):**
+
+```bash
+sam deploy --template-file edge-template.yaml --stack-name chemically-edge \
+  --region us-east-1 \
+  --parameter-overrides DistributionArn="$DIST_ARN" WafRateLimit=2000 WafAction=Block
+```
+
+`Count` measures the traffic without touching a single request; `Block`
+refuses it at the edge, before Lambda. The same parameter change is the
+rollback, so the canary never needs a code change.
+
+**Credentials:** the deploy principal needs WAFv2 and CloudFormation
+permissions in us-east-1 in addition to us-east-2. The GitHub Actions
+credentials (`AWS_ACCESS_KEY_ID` / `AWS_SECRET_ACCESS_KEY`) are account-wide,
+so the region is a parameter, not a second credential set.
+
+**Rollback:** the two stacks are independent. If the edge deploy fails, the
+site keeps serving and the in-app throttles (D016) remain the only bound --
+re-run the edge deploy. The app stack never depends on the edge stack.
 
 ### Running Django Management Commands
 

@@ -1,4 +1,7 @@
 [flake8]
 max-line-length = 88
 extend-ignore = E203, W503
-exclude = .git,__pycache__,*/migrations/*,.agents,_bmad
+# `.agents` and `agent` hold the vendored skill assets (upstream scripts, not
+# project code); `.venv` is a local virtualenv. The project's own code
+# (apps/, chemically/, config/, scripts/, tests/) stays fully linted.
+exclude = .git,__pycache__,*/migrations/*,.agents,agent,_bmad,.venv

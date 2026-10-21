@@ -1,20 +1,25 @@
-"""Durable guard on the CloudFront WAF rate-based rule (M006/S01, R026).
+"""Durable guard on the CloudFront WAF rate-based rule (R026 / THROT-01).
 
 Abuse is bounded at the edge: a CloudFront-scoped WAF web ACL holds a
-single rate-based rule that blocks a source IP once it exceeds the
-configured request budget (default 2000 requests per 5 minutes) over the
-HPLC API paths and the equilibria calculator. The web ACL is bound to the
-distribution by a ``WebACLAssociation`` in the same template, so a
-distribution can never ship without the rate rule attached.
+single rate-based rule that counts (or refuses) a source IP once it
+exceeds the configured request budget (default 2000 requests per 5
+minutes) over the HPLC API paths and the equilibria calculator.
 
-These tests assert the *wiring* in ``template.yaml`` -- the ACL resource,
-the rate-based statement and its limit, the scope-down to the two
-rate-limited path prefixes, and the association to the distribution -- and
-not any AWS-side runtime behavior (there is none to observe before a
-deploy). They read the tracked template as plain text and parse the
-resource/parameter blocks with regexes only, so no YAML dependency is
-introduced. ``SimpleTestCase`` blocks all DB access; these checks touch
-only the filesystem.
+WHERE THE RULE LIVES (M007/S01): a WAFv2 web ACL with Scope CLOUDFRONT
+can only be created in us-east-1, while the application stack deploys to
+us-east-2 (D015). The rule therefore lives in the dedicated us-east-1
+EDGE stack (``edge-template.yaml``) and is associated with the live
+distribution through the ``DistributionArn`` parameter the app stack
+exports. These guards read that edge template; the app stack's WAF-free
+contract is asserted in ``tests/test_edge_stack_contract.py``.
+
+These tests assert the *wiring* -- the ACL resource, the rate-based
+statement and its limit, the scope-down to the two rate-limited path
+prefixes, the Count/Block action switch, and the association to the
+imported distribution -- and not any AWS-side runtime behavior. They read
+the tracked template as plain text and parse the resource/parameter blocks
+with regexes only, so no YAML dependency is introduced. ``SimpleTestCase``
+blocks all DB access; these checks touch only the filesystem.
 
 The guard functions are deliberately separated from the assertions so the
 same code path can be pointed at a mutated copy of the template: the
@@ -28,7 +33,7 @@ from pathlib import Path
 from django.test import SimpleTestCase
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
-TEMPLATE = REPO_ROOT / "template.yaml"
+EDGE_TEMPLATE = REPO_ROOT / "edge-template.yaml"
 
 # The rate-limited path prefixes. Both must be counted by the rule, and
 # nothing else may be (the landing page and the simulator level pages are
@@ -41,6 +46,11 @@ EQUILIBRIA_PREFIX = "/calculate/equilibria"
 # test failure, not a surprise in production.
 EXPECTED_LIMIT = 2000
 EXPECTED_WINDOW_SEC = 300
+
+# The canary switch: the rule must ship counting, and blocking must stay
+# reachable as a parameter change.
+DEFAULT_ACTION = "Count"
+BLOCKING_ACTION = "Block"
 
 
 def _entry_bodies(text, section):
@@ -86,8 +96,25 @@ def _search_strings(acl_body):
     return re.findall(r"SearchString:[ \t]*(\S+)", acl_body)
 
 
+def _allowed_values(parameter_body):
+    """Return the values listed under a parameter's ``AllowedValues:``."""
+    values = []
+    in_list = False
+    for line in parameter_body.splitlines():
+        stripped = line.strip()
+        if stripped.startswith("AllowedValues:"):
+            in_list = True
+            continue
+        if in_list:
+            if stripped.startswith("- "):
+                values.append(stripped[2:].strip())
+            elif stripped:
+                break
+    return values
+
+
 def _has_web_acl(text):
-    """A CloudFront-scoped WAF web ACL must exist in the template."""
+    """A CloudFront-scoped WAF web ACL must exist in the edge template."""
     acl = _resource(text, "WafWebACL")
     if not acl:
         return False
@@ -98,11 +125,9 @@ def _has_web_acl(text):
 
 
 def _has_rate_based_rule(text):
-    """The ACL must hold a rate-based rule that blocks, per IP, over 300 s."""
+    """The ACL must hold a rate-based rule, per IP, over 300 s."""
     acl = _resource(text, "WafWebACL")
     if "RateBasedStatement:" not in acl:
-        return False
-    if "Block: {}" not in acl:
         return False
     if re.search(r"AggregateKeyType:[ \t]*IP", acl) is None:
         return False
@@ -143,8 +168,52 @@ def _scope_covers(text):
     return len(strings) == 2
 
 
+def _scope_uses_text_transformations(text):
+    """The byte-match statements must use the current WAFv2 schema shape.
+
+    The pre-2019 API took a singular ``TextTransformation: NONE``. The
+    published CloudFormation schema requires a ``TextTransformations``
+    LIST of ``{Priority, Type}`` objects, and the singular form is
+    rejected by the resource provider -- so the old shape would have
+    failed the deploy with a schema error that reads like a template bug.
+    """
+    acl = _resource(text, "WafWebACL")
+    if "TextTransformations:" not in acl:
+        return False
+    if re.search(r"TextTransformation:[ \t]", acl) is not None:
+        # The singular form must not reappear anywhere.
+        return False
+    if len(re.findall(r"Type:[ \t]*NONE", acl)) < 2:
+        return False
+    return len(re.findall(r"Priority:[ \t]*0", acl)) >= 2
+
+
+def _action_is_the_parameter_switch(text):
+    """The rule's action must be the WafAction parameter, not a hard-coded one.
+
+    The rule ships in Count mode (the canary) and must be able to switch
+    to Block as a parameter change on the edge stack. A hard-coded Block
+    would enforce an unproven ceiling on the first deploy; a hard-coded
+    Count could never be flipped without a code change.
+    """
+    acl = _resource(text, "WafWebACL")
+    action = re.search(
+        r"Action:[ \t]*!If\s*\[\s*UseBlockAction\s*,"
+        r"\s*\{Block:\s*\{\}\}\s*,\s*\{Count:\s*\{\}\}\s*\]",
+        acl,
+    )
+    if action is None:
+        return False
+    condition = re.search(
+        r"UseBlockAction:[ \t]*!Equals\s*\[!Ref[ \t]+WafAction,[ \t]*"
+        r"\"Block\"\]",
+        text,
+    )
+    return condition is not None
+
+
 def _association_binds_distribution(text):
-    """A WebACLAssociation must bind the ACL to the CloudFront distribution."""
+    """A WebACLAssociation must bind the ACL to the imported distribution."""
     association = _resource(text, "WafWebACLAssociation")
     if not association:
         return False
@@ -155,10 +224,9 @@ def _association_binds_distribution(text):
     target = re.search(r"ResourceArn:[ \t]*(.+)$", association, re.MULTILINE)
     if target is None:
         return False
-    # The ARN must be built from the distribution resource itself, so the
-    # ACL and the distribution cannot drift apart (a hard-coded ARN would
-    # let them).
-    return "CloudFrontDistribution" in target.group(1)
+    # The ARN must come from the parameter the app stack exports, so the
+    # two stacks cannot drift apart (a hard-coded ARN would let them).
+    return target.group(1).strip() == "!Ref DistributionArn"
 
 
 class WafRateRuleWiringTests(SimpleTestCase):
@@ -167,20 +235,20 @@ class WafRateRuleWiringTests(SimpleTestCase):
     @classmethod
     def setUpClass(cls):
         super().setUpClass()
-        cls.template = TEMPLATE.read_text(encoding="utf-8")
+        cls.template = EDGE_TEMPLATE.read_text(encoding="utf-8")
 
-    def test_template_declares_cloudfront_scoped_web_acl(self):
+    def test_edge_template_declares_cloudfront_scoped_web_acl(self):
         self.assertTrue(
             _has_web_acl(self.template),
-            "template.yaml must declare an AWS::WAFv2::WebACL with "
+            "edge-template.yaml must declare an AWS::WAFv2::WebACL with "
             "Scope CLOUDFRONT so abuse is bounded at the edge (R026).",
         )
 
     def test_web_acl_holds_a_rate_based_rule(self):
         self.assertTrue(
             _has_rate_based_rule(self.template),
-            "the WAF web ACL must hold a rate-based rule that blocks, "
-            "aggregates per source IP, and is evaluated over "
+            "the WAF web ACL must hold a rate-based rule that aggregates "
+            "per source IP and is evaluated over "
             f"{EXPECTED_WINDOW_SEC} s (R026).",
         )
 
@@ -200,12 +268,29 @@ class WafRateRuleWiringTests(SimpleTestCase):
             "else, so ordinary browsing is never throttled (R026).",
         )
 
-    def test_web_acl_is_associated_with_the_distribution(self):
+    def test_scope_uses_the_current_text_transformation_shape(self):
+        self.assertTrue(
+            _scope_uses_text_transformations(self.template),
+            "the byte-match statements must use the TextTransformations "
+            "list of {Priority, Type} objects; the singular "
+            "TextTransformation form is rejected by the WAFv2 resource "
+            "provider (R026).",
+        )
+
+    def test_rule_action_is_the_count_block_parameter_switch(self):
+        self.assertTrue(
+            _action_is_the_parameter_switch(self.template),
+            "the rule's action must be driven by the WafAction parameter "
+            "(Count by default, Block reachable) so the canary is a "
+            "parameter change and the rollback is the same change (R026).",
+        )
+
+    def test_web_acl_is_associated_with_the_imported_distribution(self):
         self.assertTrue(
             _association_binds_distribution(self.template),
-            "template.yaml must declare an AWS::WAFv2::WebACLAssociation "
-            "that binds the web ACL to the CloudFrontDistribution, so the "
-            "distribution cannot ship without the rate rule (R026).",
+            "edge-template.yaml must declare an AWS::WAFv2::WebACLAssociation "
+            "that binds the web ACL to the DistributionArn parameter, so the "
+            "edge stack cannot drift from the live distribution (R026).",
         )
 
 
@@ -221,7 +306,7 @@ class WafRateRuleGuardNegativeTests(SimpleTestCase):
     @classmethod
     def setUpClass(cls):
         super().setUpClass()
-        cls.template = TEMPLATE.read_text(encoding="utf-8")
+        cls.template = EDGE_TEMPLATE.read_text(encoding="utf-8")
 
     def _mutate(self, old, new):
         self.assertIn(
@@ -257,13 +342,6 @@ class WafRateRuleGuardNegativeTests(SimpleTestCase):
             _has_rate_based_rule(mutated),
             "the rate-rule guard must fail when the rate-based statement "
             "is gone.",
-        )
-
-    def test_non_blocking_action_is_detected(self):
-        mutated = self._mutate("            Block: {}", "            Allow: {}")
-        self.assertFalse(
-            _has_rate_based_rule(mutated),
-            "the rate-rule guard must fail when the rule no longer blocks.",
         )
 
     def test_wrong_evaluation_window_is_detected(self):
@@ -322,6 +400,42 @@ class WafRateRuleGuardNegativeTests(SimpleTestCase):
             "the two rate-limited prefixes.",
         )
 
+    def test_singular_text_transformation_is_detected(self):
+        """The pre-2019 singular form must be caught before a deploy does."""
+        mutated = self._mutate(
+            "                        TextTransformations:\n"
+            "                          - Priority: 0\n"
+            "                            Type: NONE",
+            "                        TextTransformation: NONE",
+        )
+        self.assertFalse(
+            _scope_uses_text_transformations(mutated),
+            "the text-transformation guard must fail when the singular "
+            "TextTransformation form reappears.",
+        )
+
+    def test_hardcoded_block_action_is_detected(self):
+        mutated = self._mutate(
+            "          Action: !If [UseBlockAction, {Block: {}}, {Count: {}}]",
+            "          Action:\n            Block: {}",
+        )
+        self.assertFalse(
+            _action_is_the_parameter_switch(mutated),
+            "the action guard must fail when the rule's action is hard-coded "
+            "instead of driven by the WafAction parameter.",
+        )
+
+    def test_hardcoded_count_action_is_detected(self):
+        mutated = self._mutate(
+            "          Action: !If [UseBlockAction, {Block: {}}, {Count: {}}]",
+            "          Action:\n            Count: {}",
+        )
+        self.assertFalse(
+            _action_is_the_parameter_switch(mutated),
+            "the action guard must fail when the rule can never be switched "
+            "to Block.",
+        )
+
     def test_removed_association_is_detected(self):
         mutated = self._mutate(
             "    Type: AWS::WAFv2::WebACLAssociation",
@@ -335,13 +449,13 @@ class WafRateRuleGuardNegativeTests(SimpleTestCase):
 
     def test_hardcoded_distribution_arn_is_detected(self):
         mutated = self._mutate(
-            'arn:aws:cloudfront::${AWS::AccountId}:distribution/'
-            "${CloudFrontDistribution}",
-            "arn:aws:cloudfront::123456789012:distribution/E1EXAMPLE",
+            "      ResourceArn: !Ref DistributionArn",
+            "      ResourceArn: arn:aws:cloudfront::123456789012:distribution/"
+            "E1EXAMPLE",
         )
         self.assertFalse(
             _association_binds_distribution(mutated),
             "the association guard must fail when the resource ARN is a "
-            "hard-coded literal instead of a reference to the "
-            "CloudFrontDistribution resource.",
+            "hard-coded literal instead of a reference to the imported "
+            "DistributionArn parameter.",
         )

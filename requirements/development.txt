@@ -14,3 +14,9 @@ mangum>=0.19
 # (requirements/production.txt, requirements/requirements-lambda.txt), which
 # already carries psycopg2-binary; pinned here so CI cannot drift.
 psycopg2-binary==2.9.13
+# M007/S01: cfn-lint validates template.yaml and edge-template.yaml against
+# the published CloudFormation resource schemas. The WAFv2 web ACL could not
+# be deployed from the M006 shape (the singular TextTransformation form and
+# an invalid Description), and only a schema check catches that before a
+# deploy does. Pinned exactly so the gate cannot shift under the workflow.
+cfn-lint==1.58.0

@@ -43,6 +43,15 @@ jobs:
       - name: Lint (Flake8)
         run: flake8 .
 
+      # M007/S01: the app stack and the us-east-1 edge stack are both
+      # CloudFormation templates, and a schema error in either one only
+      # shows up as an opaque CloudFormation failure at deploy time (the
+      # M006 WAF shape carried a singular TextTransformation and an invalid
+      # ACL Description). cfn-lint validates both against the published
+      # resource schemas before anything is deployed.
+      - name: Lint CloudFormation templates (cfn-lint)
+        run: cfn-lint template.yaml edge-template.yaml
+
   # ─────────────────────────────────────────────
   # Stage 1b: Test (independent of lint)
   # ─────────────────────────────────────────────
