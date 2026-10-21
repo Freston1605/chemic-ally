@@ -12,9 +12,13 @@ Each test pins one gate:
 * the web ACL's own resource list not containing the live distribution ->
   non-zero;
 * a missing WebACLAssociation resource -> non-zero;
+* a missing app stack / edge stack -> non-zero;
 * a missing DistributionArn output (app-stack drift) -> non-zero;
 * a missing WebACLArn output (edge-stack drift) -> non-zero;
-* an unhealthy edge stack (ROLLBACK_COMPLETE / *_IN_PROGRESS) -> non-zero;
+* an unhealthy stack (ROLLBACK_COMPLETE / *_IN_PROGRESS / *_FAILED) ->
+  non-zero, for the app stack as well as the edge stack;
+* an unreportable live mode (missing / unknown action, missing or
+  non-numeric limit) -> non-zero;
 * the live action reported: Count (canary) and Block (enforcement).
 
 scripts/ is not a package, so the module is loaded with
@@ -84,6 +88,22 @@ def _edge_stack(
     }
 
 
+def _default_resources(association_arn):
+    """The edge stack's resources as CloudFormation reports them."""
+    return [
+        {
+            "LogicalResourceId": "WafWebACL",
+            "ResourceType": "AWS::WAFv2::WebACL",
+            "PhysicalResourceId": WEB_ACL_ARN,
+        },
+        {
+            "LogicalResourceId": "WafWebACLAssociation",
+            "ResourceType": "AWS::WAFv2::WebACLAssociation",
+            "PhysicalResourceId": association_arn,
+        },
+    ]
+
+
 class FakeClients:
     """Fake client factory covering cloudformation + wafv2 for the verifier."""
 
@@ -93,6 +113,9 @@ class FakeClients:
         edge_stack=None,
         association_arn=None,
         listed_arns=None,
+        resources=None,
+        app_stack_missing=False,
+        edge_stack_missing=False,
     ):
         self._app_stack = app_stack or _app_stack()
         self._edge_stack = edge_stack or _edge_stack()
@@ -102,29 +125,29 @@ class FakeClients:
         self._listed_arns = (
             listed_arns if listed_arns is not None else [DISTRIBUTION_ARN]
         )
+        self._resources = (
+            resources
+            if resources is not None
+            else _default_resources(self._association_arn)
+        )
+        self._app_stack_missing = app_stack_missing
+        self._edge_stack_missing = edge_stack_missing
         self.requested_regions = []
 
     def __call__(self, service, region_name=None):
         self.requested_regions.append((service, region_name))
         if service == "cloudformation":
             if region_name == APP_REGION:
+                stacks = [] if self._app_stack_missing else [self._app_stack]
                 return SimpleNamespace(
-                    describe_stacks=lambda StackName: {"Stacks": [self._app_stack]}
+                    describe_stacks=lambda StackName: {"Stacks": stacks}
                 )
             assert region_name == EDGE_REGION
+            stacks = [] if self._edge_stack_missing else [self._edge_stack]
             return SimpleNamespace(
-                describe_stacks=lambda StackName: {"Stacks": [self._edge_stack]},
+                describe_stacks=lambda StackName: {"Stacks": stacks},
                 describe_stack_resources=lambda StackName: {
-                    "StackResources": [
-                        {
-                            "LogicalResourceId": "WafWebACL",
-                            "PhysicalResourceId": WEB_ACL_ARN,
-                        },
-                        {
-                            "LogicalResourceId": "WafWebACLAssociation",
-                            "PhysicalResourceId": self._association_arn,
-                        },
-                    ]
+                    "StackResources": self._resources
                 },
             )
         if service == "wafv2":
@@ -172,6 +195,62 @@ class VerifyEdgeTests(SimpleTestCase):
         )
         self.assertEqual(result, 0)
 
+    def test_association_is_found_by_resource_type(self):
+        """A renamed logical resource must not hide the association."""
+        resources = [
+            {
+                "LogicalResourceId": "SomeOtherName",
+                "ResourceType": "AWS::WAFv2::WebACLAssociation",
+                "PhysicalResourceId": DISTRIBUTION_ARN,
+            }
+        ]
+        clients = FakeClients(resources=resources)
+        result = verify_edge.run(
+            APP_STACK, APP_REGION, EDGE_STACK, EDGE_REGION,
+            client_factory=clients,
+        )
+        self.assertEqual(result, 0)
+
+    def test_wrapped_association_arn_is_accepted(self):
+        """CloudFormation may report the association id wrapped in an ARN."""
+        wrapped = (
+            "arn:aws:cloudfront::768125641662:distribution/E1EXAMPLE/"
+            "association/abc"
+        )
+        clients = FakeClients(association_arn=wrapped)
+        result = verify_edge.run(
+            APP_STACK, APP_REGION, EDGE_STACK, EDGE_REGION,
+            client_factory=clients,
+        )
+        self.assertEqual(result, 0)
+
+    def test_action_is_read_from_outputs_when_parameters_are_absent(self):
+        """A stack that only exports Action/RateLimit is still reportable."""
+        edge_stack = _edge_stack(
+            outputs=[
+                {"OutputKey": "WebACLArn", "OutputValue": WEB_ACL_ARN},
+                {"OutputKey": "Action", "OutputValue": "Block"},
+                {"OutputKey": "RateLimit", "OutputValue": "2000"},
+            ],
+            parameters=[],
+        )
+        clients = FakeClients(edge_stack=edge_stack)
+        result = verify_edge.run(
+            APP_STACK, APP_REGION, EDGE_STACK, EDGE_REGION,
+            client_factory=clients,
+        )
+        self.assertEqual(result, 0)
+
+    def test_rolled_back_edge_stack_is_reported_but_still_verified(self):
+        """UPDATE_ROLLBACK_COMPLETE describes the last GOOD deploy."""
+        edge_stack = _edge_stack(stack_status="UPDATE_ROLLBACK_COMPLETE")
+        clients = FakeClients(edge_stack=edge_stack)
+        result = verify_edge.run(
+            APP_STACK, APP_REGION, EDGE_STACK, EDGE_REGION,
+            client_factory=clients,
+        )
+        self.assertEqual(result, 0)
+
 
 class VerifyEdgeFailureTests(SimpleTestCase):
     """Every way the edge control can be detached must fail loudly."""
@@ -193,6 +272,26 @@ class VerifyEdgeFailureTests(SimpleTestCase):
             FakeClients(listed_arns=[OTHER_DISTRIBUTION_ARN])
         )
 
+    def test_missing_association_resource_is_detected(self):
+        resources = [
+            {
+                "LogicalResourceId": "WafWebACL",
+                "ResourceType": "AWS::WAFv2::WebACL",
+                "PhysicalResourceId": WEB_ACL_ARN,
+            }
+        ]
+        self._assert_fails(FakeClients(resources=resources))
+
+    def test_association_without_physical_id_is_detected(self):
+        resources = [
+            {
+                "LogicalResourceId": "WafWebACLAssociation",
+                "ResourceType": "AWS::WAFv2::WebACLAssociation",
+                "PhysicalResourceId": "",
+            }
+        ]
+        self._assert_fails(FakeClients(resources=resources))
+
     def test_missing_distribution_arn_output_is_detected(self):
         self._assert_fails(
             FakeClients(app_stack=_app_stack(outputs=[]))
@@ -202,6 +301,12 @@ class VerifyEdgeFailureTests(SimpleTestCase):
         self._assert_fails(
             FakeClients(edge_stack=_edge_stack(outputs=[]))
         )
+
+    def test_missing_app_stack_is_detected(self):
+        self._assert_fails(FakeClients(app_stack_missing=True))
+
+    def test_missing_edge_stack_is_detected(self):
+        self._assert_fails(FakeClients(edge_stack_missing=True))
 
     def test_unhealthy_edge_stack_is_detected(self):
         self._assert_fails(
@@ -217,6 +322,51 @@ class VerifyEdgeFailureTests(SimpleTestCase):
         self._assert_fails(
             FakeClients(edge_stack=_edge_stack(stack_status="CREATE_FAILED"))
         )
+
+    def test_unhealthy_app_stack_is_detected(self):
+        self._assert_fails(
+            FakeClients(app_stack=_app_stack(stack_status="ROLLBACK_COMPLETE"))
+        )
+
+    def test_unknown_action_is_detected(self):
+        """An unreportable live mode is a failure, not an 'unknown'."""
+        edge_stack = _edge_stack(parameters=[])
+        self._assert_fails(FakeClients(edge_stack=edge_stack))
+
+    def test_invalid_action_is_detected(self):
+        edge_stack = _edge_stack(
+            parameters=[
+                {"ParameterKey": "WafAction", "ParameterValue": "Deny"},
+                {"ParameterKey": "WafRateLimit", "ParameterValue": "2000"},
+            ]
+        )
+        self._assert_fails(FakeClients(edge_stack=edge_stack))
+
+    def test_missing_rate_limit_is_detected(self):
+        edge_stack = _edge_stack(
+            parameters=[
+                {"ParameterKey": "WafAction", "ParameterValue": "Count"},
+            ]
+        )
+        self._assert_fails(FakeClients(edge_stack=edge_stack))
+
+    def test_non_numeric_rate_limit_is_detected(self):
+        edge_stack = _edge_stack(
+            parameters=[
+                {"ParameterKey": "WafAction", "ParameterValue": "Count"},
+                {"ParameterKey": "WafRateLimit", "ParameterValue": "many"},
+            ]
+        )
+        self._assert_fails(FakeClients(edge_stack=edge_stack))
+
+    def test_non_positive_rate_limit_is_detected(self):
+        edge_stack = _edge_stack(
+            parameters=[
+                {"ParameterKey": "WafAction", "ParameterValue": "Count"},
+                {"ParameterKey": "WafRateLimit", "ParameterValue": "0"},
+            ]
+        )
+        self._assert_fails(FakeClients(edge_stack=edge_stack))
 
 
 class VerifyEdgeCliTests(SimpleTestCase):
@@ -246,3 +396,13 @@ class VerifyEdgeCliTests(SimpleTestCase):
             client_factory=FakeClients(),
         )
         self.assertEqual(code, 0)
+
+    def test_main_defaults_target_the_two_stacks(self):
+        """The CLI defaults must be the app stack (us-east-2) and the edge
+        stack (us-east-1) the deploy job actually creates."""
+        clients = FakeClients()
+        code = verify_edge.main([], client_factory=clients)
+        self.assertEqual(code, 0)
+        self.assertIn(("cloudformation", "us-east-2"), clients.requested_regions)
+        self.assertIn(("cloudformation", "us-east-1"), clients.requested_regions)
+        self.assertIn(("wafv2", "us-east-1"), clients.requested_regions)

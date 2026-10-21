@@ -16,10 +16,12 @@ distribution that is actually live:
 * the app stack's ``DistributionArn`` output is the authority on which
   distribution serves traffic (it is built from the distribution resource
   itself, never from a literal);
-* the edge stack's ``WebACLAssociation`` must reference exactly that ARN;
-* the web ACL's own resource list must contain exactly that ARN;
+* the edge stack's ``WebACLAssociation`` resource must reference exactly
+  that ARN;
+* the web ACL's own resource list must contain that ARN;
 * the rule's live action and limit are reported, so the operator can see
-  whether the canary (``Count``) or enforcement (``Block``) is in force.
+  whether the canary (``Count``) or enforcement (``Block``) is in force --
+  and an unreportable mode is a failure, not an ``unknown``.
 
 Everything here is read-only: it calls ``cloudformation:DescribeStacks``,
 ``cloudformation:DescribeStackResources`` and ``wafv2:ListResourcesForWebACL``.
@@ -51,8 +53,16 @@ ACCEPTABLE_STACK_STATUSES = {
 UNHEALTHY_STATUS_SUFFIXES = ("_FAILED", "_IN_PROGRESS")
 UNHEALTHY_STATUSES = {"DELETE_COMPLETE", "ROLLBACK_COMPLETE"}
 
-# The logical name of the association resource inside the edge stack.
+# The association resource inside the edge stack. It is located by its
+# RESOURCE TYPE first (the template's logical name is an implementation
+# detail that may be renamed); the logical name is only a fallback for
+# clients that do not report the type.
 ASSOCIATION_RESOURCE_TYPE = "AWS::WAFv2::WebACLAssociation"
+ASSOCIATION_LOGICAL_NAME = "WafWebACLAssociation"
+
+# The rule action the edge template allows. Anything else means the stack
+# drifted and the live mode cannot be reported to the operator.
+VALID_ACTIONS = {"Count", "Block"}
 
 
 def _stack_outputs(stack):
@@ -70,13 +80,20 @@ def _stack_parameters(stack):
 
 
 def _stack_resources(cfn_client, stack_name):
-    """Return the stack's resources as {logical name: physical id}."""
+    """Return the stack's resources as a list of raw resource dicts."""
     response = cfn_client.describe_stack_resources(StackName=stack_name)
-    resources = response.get("StackResources", []) or []
-    return {
-        resource.get("LogicalResourceId"): resource.get("PhysicalResourceId")
-        for resource in resources
-    }
+    return list(response.get("StackResources", []) or [])
+
+
+def _find_association(resources):
+    """Return the WebACLAssociation resource, or None when there is none."""
+    for resource in resources:
+        if resource.get("ResourceType") == ASSOCIATION_RESOURCE_TYPE:
+            return resource
+    for resource in resources:
+        if resource.get("LogicalResourceId") == ASSOCIATION_LOGICAL_NAME:
+            return resource
+    return None
 
 
 def _describe_stack(cfn_client, stack_name, region):
@@ -115,6 +132,45 @@ def _describe_stack(cfn_client, stack_name, region):
     return stack
 
 
+def _live_rule_settings(edge_stack, edge_stack_name):
+    """Resolve the deployed action and limit; fail when they are unknown."""
+    parameters = _stack_parameters(edge_stack)
+    outputs = _stack_outputs(edge_stack)
+    action = parameters.get("WafAction") or outputs.get("Action")
+    limit = parameters.get("WafRateLimit") or outputs.get("RateLimit")
+    if not action:
+        raise RuntimeError(
+            f"Stack {edge_stack_name!r} does not report the rule action "
+            "(WafAction parameter / Action output); the live mode cannot be "
+            "reported and the edge stack drifted from the deploy contract"
+        )
+    if action not in VALID_ACTIONS:
+        raise RuntimeError(
+            f"Stack {edge_stack_name!r} reports the rule action {action!r}, "
+            f"which is not one of {sorted(VALID_ACTIONS)}; the live mode "
+            "cannot be reported"
+        )
+    if not limit:
+        raise RuntimeError(
+            f"Stack {edge_stack_name!r} does not report the rate limit "
+            "(WafRateLimit parameter / RateLimit output); the live ceiling "
+            "cannot be reported"
+        )
+    try:
+        limit_value = int(str(limit))
+    except (TypeError, ValueError):
+        raise RuntimeError(
+            f"Stack {edge_stack_name!r} reports the rate limit {limit!r}, "
+            "which is not a number"
+        ) from None
+    if limit_value <= 0:
+        raise RuntimeError(
+            f"Stack {edge_stack_name!r} reports the rate limit {limit!r}, "
+            "which cannot be a live ceiling"
+        )
+    return action, limit_value
+
+
 def run(
     app_stack_name,
     app_region,
@@ -149,13 +205,23 @@ def run(
         )
 
     resources = _stack_resources(edge_client, edge_stack_name)
-    associated_arn = resources.get("WafWebACLAssociation")
-    if associated_arn is None:
+    association = _find_association(resources)
+    if association is None:
         raise RuntimeError(
             f"Stack {edge_stack_name!r} declares no WebACLAssociation "
             "resource; the rate rule is not attached to anything"
         )
-    if associated_arn != distribution_arn:
+    associated_arn = association.get("PhysicalResourceId")
+    if not associated_arn:
+        raise RuntimeError(
+            f"Stack {edge_stack_name!r} declares a WebACLAssociation without "
+            "a physical id; the rate rule is not attached to anything"
+        )
+    # The association's physical id is the distribution it binds the web ACL
+    # to. Some CloudFormation versions report it wrapped in the resource
+    # ARN, so an ARN that CONTAINS the live distribution ARN is accepted --
+    # the distribution ARN is unique, so this stays a tight check.
+    if associated_arn != distribution_arn and distribution_arn not in associated_arn:
         raise RuntimeError(
             f"the edge stack associates the rate rule with {associated_arn!r} "
             f"while the live distribution is {distribution_arn!r}; the edge "
@@ -177,16 +243,14 @@ def run(
         )
     print(f"PASS: the web ACL itself reports the live distribution ({web_acl_arn})")
 
-    parameters = _stack_parameters(edge_stack)
-    action = parameters.get("WafAction", "unknown")
-    limit = parameters.get("WafRateLimit", "unknown")
+    action, limit = _live_rule_settings(edge_stack, edge_stack_name)
     print(f"PASS: the live edge rule action is {action} (limit {limit})")
     if action == "Block":
         print(
             "NOTE: the edge rule is BLOCKING. The canary is over and the "
             "inherited 2000/300s ceiling is being enforced at the edge."
         )
-    elif action == "Count":
+    else:
         print(
             "NOTE: the edge rule is COUNTING. It measures the traffic "
             "without refusing anything - that is the canary mode."
