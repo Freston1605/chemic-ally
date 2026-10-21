@@ -1,0 +1,98 @@
+"""CloudWatch metric emission for the origin header guard (M007/S03).
+
+The origin guard refuses any request that did not arrive through the
+CloudFront origin. Until now that refusal was visible only as a middleware
+``WARNING`` log line, which nobody pages on: a caller bypassing CloudFront
+is precisely the event an operator must see, and detection that depends on
+somebody grepping logs is not detection.
+
+This module makes the refusal countable. It publishes ONE datapoint per
+refused direct call into the ``ChemicAlly`` namespace under the metric
+``OriginGuardRefusals``, which the application stack's CloudWatch alarm
+watches (M007/S03/T03).
+
+Two properties matter:
+
+* **Best effort.** The refusal is the outcome; the metric is a side
+  effect. A CloudWatch failure -- no credentials, throttling, a missing
+  region -- must be logged and swallowed. It must never turn a refused
+  request into a 500, and it must never change the fixed refusal body.
+* **No dimensions.** A dimension would split the metric into one time
+  series per dimension value, and the stack's alarm watches the plain
+  metric -- it would never fire. The metric is therefore a single
+  undimensioned series: refusals per five minutes, across all paths.
+
+The CloudWatch client is created lazily and cached, so importing this
+module costs nothing and a local runserver without AWS credentials is
+completely unaffected.
+"""
+
+import logging
+import os
+
+logger = logging.getLogger(__name__)
+
+#: The CloudWatch namespace every ChemicAlly metric lives in.
+METRIC_NAMESPACE = "ChemicAlly"
+
+#: The metric that counts refused direct calls.
+REFUSAL_METRIC_NAME = "OriginGuardRefusals"
+
+# Cached CloudWatch client. None means "not created yet"; the client is
+# created on first use so that importing this module never touches AWS.
+_client = None
+
+
+def _cloudwatch_client():
+    """Return a cached CloudWatch client, or None when one cannot be made."""
+    global _client
+    if _client is None:
+        try:
+            import boto3
+
+            region = os.environ.get("AWS_REGION") or os.environ.get(
+                "AWS_DEFAULT_REGION"
+            )
+            if region:
+                _client = boto3.client("cloudwatch", region_name=region)
+            else:
+                _client = boto3.client("cloudwatch")
+        except Exception:  # noqa: BLE001 - no AWS, no metrics, no failure
+            logger.warning(
+                "Could not create a CloudWatch client; origin guard refusal "
+                "metrics will not be published",
+                exc_info=True,
+            )
+            return None
+    return _client
+
+
+def publish_refusal_metric(client=None):
+    """Publish one datapoint for a refused direct call.
+
+    Returns True when the datapoint was published, False when it could
+    not be. Never raises: the caller is on a refusal path and the refusal
+    must not become a server error.
+    """
+    try:
+        client = client if client is not None else _cloudwatch_client()
+        if client is None:
+            return False
+        client.put_metric_data(
+            Namespace=METRIC_NAMESPACE,
+            MetricData=[
+                {
+                    "MetricName": REFUSAL_METRIC_NAME,
+                    "Value": 1,
+                    "Unit": "Count",
+                }
+            ],
+        )
+        return True
+    except Exception:  # noqa: BLE001 - the metric must never break a refusal
+        logger.warning(
+            "Could not publish the origin guard refusal metric; the refusal "
+            "itself is unaffected",
+            exc_info=True,
+        )
+        return False

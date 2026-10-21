@@ -96,6 +96,42 @@ Parameters:
       Shared secret proving a request came through CloudFront. Never commit
       this value: it lives in CloudFormation only.
 
+  # ─────────────────────────────────────────────
+  # Origin guard rollout switch (M007/S03, R029 / THROT-04)
+  # ─────────────────────────────────────────────
+  # The origin header guard has to be rolled out in TWO phases: the
+  # CloudFront origin must stamp the header BEFORE anything can refuse a
+  # request, or every legitimate request dies. Gating the Lambda
+  # environment variable on this boolean makes that order expressible with
+  # one secret and one switch:
+  #
+  #   false (phase 1, default): the header is live, the Lambda environment
+  #                             carries NO secret, the guard is inert.
+  #   true  (phase 2):          the secret reaches Lambda and the guard
+  #                             refuses every request that did not come
+  #                             through CloudFront.
+  #
+  # The switch is owned by the deploy pipeline (one workflow setting), so
+  # enforcement starts by one reviewed change and never by accident.
+  #
+  # CloudFormation has NO Boolean parameter type (cfn-lint enforces this),
+  # so the switch is a String restricted to "true"/"false".
+  EnforceOriginGuard:
+    Type: String
+    Default: "false"
+    AllowedValues:
+      - "true"
+      - "false"
+    Description: >
+      Whether the origin header guard is enforced. false ships the
+      CloudFront origin header with the guard inert; true hands the secret
+      to Lambda and starts refusing direct Function-URL calls.
+
+Conditions:
+  # CloudFormation has no Boolean parameter type, so the rollout switch is
+  # a String restricted to "true"/"false" and turned into a condition here.
+  EnforceOriginGuardEnabled: !Equals [!Ref EnforceOriginGuard, "true"]
+
 Globals:
   Function:
     Timeout: 30
@@ -121,7 +157,17 @@ Globals:
         # a CloudFront origin custom header below; a request that does not
         # carry it never came through CloudFront and is refused with 403.
         ORIGIN_HEADER_NAME: !Ref OriginHeaderName
-        ORIGIN_HEADER_SECRET: !Ref OriginSecret
+        # M007/S03 (R029): the guard ships in TWO phases. With
+        # EnforceOriginGuard=false the secret is NOT in the environment at
+        # all (AWS::NoValue removes the variable), so the guard is inert and
+        # the first deploy can never refuse legitimate traffic; with it
+        # true the secret reaches Lambda and enforcement begins. The header
+        # NAME is always deployed, because CloudFront stamps the header
+        # from the first deploy onwards.
+        ORIGIN_HEADER_SECRET: !If
+          - EnforceOriginGuardEnabled
+          - !Ref OriginSecret
+          - !Ref AWS::NoValue
 
 Resources:
   # ─────────────────────────────────────────────
@@ -157,6 +203,20 @@ Resources:
                 Resource:
                   - !Sub "arn:aws:s3:::${EnvironmentVariablesBucket}/*"
                   - !Sub "arn:aws:s3:::${EnvironmentVariablesBucket}"
+        # M007/S03 (R029): the origin guard counts every refused direct
+        # call as a CloudWatch datapoint, so a caller bypassing CloudFront
+        # is a metric (and an alarm) instead of a log line somebody has to
+        # grep for. The grant is scoped to the ChemicAlly namespace: the
+        # function may publish its own metrics and nothing else.
+        - PolicyName: CloudWatchMetrics
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action:
+                  - cloudwatch:PutMetricData
+                Resource:
+                  - !Sub "arn:aws:cloudwatch:${AWS::Region}:${AWS::AccountId}:namespace/ChemicAlly"
 
   # ─────────────────────────────────────────────
   # Lambda function (container image)
@@ -347,6 +407,40 @@ Resources:
         ViewerCertificate:
           AcmCertificateArn: !Ref CertificateArn
           SslSupportMethod: sni-only
+
+  # ─────────────────────────────────────────────
+  # Origin guard refusal alarm (M007/S03, R029 / THROT-04)
+  #
+  # The Lambda publishes one datapoint per refused direct call into the
+  # ChemicAlly namespace (metric OriginGuardRefusals). This alarm is what
+  # turns that count into something an operator sees without hunting for
+  # it.
+  #
+  # The alarm lives in the us-east-2 app stack because that is where the
+  # Lambda publishes the metric (CloudWatch metrics are regional). It has
+  # no SNS action yet: the account has no alert topic, so the alarm is a
+  # dashboard-and-API signal until one exists (see OPS_PLAYBOOK.md).
+  #
+  # Threshold: 5 refusals in 5 minutes. A single refusal is usually a
+  # mis-configured client; a burst means somebody is calling the Function
+  # URL directly and skipping the WAF.
+  # ─────────────────────────────────────────────
+  OriginGuardRefusalAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: !Sub "${AWS::StackName}-origin-guard-refusals"
+      AlarmDescription: >-
+        Direct calls to the Lambda Function URL that the CloudFront origin
+        header guard refused - a caller bypassing CloudFront and, with it,
+        every WAF rule.
+      Namespace: ChemicAlly
+      MetricName: OriginGuardRefusals
+      Statistic: Sum
+      Period: 300
+      EvaluationPeriods: 1
+      Threshold: 5
+      ComparisonOperator: GreaterThanOrEqualToThreshold
+      TreatMissingData: notBreaching
 
   # DNS (apex + www) is managed in Cloudflare, not Route53.
   # See scripts/cloudflare_deploy.py sync-records.

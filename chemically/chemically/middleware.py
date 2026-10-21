@@ -22,6 +22,13 @@ a local ``runserver``): every request is passed through untouched. Only a
 deployed environment -- which always sets the variable -- enforces the check,
 so the development and test workflows are unaffected by the guard.
 
+Every refusal is also COUNTED (M007/S03): the guard publishes one
+CloudWatch datapoint per refused direct call, so a caller bypassing
+CloudFront is a metric and an alarm rather than a log line somebody has to
+grep for. The metric is published on a best-effort basis -- a CloudWatch
+failure is logged and swallowed, because the refusal is the outcome and the
+metric is only a side effect.
+
 The header name is a setting (``ORIGIN_HEADER_NAME``) so the Django side and
 the CloudFront origin custom header cannot drift apart silently. The default
 below MUST match the header name in ``template.yaml``.
@@ -32,6 +39,8 @@ import logging
 
 from django.conf import settings
 from django.http import HttpResponseForbidden
+
+from chemically.metrics import publish_refusal_metric
 
 logger = logging.getLogger(__name__)
 
@@ -85,6 +94,18 @@ class OriginHeaderGuardMiddleware:
                 request.path,
                 request.META.get("REMOTE_ADDR", ""),
             )
+            # The refusal is countable (M007/S03). The metric is a side
+            # effect: the publisher swallows its own failures, and this
+            # guard catches anything it might still raise, so the refusal
+            # below can never become a 500.
+            try:
+                publish_refusal_metric()
+            except Exception:  # noqa: BLE001 - the refusal must not fail
+                logger.warning(
+                    "Could not publish the origin guard refusal metric; "
+                    "the refusal itself is unaffected",
+                    exc_info=True,
+                )
             return HttpResponseForbidden(
                 REFUSAL_BODY, content_type="text/plain"
             )

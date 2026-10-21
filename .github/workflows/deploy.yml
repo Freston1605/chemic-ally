@@ -253,6 +253,13 @@ jobs:
       # the verification step can never disagree about which stack holds the
       # CloudFront rate rule.
       EDGE_STACK_NAME: chemically-edge
+      # Whether the origin header guard is enforced (M007/S03, R029). false
+      # ships the CloudFront origin header with the guard INERT, so the
+      # first deploy can never refuse legitimate traffic; true hands the
+      # secret to Lambda and starts refusing direct Function-URL calls.
+      # Enforcement therefore starts by one reviewed change, in the same
+      # order as the header: header first, enforcement second.
+      ENFORCE_ORIGIN_GUARD: "false"
     steps:
       - uses: actions/checkout@v5
 
@@ -322,6 +329,7 @@ jobs:
               RDSPassword=${{ secrets.RDS_PASSWORD }} \
               DjangoSecretKey=${{ secrets.DJANGO_SECRET_KEY }} \
               OriginSecret=${{ secrets.ORIGIN_SECRET }} \
+              EnforceOriginGuard=${{ env.ENFORCE_ORIGIN_GUARD }} \
             --no-fail-on-empty-changeset
 
       # ─────────────────────────────────────────────

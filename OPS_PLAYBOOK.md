@@ -487,6 +487,42 @@ Rollout note: the first deploy that enables the guard updates the Lambda environ
 | `Duration` | AWS/Lambda | > 25000 ms | SNS alert |
 | `DatabaseConnections` | AWS/RDS | > 80% of max | SNS alert |
 
+#### Origin guard refusals (M007/S03 — deployed)
+
+The origin header guard counts every direct Function-URL call it refuses.
+That count is the alarm:
+
+| Alarm | Namespace / Metric | Statistic | Threshold | Action |
+|-------|--------------------|-----------|-----------|--------|
+| `chemically-origin-guard-refusals` | `ChemicAlly` / `OriginGuardRefusals` | Sum over 300 s | ≥ 5 refusals in 5 min | none yet (see below) |
+
+The alarm is declared in the **us-east-2 app stack** (CloudWatch metrics are
+regional and the Lambda publishes there). It has **no SNS action yet**: the
+account has no alert topic, so the alarm is a dashboard-and-API signal until
+one exists.
+
+```bash
+# Read the refusal count directly
+aws cloudwatch get-metric-statistics \
+  --namespace ChemicAlly \
+  --metric-name OriginGuardRefusals \
+  --statistics Sum \
+  --period 300 \
+  --start-time "$(date -u -d '1 hour ago' +%Y-%m-%dT%H:%M:%SZ)" \
+  --region us-east-2
+
+# The alarm's state
+aws cloudwatch describe-alarms \
+  --alarm-names chemically-origin-guard-refusals --region us-east-2
+```
+
+What a refusal means: somebody called the Lambda Function URL directly and
+skipped CloudFront — and with it every WAF rule, including the edge rate
+limit. One refusal is usually a mis-configured client; a burst is an
+abuse signal. The metric is published on a best-effort basis: a
+CloudWatch failure is logged and swallowed, so it never turns a refused
+request into a 500.
+
 ### Priority 4 — Enable Lambda Reserved Concurrency
 
 Set reserved concurrency to prevent runaway costs:

@@ -125,11 +125,25 @@ def _secret_parameter_is_noecho(text):
 
 
 def _lambda_receives_the_secret(text):
-    """Lambda must receive the secret and the header name by reference."""
-    if re.search(
+    """Lambda must receive the secret and the header name by reference.
+
+    M007/S03: the secret reaches Lambda through the EnforceOriginGuard
+    gate, so the variable is a conditional reference to OriginSecret
+    (AWS::NoValue while enforcement is off). Either shape is acceptable as
+    long as the VALUE comes from the parameter and never from a literal.
+    """
+    direct = re.search(
         r"ORIGIN_HEADER_SECRET:[ \t]*!Ref[ \t]+OriginSecret", text
-    ) is None:
-        return False
+    )
+    if direct is None:
+        gated = re.search(
+            r"ORIGIN_HEADER_SECRET:[ \t]*!If\b(.*?)"
+            r"(?=\n        [A-Z_]+:|\n\n)",
+            text,
+            re.DOTALL,
+        )
+        if gated is None or "!Ref OriginSecret" not in gated.group(1):
+            return False
     return re.search(
         r"ORIGIN_HEADER_NAME:[ \t]*!Ref[ \t]+OriginHeaderName", text
     ) is not None
@@ -545,7 +559,10 @@ class OriginHeaderGuardWiringNegativeTests(SimpleTestCase):
 
     def test_hardcoded_lambda_secret_is_detected(self):
         mutated = self._mutate(
-            "        ORIGIN_HEADER_SECRET: !Ref OriginSecret",
+            "        ORIGIN_HEADER_SECRET: !If\n"
+            "          - EnforceOriginGuardEnabled\n"
+            "          - !Ref OriginSecret\n"
+            "          - !Ref AWS::NoValue",
             "        ORIGIN_HEADER_SECRET: literal-secret",
         )
         self.assertFalse(
@@ -556,8 +573,14 @@ class OriginHeaderGuardWiringNegativeTests(SimpleTestCase):
 
     def test_missing_lambda_secret_is_detected(self):
         mutated = self._mutate(
-            "        ORIGIN_HEADER_SECRET: !Ref OriginSecret",
-            "        SOMETHING_ELSE: !Ref OriginSecret",
+            "        ORIGIN_HEADER_SECRET: !If\n"
+            "          - EnforceOriginGuardEnabled\n"
+            "          - !Ref OriginSecret\n"
+            "          - !Ref AWS::NoValue",
+            "        SOMETHING_ELSE: !If\n"
+            "          - EnforceOriginGuardEnabled\n"
+            "          - !Ref OriginSecret\n"
+            "          - !Ref AWS::NoValue",
         )
         self.assertFalse(
             _lambda_receives_the_secret(mutated),
