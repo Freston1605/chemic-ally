@@ -28,7 +28,16 @@
 {% endblock %}
 
 {% block calculator_result %}
-  {% if result %}
+  {% if balance_error %}
+    <div class="result-card-col">
+      <div class="ca-result-card" id="reaction-error-card" role="alert" aria-live="assertive">
+        <h3 class="fs-5 fw-semibold mb-3" style="color:var(--ca-text-primary);">Could not balance the reaction</h3>
+        <div class="ca-alert ca-alert-danger" role="alert">
+          <span id="reaction-error">{{ balance_error }}</span>
+        </div>
+      </div>
+    </div>
+  {% elif result %}
     <div class="result-card-col">
       <div class="ca-result-card">
         <h3 class="fs-5 fw-semibold mb-3" style="color:var(--ca-text-primary);">Result</h3>
