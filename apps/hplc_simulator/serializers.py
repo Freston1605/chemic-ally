@@ -1,5 +1,5 @@
 from rest_framework import serializers
-from .models import Analyte, Level, UserScore
+from .models import Analyte, Level, LevelProgress, UserScore
 
 
 class AnalyteSerializer(serializers.ModelSerializer):
@@ -197,11 +197,20 @@ class UserScoreSerializer(serializers.ModelSerializer):
 
 
 class LevelProgressSerializer(serializers.ModelSerializer):
+    """Serializes a session's per-level progress records.
+
+    The model must be ``LevelProgress`` — the declared fields
+    (``best_score``, ``best_resolution``, ``best_run_time``, ``attempts``,
+    ``completed``, ``last_attempt_at``) exist only on that model. Binding
+    this serializer to ``UserScore`` made every field lookup invalid and
+    turned ``GET /hplc/api/progress/`` into a 500 for returning sessions.
+    """
+
     level_name = serializers.CharField(source='level.name', read_only=True)
     difficulty = serializers.CharField(source='level.difficulty', read_only=True)
 
     class Meta:
-        model = UserScore
+        model = LevelProgress
         fields = [
             'id', 'level_name', 'difficulty', 'best_score',
             'best_resolution', 'best_run_time', 'attempts',

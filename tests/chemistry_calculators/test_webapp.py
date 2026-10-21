@@ -9,6 +9,7 @@ from chempy import Substance
 
 from chemistry_calculators.calculations import security
 from chemistry_calculators.calculations.base import (
+    BALANCE_ERROR_MESSAGE,
     MolecularWeightCalculator,
     ReactionBalancer,
     DilutionCalculator,
@@ -36,15 +37,19 @@ class CalculatorTests(SimpleTestCase):
     def test_reaction_balancer_valid(self):
         calc = ReactionBalancer()
         result = calc.calculate(["H2", "O2"], ["H2O"])
-        self.assertIsNotNone(result)
-        reactants, products = result
-        self.assertEqual(reactants["H2"], 2)
-        self.assertEqual(products["H2O"], 2)
+        self.assertTrue(result["success"])
+        self.assertIsNone(result["error"])
+        self.assertEqual(result["reactants_balanced"]["H2"], 2)
+        self.assertEqual(result["products_balanced"]["H2O"], 2)
 
     def test_reaction_balancer_invalid(self):
+        """A reaction that cannot be balanced returns an explicit result."""
         calc = ReactionBalancer()
         result = calc.calculate(["notAFormula"], ["H2O"])
-        self.assertIsNone(result)
+        self.assertFalse(result["success"])
+        self.assertEqual(result["error"], BALANCE_ERROR_MESSAGE)
+        self.assertEqual(result["reactants_balanced"], {})
+        self.assertEqual(result["products_balanced"], {})
 
     def test_dilution_missing_v1(self):
         calc = DilutionCalculator()
@@ -111,18 +116,98 @@ class FormTests(SimpleTestCase):
         self.assertFalse(form.is_valid())
 
     def test_chemical_reaction_form_valid(self):
+        """Happy path: both sides present -> valid, no errors, data preserved."""
         form = ChemicalReactionForm(
             {"reactant": "H2 O2", "product": "H2O", "reversible": True}
         )
         self.assertTrue(form.is_valid())
+        self.assertEqual(form.errors, {})
+        self.assertEqual(form.cleaned_data["reactant"], "H2 O2")
+        self.assertEqual(form.cleaned_data["product"], "H2O")
+        self.assertTrue(form.cleaned_data["reversible"])
 
     def test_chemical_reaction_form_missing(self):
+        """Both sides missing -> exactly one side-naming error per field."""
         form = ChemicalReactionForm({"reactant": "", "product": "", "reversible": True})
         self.assertFalse(form.is_valid())
-        self.assertIn(
-            "Reactant and product must be provided.",
-            form.errors["__all__"][0],
+        self.assertIn("reactant", form.errors)
+        self.assertIn("product", form.errors)
+        self.assertEqual(
+            form.errors["reactant"],
+            ["Enter at least one reactant formula."],
         )
+        self.assertEqual(
+            form.errors["product"],
+            ["Enter at least one product formula."],
+        )
+
+    def test_chemical_reaction_form_missing_reactant(self):
+        """Empty reactant -> error on reactant only, naming the missing side."""
+        form = ChemicalReactionForm({"reactant": "", "product": "H2O"})
+        self.assertFalse(form.is_valid())
+        self.assertIn("reactant", form.errors)
+        self.assertNotIn("product", form.errors)
+        self.assertEqual(
+            form.errors["reactant"],
+            ["Enter at least one reactant formula."],
+        )
+
+    def test_chemical_reaction_form_missing_reactant_whitespace_only(self):
+        """A whitespace-only reactant is still a missing side."""
+        form = ChemicalReactionForm({"reactant": "   ", "product": "H2O"})
+        self.assertFalse(form.is_valid())
+        self.assertIn("reactant", form.errors)
+        self.assertNotIn("product", form.errors)
+        self.assertEqual(
+            form.errors["reactant"],
+            ["Enter at least one reactant formula."],
+        )
+
+    def test_chemical_reaction_form_missing_product(self):
+        """Empty product -> error on product only, naming the missing side."""
+        form = ChemicalReactionForm({"reactant": "H2 O2", "product": ""})
+        self.assertFalse(form.is_valid())
+        self.assertIn("product", form.errors)
+        self.assertNotIn("reactant", form.errors)
+        self.assertEqual(
+            form.errors["product"],
+            ["Enter at least one product formula."],
+        )
+
+    def test_chemical_reaction_form_missing_product_whitespace_only(self):
+        """A whitespace-only product is still a missing side."""
+        form = ChemicalReactionForm({"reactant": "H2 O2", "product": "  "})
+        self.assertFalse(form.is_valid())
+        self.assertIn("product", form.errors)
+        self.assertNotIn("reactant", form.errors)
+        self.assertEqual(
+            form.errors["product"],
+            ["Enter at least one product formula."],
+        )
+
+    def test_chemical_reaction_form_missing_side_reported_once(self):
+        """A missing side yields exactly one error, never a duplicated pair."""
+        for data in (
+            {"reactant": "", "product": "H2O"},
+            {"reactant": "H2 O2", "product": ""},
+            {"reactant": "  ", "product": "H2O"},
+            {"reactant": "H2 O2", "product": "  "},
+        ):
+            with self.subTest(data=data):
+                form = ChemicalReactionForm(data)
+                self.assertFalse(form.is_valid())
+                self.assertEqual(len(form.errors), 1)
+                (field, messages), = form.errors.items()
+                self.assertEqual(len(messages), 1)
+                self.assertIn("formula.", messages[0])
+
+    def test_chemical_reaction_form_strips_whitespace(self):
+        form = ChemicalReactionForm(
+            {"reactant": "  H2 O2  ", "product": " H2O ", "reversible": True}
+        )
+        self.assertTrue(form.is_valid())
+        self.assertEqual(form.cleaned_data["reactant"], "H2 O2")
+        self.assertEqual(form.cleaned_data["product"], "H2O")
 
     def test_solution_form_valid(self):
         form = SolutionForm({
@@ -219,6 +304,74 @@ class ViewTests(TestCase):
         response = self.client.post(reverse("reaction_balancer"), data)
         self.assertEqual(response.status_code, 200)
         self.assertIn("\\ce", response.context["result"])
+
+    def test_reaction_balancer_view_unbalanced_reaction(self):
+        """An unbalanced reaction shows an explicit message and no result."""
+        data = {
+            "reactant": "notAFormula",
+            "product": "H2O",
+            "reversible": True,
+        }
+        response = self.client.post(reverse("reaction_balancer"), data)
+        self.assertEqual(response.status_code, 200)
+        self.assertIsNone(response.context["result"])
+        self.assertEqual(
+            response.context["balance_error"], BALANCE_ERROR_MESSAGE
+        )
+        self.assertContains(response, BALANCE_ERROR_MESSAGE)
+        # The message is rendered in the result area, not left blank.
+        self.assertContains(response, "reaction-error-card")
+        self.assertContains(response, 'id="reaction-error"')
+        # No internal exception text may reach the page.
+        self.assertNotContains(response, "Traceback")
+        self.assertNotContains(response, "balance_stoichiometry")
+        self.assertNotContains(response, "ValueError")
+
+    def test_reaction_balancer_view_error_message_shown_once(self):
+        """The failure copy is rendered once, with no duplicated alert."""
+        data = {
+            "reactant": "notAFormula",
+            "product": "H2O",
+            "reversible": True,
+        }
+        response = self.client.post(reverse("reaction_balancer"), data)
+        self.assertContains(response, BALANCE_ERROR_MESSAGE, count=1)
+
+    def test_reaction_balancer_view_latex_failure_shows_fixed_message(self):
+        """A rendering failure shows the fixed copy, never the exception."""
+        data = {
+            "reactant": "H2 O2",
+            "product": "H2O",
+            "reversible": True,
+        }
+        with patch(
+            "chemistry_calculators.views.ReactionBalancer.to_latex",
+            side_effect=RuntimeError("latex exploded"),
+        ):
+            response = self.client.post(reverse("reaction_balancer"), data)
+        self.assertEqual(response.status_code, 200)
+        self.assertIsNone(response.context["result"])
+        self.assertEqual(
+            response.context["balance_error"], BALANCE_ERROR_MESSAGE
+        )
+        self.assertContains(response, BALANCE_ERROR_MESSAGE)
+        self.assertContains(response, "reaction-error-card")
+        self.assertNotContains(response, "latex exploded")
+        self.assertNotContains(response, "RuntimeError")
+
+    def test_reaction_balancer_view_success_has_no_error(self):
+        """A successful balance renders the result and no error copy."""
+        data = {
+            "reactant": "H2 O2",
+            "product": "H2O",
+            "reversible": True,
+        }
+        response = self.client.post(reverse("reaction_balancer"), data)
+        self.assertEqual(response.status_code, 200)
+        self.assertIsNone(response.context["balance_error"])
+        self.assertContains(response, "reaction-result")
+        self.assertNotContains(response, "reaction-error-card")
+        self.assertNotContains(response, BALANCE_ERROR_MESSAGE)
 
     def test_dilution_view_post(self):
         data = {

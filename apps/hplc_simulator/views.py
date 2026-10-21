@@ -106,10 +106,12 @@ class SimulateView(APIView):
                 operation=operation_config,
                 max_pressure_bar=level.max_pressure_bar,
             )
-        except Exception as e:
+        except Exception:
             logger.exception("Simulation error")
+            # Fixed, generic error body: never echo exception text back to an
+            # anonymous caller (CWE-209). The detail stays in the server log.
             return Response(
-                {'error': 'Simulation failed', 'detail': str(e)},
+                {'error': 'Simulation failed'},
                 status=status.HTTP_500_INTERNAL_SERVER_ERROR,
             )
 
@@ -195,39 +197,55 @@ class ScoreSubmissionView(APIView):
         )
         try:
             score_record.full_clean()
-        except ValidationError as e:
+        except ValidationError:
+            # Fixed, generic error body: the model validation detail stays in
+            # the server log and is never echoed back to the caller
+            # (CWE-209). The traceback is captured server-side via exc_info.
+            logger.warning(
+                "Score submission failed model validation",
+                exc_info=True,
+            )
             return Response(
-                {'errors': e.message_dict},
+                {'error': 'Invalid score submission'},
                 status=status.HTTP_400_BAD_REQUEST,
             )
-        score_record.save()
 
-        progress, created = LevelProgress.objects.get_or_create(
-            level=level,
-            session_key=session_key,
-            defaults={
-                'best_score': data['score'],
-                'best_resolution': data['min_resolution'],
-                'best_run_time': data['total_run_time'],
-                'attempts': 1,
-                'completed': data['is_successful'],
-            }
-        )
+        try:
+            score_record.save()
 
-        if not created:
-            progress.attempts += 1
-            if data['score'] > progress.best_score:
-                progress.best_score = data['score']
-            if data['min_resolution'] > progress.best_resolution:
-                progress.best_resolution = data['min_resolution']
-            if data['is_successful']:
-                progress.completed = True
-                if (
-                    data['total_run_time'] < progress.best_run_time
-                    or progress.best_run_time == 0
-                ):
-                    progress.best_run_time = data['total_run_time']
-            progress.save()
+            progress, created = LevelProgress.objects.get_or_create(
+                level=level,
+                session_key=session_key,
+                defaults={
+                    'best_score': data['score'],
+                    'best_resolution': data['min_resolution'],
+                    'best_run_time': data['total_run_time'],
+                    'attempts': 1,
+                    'completed': data['is_successful'],
+                }
+            )
+
+            if not created:
+                progress.attempts += 1
+                if data['score'] > progress.best_score:
+                    progress.best_score = data['score']
+                if data['min_resolution'] > progress.best_resolution:
+                    progress.best_resolution = data['min_resolution']
+                if data['is_successful']:
+                    progress.completed = True
+                    if (
+                        data['total_run_time'] < progress.best_run_time
+                        or progress.best_run_time == 0
+                    ):
+                        progress.best_run_time = data['total_run_time']
+                progress.save()
+        except Exception:
+            # Persistence failure: fixed, generic body, detail server-side.
+            logger.exception("Score persistence error")
+            return Response(
+                {'error': 'Score submission failed'},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            )
 
         return Response(
             {'status': 'score recorded', 'score_id': score_record.id},

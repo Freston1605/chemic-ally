@@ -3,10 +3,19 @@
 # Each calculation type implements a ``calculate`` method with unified handling
 # of chempy objects.
 
-from typing import Any, Dict, Optional, Tuple, Union
+import logging
+
+from typing import Any, Dict, Optional, Union
 
 from chempy import Substance, balance_stoichiometry
 from .units import Q_
+
+
+logger = logging.getLogger(__name__)
+
+# Fixed, user-safe copy for a reaction that cannot be balanced. Exception text
+# is never interpolated into a user-facing message (CWE-209).
+BALANCE_ERROR_MESSAGE = "This reaction could not be balanced. Check the formulas."
 
 
 # --- Calculation Base ---
@@ -61,15 +70,44 @@ class ReactionBalancer(CalculationBase):
 
     def calculate(
         self, reactants: list, products: list
-    ) -> Optional[Tuple[Dict[str, int], Dict[str, int]]]:
+    ) -> Dict[str, Any]:
+        """Balance a reaction, always returning an explicit result.
+
+        A reaction that cannot be balanced yields ``{"success": False, ...,
+        "error": BALANCE_ERROR_MESSAGE}`` instead of an implicit ``None``:
+        a bare ``None`` cannot tell the caller whether balancing failed, and
+        it used to surface further down the stack as a cryptic ``TypeError``
+        (legacy requirement API-02).
+
+        Args:
+            reactants: Reactant formulas.
+            products: Product formulas.
+
+        Returns:
+            dict: ``success``, ``reactants_balanced``, ``products_balanced``
+            and ``error`` (fixed copy on failure, ``None`` on success).
+        """
         try:
             reactants_balanced, products_balanced = balance_stoichiometry(
                 reactants=reactants, products=products
             )
-            return reactants_balanced, products_balanced
         except Exception:
-            # Log or handle error more gracefully if needed
-            return None
+            # Keep the detail server-side; the caller only ever sees the
+            # fixed message.
+            logger.exception("Reaction balancing failed")
+            return {
+                "success": False,
+                "reactants_balanced": {},
+                "products_balanced": {},
+                "error": BALANCE_ERROR_MESSAGE,
+            }
+
+        return {
+            "success": True,
+            "reactants_balanced": reactants_balanced,
+            "products_balanced": products_balanced,
+            "error": None,
+        }
 
     @staticmethod
     def to_latex(

@@ -67,6 +67,9 @@ class ChemicalReactionForm(forms.Form):
     reactant = forms.CharField(
         max_length=100,
         label="Reactant(s)",
+        error_messages={
+            "required": "Enter at least one reactant formula.",
+        },
         help_text=(
             "Enter the chemical formula for all reactants separated "
             "by a whitespace."
@@ -76,8 +79,11 @@ class ChemicalReactionForm(forms.Form):
     product = forms.CharField(
         max_length=100,
         label="Product(s)",
+        error_messages={
+            "required": "Enter at least one product formula.",
+        },
         help_text=(
-            "Enter the chemical formula for all reactants separated "
+            "Enter the chemical formula for all products separated "
             "by a whitespace."
         ),
         widget=forms.TextInput(attrs={"placeholder": "H2O"}),
@@ -93,18 +99,35 @@ class ChemicalReactionForm(forms.Form):
         """
         Cleans and parses the input data to obtain reactants and products separately.
 
+        Both sides of the reaction are required: a half-reaction cannot be
+        balanced, so an empty (or whitespace-only) reactant or product is a
+        validation error naming the missing side (legacy requirement API-03).
+
+        The side-specific wording comes from each field's ``error_messages``
+        override, so exactly one error is attached to a missing side instead
+        of the generic "This field is required." message.
+
         Raises:
-            forms.ValidationError: Raised if neither reactant nor product is provided.
+            forms.ValidationError: Raised through ``add_error`` for each side
+            that is missing.
 
         Returns:
             dict: A dictionary containing the cleaned and parsed data.
         """
         cleaned_data = super().clean()
-        reactant = cleaned_data.get("reactant")
-        product = cleaned_data.get("product")
 
-        if not reactant and not product:
-            raise forms.ValidationError("Reactant and product must be provided.")
+        for field_name, side in (("reactant", "reactant"), ("product", "product")):
+            value = (cleaned_data.get(field_name) or "").strip()
+            if not value:
+                # A field that already failed for another reason (for
+                # example max_length) is not reported as a missing side:
+                # that would attach a misleading second message to it.
+                if field_name not in self.errors:
+                    self.add_error(
+                        field_name, f"Enter at least one {side} formula."
+                    )
+            else:
+                cleaned_data[field_name] = value
 
         return cleaned_data
 

@@ -1,6 +1,7 @@
 import logging
 
 from abc import ABC, abstractmethod
+from typing import Optional
 
 from django.contrib import messages
 from django.http import HttpResponse
@@ -8,6 +9,7 @@ from django.views.generic import TemplateView
 from django.views.generic.edit import FormView
 
 from .calculations.base import (
+    BALANCE_ERROR_MESSAGE,
     DilutionCalculator,
     MolecularWeightCalculator,
     ReactionBalancer,
@@ -174,7 +176,29 @@ class BalanceChemicalReaction(BaseCalculateView):
     template_name = "chemistry_calculators/calculator/reaction_balancer.html"
     form_class = ChemicalReactionForm
 
-    def process_calculation(self, form: form_class) -> str:
+    # Per-request failure copy, rendered by the template in place of the
+    # result card. ``None`` means "no failure" (class-level default).
+    balance_error = None
+
+    def get_context_data(self, **kwargs):
+        """
+        Add the balancing failure copy to the template context.
+
+        The template renders ``balance_error`` inside the result column, so a
+        failed balance shows an explicit, human-readable message instead of a
+        blank result area (legacy requirement API-02).
+
+        Args:
+            **kwargs: Context passed in by the parent class.
+
+        Returns:
+            dict: The enriched context dictionary.
+        """
+        context = super().get_context_data(**kwargs)
+        context["balance_error"] = self.balance_error
+        return context
+
+    def process_calculation(self, form: form_class) -> Optional[str]:
         """
         Perform stoichiometric balancing for the submitted reaction.
 
@@ -182,38 +206,54 @@ class BalanceChemicalReaction(BaseCalculateView):
         formulas. It is passed to the :class:`ReactionBalancer` calculator from
         the class-based API. The balanced equation is returned as a LaTeX string.
 
+        A reaction that cannot be balanced produces an explicit, fixed error
+        message for the user (rendered by the template) and no result card;
+        the underlying reason stays in the server log (legacy requirement
+        API-02).
+
         Args:
             form (form_class):
                 A Django form instance representing the user input for a
                 chemical reaction.
 
         Returns:
-            str: A string representation of the balanced chemical reaction equation.
+            Optional[str]: The balanced equation as LaTeX, or None when the
+            reaction could not be balanced.
         """
+        reaction = form.cleaned_data
+        reversible = reaction["reversible"]
+        reactants = [x.strip() for x in reaction["reactant"].split()]
+        products = [x.strip() for x in reaction["product"].split()]
+        reactants_dict = {reactant for reactant in reactants}
+        products_dict = {product for product in products}
+        calculator = ReactionBalancer()
+        result = calculator.calculate(
+            reactants=reactants_dict, products=products_dict
+        )
+
+        if not result["success"]:
+            # Only the audited constant copy ever reaches the page. The
+            # balancer contract already guarantees it; the guard keeps a
+            # future regression from leaking arbitrary text (CWE-209).
+            error = result.get("error")
+            if error != BALANCE_ERROR_MESSAGE:
+                logging.warning("Unexpected balancer error copy: %r", error)
+            self.balance_error = BALANCE_ERROR_MESSAGE
+            return None
+
         try:
-            reaction = form.cleaned_data
-            reversible = reaction["reversible"]
-            reactants = [x.strip() for x in reaction["reactant"].split()]
-            products = [x.strip() for x in reaction["product"].split()]
-            reactants_dict = {reactant for reactant in reactants}
-            products_dict = {product for product in products}
-            calculator = ReactionBalancer()
-            (
-                reactants_balanced,
-                products_balanced,
-            ) = calculator.calculate(reactants=reactants_dict, products=products_dict)
-            result = ReactionBalancer.to_latex(
-                reactants_balanced, products_balanced, reversible
+            latex = ReactionBalancer.to_latex(
+                result["reactants_balanced"],
+                result["products_balanced"],
+                reversible,
             )
-            add_previous_substances(self.request, reactants + products)
-            return result
         except Exception:
             logging.exception("Reaction balancing failed:")
-            messages.error(
-                self.request,
-                "Could not balance the reaction. "
-                "Please check your input and try again.",
-            )
+            self.balance_error = BALANCE_ERROR_MESSAGE
+            return None
+
+        add_previous_substances(self.request, reactants + products)
+        return latex
 
 
 class CalculateDilutionView(BaseCalculateView):
