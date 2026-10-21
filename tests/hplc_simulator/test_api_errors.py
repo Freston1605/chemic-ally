@@ -85,7 +85,12 @@ class TestDatabaseUnavailableWiring:
 class TestSimulateViewDoesNotLeak:
     """R005: the simulate endpoint must not echo internal exception text."""
 
-    def test_simulation_failure_returns_generic_500(self):
+    def test_simulation_failure_returns_generic_500(self, db):
+        # ``db`` is requested because the request pipeline itself now touches
+        # the database: M006/S02 put a DRF ScopedRateThrottle in front of this
+        # endpoint and the throttle's shared state lives in Django's
+        # database-backed cache. The VIEW is still exercised without any
+        # database of its own -- the level lookup and the engine are mocked.
         level = MagicMock()
         level.max_pressure_bar = 400.0
         level.analytes.all.return_value = []

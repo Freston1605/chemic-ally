@@ -52,6 +52,47 @@ Parameters:
     Default: /chemically/environment/bucket_name
     Description: S3 bucket name for environment variables (from SSM)
 
+  # ─────────────────────────────────────────────
+  # Edge abuse control (M006/S01, R026 / THROT-01)
+  # ─────────────────────────────────────────────
+  WafRateLimit:
+    Type: Number
+    Default: 2000
+    MinValue: 10
+    MaxValue: 2000000000
+    Description: >
+      Maximum number of requests, per source IP, that the CloudFront WAF
+      rate-based rule allows within the 300-second (5 minute) evaluation
+      window for the rate-limited paths (HPLC API and the equilibria
+      calculator). Exposed as a parameter so the abuse ceiling stays
+      reviewable and tunable without editing the template.
+
+  # ─────────────────────────────────────────────
+  # CloudFront origin header guard (M006/S03, R029 / THROT-04)
+  # ─────────────────────────────────────────────
+  # The Function URL is public (Principal "*"), so anybody who learns it can
+  # call the app directly and skip CloudFront -- and with it every WAF rule.
+  # CloudFront therefore stamps every origin request with a custom header
+  # whose value is the shared secret below, and the Django guard refuses any
+  # request that does not carry it.
+  #
+  # The VALUE of OriginSecret is never committed: it lives in CloudFormation
+  # (NoEcho) and is supplied by the deploy pipeline. Only the parameter NAME
+  # appears in this repository.
+  OriginHeaderName:
+    Type: String
+    Default: X-ChemicAlly-Origin
+    MinLength: 1
+    Description: >
+      Name of the custom header CloudFront stamps on every origin request.
+      Must match ORIGIN_HEADER_NAME in config/settings/base.py.
+  OriginSecret:
+    Type: String
+    NoEcho: true
+    Description: >
+      Shared secret proving a request came through CloudFront. Never commit
+      this value: it lives in CloudFormation only.
+
 Globals:
   Function:
     Timeout: 30
@@ -73,6 +114,11 @@ Globals:
         RDS_HOSTNAME: !Ref RDSHostname
         RDS_PORT: !Ref RDSPort
         SECRET_KEY: !Ref DjangoSecretKey
+        # M006/S03 (R029): the origin header guard. The same value is set as
+        # a CloudFront origin custom header below; a request that does not
+        # carry it never came through CloudFront and is refused with 403.
+        ORIGIN_HEADER_NAME: !Ref OriginHeaderName
+        ORIGIN_HEADER_SECRET: !Ref OriginSecret
 
 Resources:
   # ─────────────────────────────────────────────
@@ -268,9 +314,106 @@ Resources:
               OriginProtocolPolicy: https-only
               OriginSSLProtocols:
                 - TLSv1.2
+            # M006/S03 (R029 / THROT-04): the origin header guard.
+            # CloudFront adds this header to EVERY origin request with the
+            # shared secret; Django refuses any request that arrives without
+            # it, which closes the direct Function-URL bypass around the
+            # WAF.
+            #
+            # The header is deliberately NOT in ForwardedValues.Headers above:
+            # legacy forwarding is an allow-list, so a viewer cannot smuggle
+            # its own copy of the header to the origin -- CloudFront's value
+            # is the only one that arrives.
+            OriginCustomHeaders:
+              - HeaderName: !Ref OriginHeaderName
+                HeaderValue: !Ref OriginSecret
         ViewerCertificate:
           AcmCertificateArn: !Ref CertificateArn
           SslSupportMethod: sni-only
+
+  # ─────────────────────────────────────────────
+  # CloudFront WAF rate-based rule (M006/S01, R026 / THROT-01)
+  #
+  # Abuse is bounded at the edge: a request that trips the rate limit is
+  # blocked by WAF before it ever reaches Lambda or the equilibria solver.
+  #
+  # Scope is deliberately narrow. The rule only counts requests to the
+  # HPLC API paths and to the equilibria calculator, so ordinary browsing
+  # of the landing page and of the simulator level pages is never
+  # throttled. The rule is aggregated per source IP, which is the only
+  # aggregation key available to a CloudFront-scoped rule.
+  #
+  # REGION CONSTRAINT (read before deploying): AWS WAF web ACLs with
+  # Scope CLOUDFRONT can only be created in us-east-1 ("For CLOUDFRONT,
+  # you must create your WAFv2 resources in the US East (N. Virginia)
+  # Region, us-east-1" -- AWS::WAFv2::WebACL reference). This stack is
+  # currently deployed to us-east-2 by .github/workflows/deploy.yml, so
+  # the deploy of this stack must target us-east-1 for these two
+  # resources. Moving the whole app stack is not an option (RDS and the
+  # Lambda VPC live in us-east-2); the edge (CloudFront + WAF) is
+  # therefore the piece that has to be deployed to us-east-1. See
+  # OPS_PLAYBOOK.md and the M006 follow-up for the edge-stack split.
+  # ─────────────────────────────────────────────
+  WafWebACL:
+    Type: AWS::WAFv2::WebACL
+    Properties:
+      Name: !Sub "${AWS::StackName}-edge-rate-limit"
+      Scope: CLOUDFRONT
+      Description: >-
+        Edge rate limit for the HPLC API and the equilibria calculator
+        (M006/S01, R026).
+      DefaultAction:
+        Allow: {}
+      # Required on the web ACL itself: enables the CloudWatch metric and
+      # (sampled) request visibility for the rule below. Sampling is kept
+      # off at the ACL level -- only the rule's own sampled-request
+      # metric is on, and no request bodies are ever logged.
+      VisibilityConfig:
+        CloudWatchMetricsEnabled: true
+        MetricName: ChemicAllyEdgeWebAcl
+        SampledRequestsEnabled: false
+      Rules:
+        - Name: EdgeRateLimit
+          Priority: 0
+          Action:
+            Block: {}
+          Statement:
+            RateBasedStatement:
+              Limit: !Ref WafRateLimit
+              # 300 s = the 5-minute evaluation window the limit is
+              # measured over (AWS WAF allowed values: 60, 120, 300, 600).
+              EvaluationWindowSec: 300
+              AggregateKeyType: IP
+              ScopeDownStatement:
+                OrStatement:
+                  Statements:
+                    # HPLC API (simulate, scores, levels, progress).
+                    - ByteMatchStatement:
+                        FieldToMatch:
+                          UriPath: {}
+                        PositionalConstraint: STARTS_WITH
+                        SearchString: /hplc/api/
+                        TextTransformation: NONE
+                    # Equilibria calculator (the expensive solver path).
+                    - ByteMatchStatement:
+                        FieldToMatch:
+                          UriPath: {}
+                        PositionalConstraint: STARTS_WITH
+                        SearchString: /calculate/equilibria
+                        TextTransformation: NONE
+          VisibilityConfig:
+            CloudWatchMetricsEnabled: true
+            MetricName: EdgeRateLimit
+            SampledRequestsEnabled: true
+
+  # The association is part of the same template and references the
+  # distribution by Ref, so a distribution can never be deployed without
+  # the rate rule attached to it (and the two cannot drift apart).
+  WafWebACLAssociation:
+    Type: AWS::WAFv2::WebACLAssociation
+    Properties:
+      WebACLArn: !GetAtt WafWebACL.Arn
+      ResourceArn: !Sub "arn:aws:cloudfront::${AWS::AccountId}:distribution/${CloudFrontDistribution}"
 
   # DNS (apex + www) is managed in Cloudflare, not Route53.
   # See scripts/cloudflare_deploy.py sync-records.

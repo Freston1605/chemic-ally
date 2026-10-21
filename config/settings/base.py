@@ -79,6 +79,10 @@ INSTALLED_APPS = [
 ]
 
 MIDDLEWARE = [
+    # M006/S03 (R029 / THROT-04): the origin header guard runs FIRST so a
+    # request that did not come through CloudFront is refused before any
+    # session, CSRF, or view work happens.
+    'chemically.middleware.OriginHeaderGuardMiddleware',
     'django.middleware.security.SecurityMiddleware',
     'django.contrib.sessions.middleware.SessionMiddleware',
     'django.middleware.common.CommonMiddleware',
@@ -118,6 +122,42 @@ WSGI_APPLICATION = 'config.wsgi.application'
 DATABASES = {
     "default": {
         "ENGINE": "django.db.backends.dummy",
+    }
+}
+
+
+# Cache (M006/S02 -- the DRF scoped throttle backstop)
+#
+# Django's DatabaseCache on the existing default database. The throttle state
+# MUST be shared by every Lambda container: Django's default LocMemCache is
+# per-process, so with N warm containers the effective limit would be N times
+# the configured rate and a burst would never be throttled at all (the
+# per-container-in-memory pitfall).
+#
+# The cache table is NOT created by ``migrate`` -- Django ships it as the
+# ``createcachetable`` management command. It is created by:
+#   * the deploy migrator (config/migrate.py runs ``createcachetable`` right
+#     after ``migrate``; scripts/run_migrator.py fails the deploy if the
+#     migrator does not report that bootstrap), and
+#   * the test suite (tests/hplc_simulator/conftest.py creates it in the test
+#     database, which is built from migrations and therefore has no cache
+#     table either).
+#
+# MAX_ENTRIES bounds the table: DatabaseCache purges expired rows -- and then
+# the oldest remaining ones -- once the table grows past MAX_ENTRIES, so a
+# flood of distinct client addresses cannot turn the cache table itself into
+# an unbounded growth vector. KEY_PREFIX keeps these rows from colliding with
+# anything else that shares the database.
+CACHES = {
+    "default": {
+        "BACKEND": "django.core.cache.backends.db.DatabaseCache",
+        "LOCATION": "django_cache",
+        "TIMEOUT": 300,
+        "KEY_PREFIX": "chemically",
+        "OPTIONS": {
+            "MAX_ENTRIES": 10000,
+            "CULL_FREQUENCY": 3,
+        },
     }
 }
 
@@ -172,6 +212,27 @@ STATICFILES_DIRS = [
 DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
 
 
+# Origin header guard  (M006/S03 -- R029 / THROT-04)
+#
+# The Lambda Function URL is public (AuthType: NONE, with
+# lambda:InvokeFunctionUrl granted to Principal "*"), so anybody who learns the
+# Function URL can call the app directly and skip CloudFront -- and with it
+# every CloudFront WAF rule. CloudFront therefore stamps every origin request
+# with a custom header carrying a shared secret, and this middleware refuses
+# any request that does not carry it.
+#
+# The secret is NEVER committed: it lives in CloudFormation (the NoEcho
+# ``OriginSecret`` SAM parameter) and reaches Lambda as an environment
+# variable. Only the parameter NAME appears in the repository.
+#
+# The guard is INERT when the variable is absent (development, the test
+# suite, a local runserver) -- only a deployed environment enforces it.
+ORIGIN_HEADER_NAME = os.environ.get(
+    "ORIGIN_HEADER_NAME", "X-ChemicAlly-Origin"
+)
+ORIGIN_HEADER_SECRET = os.environ.get("ORIGIN_HEADER_SECRET", "")
+
+
 # Score result tokens (R013, D021)
 #
 # Lifetime of the HMAC-signed ``result_token`` that POST /hplc/api/simulate/
@@ -192,6 +253,30 @@ REST_FRAMEWORK = {
         'rest_framework.renderers.JSONRenderer',
         'rest_framework.renderers.BrowsableAPIRenderer',
     ],
+    # M006/S02 (R027/R028): the in-app backstop that bounds abuse when the
+    # CloudFront WAF rule is bypassed. ScopedRateThrottle is a NO-OP on views
+    # without a ``throttle_scope`` attribute, so only the views that opt in
+    # are throttled: SimulateView ('simulate') and ScoreSubmissionView
+    # ('scores'). The cheap read-only endpoints (levels, score history,
+    # progress) stay unthrottled on purpose.
+    'DEFAULT_THROTTLE_CLASSES': [
+        'rest_framework.throttling.ScopedRateThrottle',
+    ],
+    # Separate budget per scope, so a flood on one endpoint cannot starve
+    # the other. 'simulate' runs the full LSS engine (CPU-bound); 'scores'
+    # writes a row per request, so its limit is the tighter of the two.
+    # These are the reviewable defaults; production.py lets the deployed
+    # environment override them (THROTTLE_RATE_SIMULATE / THROTTLE_RATE_SCORES).
+    'DEFAULT_THROTTLE_RATES': {
+        'simulate': '60/min',
+        'scores': '30/min',
+    },
+    # NUM_PROXIES=1 makes DRF's get_ident() use the LAST X-Forwarded-For
+    # entry -- the address CloudFront appends for the viewer hop. Without it
+    # DRF falls back to REMOTE_ADDR, which behind CloudFront/Lambda is the
+    # edge address, and every visitor on the planet would share one bucket
+    # (and one counter) instead of getting their own allowance.
+    'NUM_PROXIES': 1,
 }
 
 

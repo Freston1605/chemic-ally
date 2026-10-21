@@ -98,6 +98,8 @@ def _range_check_signed_metrics(payload, level):
 
 class LevelListView(APIView):
     permission_classes = [AllowAny]
+    # No throttle_scope on purpose (M006/S02): listing the levels is a cheap
+    # read and stays available to every visitor.
 
     def get(self, request):
         levels = Level.objects.filter(is_active=True)
@@ -107,6 +109,7 @@ class LevelListView(APIView):
 
 class LevelDetailView(APIView):
     permission_classes = [AllowAny]
+    # No throttle_scope on purpose (M006/S02): a cheap read.
 
     def get(self, request, slug):
         level = get_object_or_404(Level, slug=slug, is_active=True)
@@ -116,6 +119,11 @@ class LevelDetailView(APIView):
 
 class SimulateView(APIView):
     permission_classes = [AllowAny]
+    # M006/S02 (R028): the simulation is the CPU-bound endpoint -- it runs the
+    # full LSS/gradient engine for every request -- so it gets its OWN
+    # throttle scope and its own budget. A flood here must not consume the
+    # scores endpoint's allowance (separate scopes, separate limits).
+    throttle_scope = 'simulate'
 
     def post(self, request):
         serializer = SimulationRequestSerializer(data=request.data)
@@ -248,6 +256,9 @@ class SimulateView(APIView):
 
 class ScoreSubmissionView(APIView):
     permission_classes = [AllowAny]
+    # M006/S02 (R028): the write-heavy endpoint (one row per accepted
+    # submission) gets its own scope and the tighter of the two limits.
+    throttle_scope = 'scores'
 
     def post(self, request):
         """Record a run whose numbers came from a server-signed result token.
@@ -406,6 +417,8 @@ class ScoreSubmissionView(APIView):
 
 class UserScoresView(APIView):
     permission_classes = [AllowAny]
+    # No throttle_scope on purpose (M006/S02): a cheap read of the caller's
+    # own rows.
 
     def get(self, request):
         session_key = request.session.session_key
@@ -421,6 +434,8 @@ class UserScoresView(APIView):
 
 class LevelProgressView(APIView):
     permission_classes = [AllowAny]
+    # No throttle_scope on purpose (M006/S02, R007): the progress endpoint is
+    # read-only and must keep answering 200 for the caller's own rows.
 
     def get(self, request):
         session_key = request.session.session_key

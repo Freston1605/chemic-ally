@@ -3,10 +3,13 @@
 R011/D017: the deploy job's migration step must
 * return 0 and print exactly ``RDS absent (D006) - migrations skipped`` when
   no RDS instance is available (D006), without invoking Lambda;
-* return 0 when the migrator Lambda payload reports ``ok``;
+* return 0 when the migrator Lambda payload reports ``ok`` AND reports the
+  commands the deploy depends on (``migrate`` + ``createcachetable``,
+  M006/S02);
 * return 1 when the Lambda response carries ``FunctionError`` (or the payload
-  is missing / not ok) — ``aws lambda invoke`` exits 0 even when the function
-  throws, so the payload is the only reliable signal.
+  is missing / not ok / does not report those commands) — ``aws lambda
+  invoke`` exits 0 even when the function throws, so the payload is the only
+  reliable signal.
 
 scripts/ is not a package, so the module is loaded with
 importlib.util.spec_from_file_location. All AWS interaction goes through an
@@ -15,6 +18,7 @@ injected ``client_factory`` returning fake clients — no network access.
 
 import importlib.util
 import io
+import json
 import sys
 import types
 from contextlib import redirect_stdout
@@ -37,6 +41,16 @@ FUNCTION_ARN = (
 )
 REGION = "us-east-2"
 STACK = "chemically"
+
+# The real migrator Lambda payload (config/migrate.py). M006/S02 made the
+# deploy gate depend on it: the payload must report that the cache table was
+# bootstrapped, because ``migrate`` does NOT create Django's cache table and
+# the throttled API reads it on every request.
+OK_PAYLOAD = {
+    "status": "ok",
+    "commands": ["migrate", "createcachetable"],
+    "settings": "config.settings.production",
+}
 
 
 class FakePayload:
@@ -138,7 +152,7 @@ class RunMigratorTests(SimpleTestCase):
                             "OutputValue": FUNCTION_ARN}],
             instances=[{"DBInstanceIdentifier": "chemically_db",
                         "DBInstanceStatus": "available"}],
-            invoke_response={"Payload": FakePayload('{"status": "ok"}')},
+            invoke_response={"Payload": FakePayload(json.dumps(OK_PAYLOAD))},
         )
         code, _ = run_helper(clients)
 
@@ -147,6 +161,36 @@ class RunMigratorTests(SimpleTestCase):
         clients.invoke_mock.assert_called_once_with(
             FunctionName=FUNCTION_ARN, InvocationType="RequestResponse"
         )
+
+    def test_payload_without_createcachetable_returns_one(self):
+        """M006/S02: a migrator that did not bootstrap the cache table fails.
+
+        Django's DatabaseCache -- the shared state behind the throttle
+        backstop -- reads a table that ``migrate`` does not create. A deploy
+        that skipped ``createcachetable`` would serve the throttled API
+        against a missing table, so the gate must not report success.
+        """
+        clients = FakeClients(
+            stack_outputs=[{"OutputKey": "MigrateFunctionArn",
+                            "OutputValue": FUNCTION_ARN}],
+            instances=[{"DBInstanceStatus": "available"}],
+            invoke_response={"Payload": FakePayload(json.dumps(
+                {"status": "ok", "commands": ["migrate"]}
+            ))},
+        )
+        self.assertEqual(run_helper(clients)[0], 1)
+
+    def test_payload_without_commands_key_returns_one(self):
+        """A payload that does not report its commands fails the gate too."""
+        clients = FakeClients(
+            stack_outputs=[{"OutputKey": "MigrateFunctionArn",
+                            "OutputValue": FUNCTION_ARN}],
+            instances=[{"DBInstanceStatus": "available"}],
+            invoke_response={"Payload": FakePayload(json.dumps(
+                {"status": "ok"}
+            ))},
+        )
+        self.assertEqual(run_helper(clients)[0], 1)
 
     def test_function_error_returns_one(self):
         """FunctionError present -> exit 1 even with a JSON payload."""

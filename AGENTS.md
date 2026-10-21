@@ -12,6 +12,7 @@ python -m venv .venv && source .venv/bin/activate
 pip install -r requirements/development.txt
 cp .env.example .env          # set SECRET_KEY at minimum
 python manage.py migrate      # creates HPLC simulator tables + Django framework tables
+python manage.py createcachetable  # creates the Django cache table (M006/S02: the DB-backed cache the DRF throttles use)
 
 # Seed HPLC simulator data (required after first migrate or new migrations)
 python manage.py seed_hplc_data

@@ -9,9 +9,11 @@ with no database at all:
 * no DB instance reports ``DBInstanceStatus=available`` -> print
   ``RDS absent (D006) - migrations skipped`` and exit 0 (the deploy proceeds);
 * otherwise the migrator Lambda is invoked synchronously and its payload is
-  checked. Exit 1 when ``FunctionError`` is present or the payload is
-  missing/not ``ok`` — ``aws lambda invoke`` exits 0 even when the function
-  throws, so the payload must be inspected explicitly.
+  checked. Exit 1 when ``FunctionError`` is present, the payload is
+  missing/not ``ok``, or the payload does not report the commands the deploy
+  depends on (``migrate`` and ``createcachetable``, M006/S02) — ``aws
+  lambda invoke`` exits 0 even when the function throws, so the payload must
+  be inspected explicitly.
 
 Exit codes: 0 = skipped or clean, 1 = migrator failed. AWS API failures
 (missing stack, missing ``MigrateFunctionArn`` Output, throttling, etc.)
@@ -32,6 +34,14 @@ import boto3
 logger = logging.getLogger("run_migrator")
 
 SKIP_MESSAGE = "RDS absent (D006) - migrations skipped"
+
+# The commands the migrator Lambda must have run for the deploy to be
+# considered green (M006/S02). ``createcachetable`` is in the list because
+# Django's DatabaseCache -- the shared state behind the DRF throttle backstop
+# -- reads and writes a table that ``migrate`` does NOT create. A deploy that
+# skipped it would serve the throttled API against a missing cache table, so
+# the gate fails loudly instead.
+REQUIRED_COMMANDS = ("migrate", "createcachetable")
 
 
 def _resolve_function_arn(cfn_client, stack_name):
@@ -66,8 +76,10 @@ def _rds_available(rds_client):
 def _invoke_migrator(lambda_client, function_arn):
     """Invoke the migrator Lambda and classify the (payload, not exit code).
 
-    Returns ``(exit_code, message)``: 0 when the payload reports ``ok``,
-    1 for ``FunctionError``, a missing payload, or a non-ok/invalid payload.
+    Returns ``(exit_code, message)``: 0 when the payload reports ``ok`` AND
+    reports every command in ``REQUIRED_COMMANDS``, 1 for ``FunctionError``, a
+    missing payload, a non-ok/invalid payload, or a payload that does not list
+    the commands the deploy depends on.
     """
     response = lambda_client.invoke(
         FunctionName=function_arn,
@@ -90,6 +102,14 @@ def _invoke_migrator(lambda_client, function_arn):
     status = body.get("status") if isinstance(body, dict) else None
     if status != "ok":
         return 1, f"Migrator Lambda payload not ok: {body!r}"[:500]
+    commands = body.get("commands") if isinstance(body, dict) else None
+    if not isinstance(commands, list) or any(
+        command not in commands for command in REQUIRED_COMMANDS
+    ):
+        return 1, (
+            "Migrator Lambda payload did not report the required commands "
+            f"{list(REQUIRED_COMMANDS)}: {body!r}"
+        )[:500]
     return 0, "Migrator Lambda reported ok"
 
 

@@ -271,6 +271,21 @@ jobs:
         with:
           version: 1.*
 
+      # M006/S03 (R029 / THROT-04): the CloudFront origin header guard needs
+      # a shared secret. It must never be committed, so it lives in a GitHub
+      # secret and is injected as the NoEcho `OriginSecret` SAM parameter.
+      # Fail loudly when it is missing: an empty secret would deploy a
+      # Lambda whose origin guard is inert, i.e. the Function-URL bypass
+      # around the WAF would be back.
+      - name: Verify the origin secret is configured
+        env:
+          ORIGIN_SECRET: ${{ secrets.ORIGIN_SECRET }}
+        run: |
+          if [ -z "${ORIGIN_SECRET}" ]; then
+            echo "::error::The ORIGIN_SECRET GitHub secret is not set. The CloudFront origin header guard (M006/S03, R029) cannot be deployed without it."
+            exit 1
+          fi
+
       - name: SAM deploy
         run: |
           sam deploy \
@@ -284,6 +299,7 @@ jobs:
               CertificateArn=${{ steps.acm.outputs.arn }} \
               RDSPassword=${{ secrets.RDS_PASSWORD }} \
               DjangoSecretKey=${{ secrets.DJANGO_SECRET_KEY }} \
+              OriginSecret=${{ secrets.ORIGIN_SECRET }} \
             --no-fail-on-empty-changeset
 
       # Point the apex and www records at the (possibly recreated) CloudFront

@@ -89,6 +89,7 @@ Configure in **GitHub → Repository → Settings → Secrets and variables → 
 | `AWS_ACCESS_KEY_ID` | IAM user access key | Build + Deploy | Yes |
 | `AWS_SECRET_ACCESS_KEY` | IAM user secret key | Build + Deploy | Yes |
 | `DJANGO_SECRET_KEY` | Django signing key | Build (collectstatic) | Yes |
+| `ORIGIN_SECRET` | Shared secret CloudFront stamps on every origin request (M006/S03, R029) | Deploy (SAM `OriginSecret` parameter) | Yes |
 | `AWS_STORAGE_BUCKET_NAME` | S3 bucket for static files (`chemically-env`) | Build (collectstatic) | Yes |
 | `ROUTE53_HOSTED_ZONE_ID` | (removed) Route 53 is no longer used | — | No |
 | `CLOUDFLARE_API_TOKEN` | Cloudflare API token with `Zone:DNS:Edit` on chemic-ally.xyz | Deploy (ACM validation + DNS sync) | Yes |
@@ -110,6 +111,8 @@ Set in the SAM `template.yaml` under `Function.Environment.Variables` or via the
 | `RDS_PASSWORD` | RDS instance value | Required |
 | `RDS_HOSTNAME` | RDS endpoint | Required |
 | `RDS_PORT` | `5432` | Required |
+| `ORIGIN_HEADER_NAME` | `X-ChemicAlly-Origin` | Hardcoded in template (CloudFront origin custom header) |
+| `ORIGIN_HEADER_SECRET` | SAM parameter `OriginSecret` (NoEcho) | Required — the origin header guard is inert without it |
 
 ### RDS Variables
 
@@ -224,12 +227,17 @@ docker tag chemically:latest 768125641662.dkr.ecr.us-east-2.amazonaws.com/chemic
 docker push 768125641662.dkr.ecr.us-east-2.amazonaws.com/chemically:manual-$(date +%Y%m%d%H%M%S)
 
 # Deploy
+# NOTE: the OriginSecret parameter has no default on purpose -- it carries the
+# CloudFront origin header guard secret and must never be committed. Supply it
+# from the secret store (or read it back from the current stack).
 sam deploy \
   --template-file template.yaml \
   --stack-name chemically \
   --capabilities CAPABILITY_IAM \
   --region us-east-2 \
-  --parameter-overrides ImageTag=manual-$(date +%Y%m%d%H%M%S)
+  --parameter-overrides \
+    ImageTag=manual-$(date +%Y%m%d%H%M%S) \
+    OriginSecret="$ORIGIN_SECRET"
 ```
 
 ### Running Django Management Commands
@@ -274,6 +282,15 @@ aws logs tail /aws/lambda/chemically-DjangoFunction-XXXXX --follow --region us-e
    - Rotate IAM user keys in AWS IAM Console
    - Update GitHub secrets `AWS_ACCESS_KEY_ID` / `AWS_SECRET_ACCESS_KEY`
    - No redeploy needed
+
+3. **Origin secret (M006/S03, R029):**
+   - Generate: `python -c "import secrets; print(secrets.token_urlsafe(48))"`
+   - Update the GitHub secret `ORIGIN_SECRET`
+   - Redeploy: the new value must reach BOTH the Lambda environment
+     (`ORIGIN_HEADER_SECRET`) and the CloudFront origin custom header. They are
+     set from the same SAM parameter, so a single redeploy updates both
+     atomically. Until the redeploy lands, the old value is still the live
+     one -- do not rotate it out of band.
 
 ### Local Development with Lambda Emulation
 
@@ -320,13 +337,24 @@ The Lambda execution role should have least-privilege permissions:
 
 ### Priority 2 — Restrict Function URL
 
-The Function URL should only accept traffic from CloudFront. The resource policy is already configured in `template.yaml` to restrict by CloudFront distribution ARN. Verify:
+The Function URL should only accept traffic from CloudFront. The Lambda resource policy in `template.yaml` grants `lambda:InvokeFunctionUrl` to `Principal "*"` (CloudFront cannot sign requests), so the Function URL is reachable by anyone who learns its URL. The bypass around the WAF is therefore closed in the application instead: CloudFront stamps every origin request with the `X-ChemicAlly-Origin` header (value: the NoEcho `OriginSecret` SAM parameter) and the Django middleware `chemically.middleware.OriginHeaderGuardMiddleware` refuses any request that does not carry it with 403.
+
+Verify the guard is live:
 
 ```bash
+# Must fail with 403: a direct Function-URL request carries no origin header.
+curl -s -o /dev/null -w '%{http_code}\n' \
+  "https://<function-url-id>.lambda-url.us-east-2.on.aws/"
+
+# Must succeed with 200: the public site goes through CloudFront.
+curl -s -o /dev/null -w '%{http_code}\n' https://chemic-ally.xyz/
+
 aws lambda get-resource-policy \
   --function-name chemically-DjangoFunction-XXXXX \
   --region us-east-2
 ```
+
+Rollout note: the first deploy that enables the guard updates the Lambda environment and the CloudFront distribution in the same stack operation, and CloudFormation does not guarantee their order. If the function is updated first, requests are refused with 403 until the distribution starts stamping the header (a one-time window of seconds). The `live-probe` job after the deploy is the gate that catches it.
 
 ### Priority 3 — Enable CloudWatch Alarms
 
