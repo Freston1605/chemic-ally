@@ -20,3 +20,9 @@ psycopg2-binary==2.9.13
 # an invalid Description), and only a schema check catches that before a
 # deploy does. Pinned exactly so the gate cannot shift under the workflow.
 cfn-lint==1.58.0
+# M007/S06/T02: the budget review (scripts/review_edge_budget.py) reads the
+# edge template with PyYAML -- the template uses long-form intrinsics
+# precisely so a plain YAML loader can read it. It arrived transitively
+# with cfn-lint; it is declared here because the review IMPORTS it
+# directly, and an undeclared import is one broken deploy away.
+pyyaml>=6.0.1
