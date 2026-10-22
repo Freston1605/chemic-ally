@@ -57,6 +57,27 @@ jobs:
                   origin.get("OriginCustomHeaders")))
           print("RESULT distribution WebACLId:", config.get("WebACLId"))
 
+          processed = cfn.get_template(
+              StackName="chemically", TemplateStage="Processed"
+          )["TemplateBody"]
+          import json as _json
+          body = _json.dumps(processed)
+          for key in ("OriginCustomHeaders", "HeaderValue", "HeaderName"):
+              print("RESULT processed template mentions %s: %s" % (
+                  key, key in body))
+          resources = processed.get("Resources", {})
+          dist_template = resources.get("CloudFrontDistribution", {})
+          origins = dist_template.get("Properties", {}).get(
+              "DistributionConfig", {}).get("Origins", {}).get("Items", [])
+          for origin in origins:
+              headers = origin.get("OriginCustomHeaders")
+              print("RESULT processed template origin headers:", _json.dumps(headers)[:300])
+              if headers:
+                  for header in headers:
+                      value = header.get("HeaderValue")
+                      print("RESULT processed HeaderValue len:",
+                            len(value) if isinstance(value, str) else value)
+
           lam = client("lambda", "us-east-2")
           function = outputs["LambdaFunctionArn"].split(":function:")[-1]
           env = lam.get_function_configuration(
