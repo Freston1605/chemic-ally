@@ -900,7 +900,9 @@ def run(
             )
         record["web_acl_arn"] = web_acl_arn
 
-        response = waf_client.get_web_acl(WebACLArn=web_acl_arn)
+        # The WAFv2 GetWebACL request parameter is ARN (not WebACLArn):
+        # passing WebACLArn is a parameter validation error in botocore.
+        response = waf_client.get_web_acl(ARN=web_acl_arn)
         web_acl = (response or {}).get("WebACL") or {}
         rule = gate_web_acl_holds_rule(web_acl)
         action = rule.get("Action")

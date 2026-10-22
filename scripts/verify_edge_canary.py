@@ -501,7 +501,9 @@ def gate_window_covers_the_rule(stack_created_at, window_start):
 
 def _get_web_acl(waf_client, web_acl_arn):
     """Read the live web ACL. AWS errors are raised, never swallowed."""
-    response = waf_client.get_web_acl(WebACLArn=web_acl_arn)
+    # The WAFv2 GetWebACL request parameter is ARN (not WebACLArn):
+    # passing WebACLArn is a parameter validation error in botocore.
+    response = waf_client.get_web_acl(ARN=web_acl_arn)
     web_acl = (response or {}).get("WebACL") or {}
     return web_acl
 

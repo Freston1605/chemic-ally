@@ -253,19 +253,35 @@ app stack (`chemically`) keeps the distribution and exports its ARN.
 
 | Stack | Template | Region | Contents |
 |-------|----------|--------|----------|
-| `chemically` | `template.yaml` | us-east-2 | Lambda, VPC, RDS, S3, the CloudFront distribution (exports `DistributionArn`) |
-| `chemically-edge` | `edge-template.yaml` | us-east-1 | the WAF web ACL and its `WebACLAssociation` (takes `DistributionArn`) |
+| `chemically` | `template.yaml` | us-east-2 | Lambda, VPC, RDS, S3, the CloudFront distribution (takes `EdgeWebACLArn`, exports `DistributionArn`) |
+| `chemically-edge` | `edge-template.yaml` | us-east-1 | the WAF web ACL (exports `WebACLArn`) |
 
 Since M007/S01 the app stack declares **no** `AWS::WAFv2` resource at all:
 declaring one in us-east-2 makes every deploy fail on a resource that region
 cannot create. The edge stack is the only home of the rate limit.
 
+**How the rule is attached (M007/S06 -- corrected on 2026-10-22).** The
+WAFv2 API does not accept a CloudFront distribution ARN: every shape was
+rejected live with `WAFInvalidParameterException ... field: RESOURCE_ARN`.
+AWS's own CLI reference for `associate-web-acl` says why: *"For Amazon
+CloudFront, call `UpdateDistribution` for the distribution and provide the
+Amazon Resource Name (ARN) of the web ACL in the web ACL ID."*
+
+So the attachment lives on the **distribution**: the edge stack creates the
+web ACL and exports its ARN, and the app stack sets the distribution's
+`WebACLId` to that ARN (`EdgeWebACLArn` parameter). The handover therefore
+runs the other way round, and neither stack has to know the other's
+resources -- which also removes the circular dependency the other direction
+would have created.
+
 **Order (never reversed):**
-1. Deploy the app stack (us-east-2). It owns the distribution and exports
-   `DistributionArn`.
-2. Deploy the edge stack (us-east-1) with that ARN.
-3. Verify the association exists against the live distribution -- a detached
-   control must never pass silently.
+1. Deploy the edge stack (us-east-1). It creates the rule and exports
+   `WebACLArn`.
+2. Deploy the app stack (us-east-2) with that ARN as `EdgeWebACLArn`. It
+   attaches the rule to the distribution.
+3. Verify the attachment -- the live distribution must carry exactly that
+   web ACL. A rule that exists but is not attached enforces nothing, and
+   that must never pass silently.
 
 **Keep the distribution's identity on record.** The edge stack is handed the
 distribution's ARN once. CloudFormation updates a CloudFront distribution IN
@@ -292,7 +308,25 @@ a state that describes the live deployment, when the exported
 distribution ID changed.
 
 ```bash
-# 1. App stack (us-east-2)
+# 1. Edge stack (us-east-1) -- Count mode (the canary). It creates the
+#    web ACL and exports its ARN.
+sam deploy \
+  --template-file edge-template.yaml \
+  --stack-name chemically-edge \
+  --region us-east-1 \
+  --parameter-overrides \
+    WafRateLimit=2000 \
+    WafAction=Count \
+  --no-fail-on-empty-changeset
+
+# 2. Read the web ACL the edge stack created
+EDGE_ACL=$(aws cloudformation describe-stacks \
+  --stack-name chemically-edge --region us-east-1 \
+  --query "Stacks[0].Outputs[?OutputKey=='WebACLArn'].OutputValue" \
+  --output text)
+
+# 3. App stack (us-east-2) -- the distribution ATTACHES the web ACL
+#    through its WebACLId, so the app stack needs the ACL's ARN.
 sam deploy \
   --template-file template.yaml \
   --stack-name chemically \
@@ -303,31 +337,14 @@ sam deploy \
     CertificateArn="$CERTIFICATE_ARN" \
     RDSPassword="$RDS_PASSWORD" \
     DjangoSecretKey="$DJANGO_SECRET_KEY" \
-    OriginSecret="$ORIGIN_SECRET"
-
-# 2. Read the live distribution ARN out of the app stack's outputs
-DIST_ARN=$(aws cloudformation describe-stacks \
-  --stack-name chemically --region us-east-2 \
-  --query "Stacks[0].Outputs[?OutputKey=='DistributionArn'].OutputValue" \
-  --output text)
-
-# 3. Edge stack (us-east-1) -- Count mode (the canary)
-sam deploy \
-  --template-file edge-template.yaml \
-  --stack-name chemically-edge \
-  --region us-east-1 \
-  --parameter-overrides \
-    DistributionArn="$DIST_ARN" \
-    WafRateLimit=2000 \
-    WafAction=Count \
+    OriginSecret="$ORIGIN_SECRET" \
+    EdgeWebACLArn="$EDGE_ACL" \
   --no-fail-on-empty-changeset
 
-# 4. Verify the association exists
-EDGE_ACL=$(aws cloudformation describe-stacks \
-  --stack-name chemically-edge --region us-east-1 \
-  --query "Stacks[0].Outputs[?OutputKey=='WebACLArn'].OutputValue" \
-  --output text)
-aws wafv2 list-resources-for-web-acl --web-acl-arn "$EDGE_ACL" --region us-east-1
+# 4. Verify the attachment: the live distribution must carry that ACL
+python scripts/verify_edge.py \
+  --app-stack-name chemically --app-region us-east-2 \
+  --edge-stack-name chemically-edge --edge-region us-east-1
 ```
 
 **Switching the rule from Count to Block (the canary, and the rollback):**
@@ -337,7 +354,7 @@ The full canary procedure -- the window, the counters, the flip, the proof, the 
 ```bash
 sam deploy --template-file edge-template.yaml --stack-name chemically-edge \
   --region us-east-1 \
-  --parameter-overrides DistributionArn="$DIST_ARN" WafRateLimit=2000 WafAction=Block
+  --parameter-overrides WafRateLimit=2000 WafAction=Block
 ```
 
 `Count` measures the traffic without touching a single request; `Block`
@@ -346,8 +363,9 @@ rollback, so the canary never needs a code change.
 
 **CI owns the edge stack's action.** The deploy job sets the action from
 ONE workflow setting, `WAF_ACTION` (default `Count`), in
-`.github/workflows/deploy.yml`, and it re-deploys the edge stack after every
-app deploy (the app stack's `DistributionArn` is re-read on each run). A
+`.github/workflows/deploy.yml`, and it re-deploys the edge stack before every
+app deploy (the edge stack's `WebACLArn` is re-read on each run and handed
+to the app stack, which attaches it to the distribution). A
 manual `sam deploy ... WafAction=Block` is therefore **reverted by the next
 CI run**, which redeploys the edge stack with `WAF_ACTION=Count`, unless
 that workflow setting is changed to `Block` at the same time. To switch the
@@ -391,7 +409,7 @@ the same time. The manual command that CI would undo is:
 ```bash
 sam deploy --template-file edge-template.yaml --stack-name chemically-edge \
   --region us-east-1 \
-  --parameter-overrides DistributionArn="$DIST_ARN" WafRateLimit=2000 WafAction=Block
+  --parameter-overrides WafRateLimit=2000 WafAction=Block
 ```
 
 A rollback that must hold is therefore made in the workflow, never by hand.

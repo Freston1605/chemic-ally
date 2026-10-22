@@ -169,8 +169,10 @@ class FakeWaf:
         self.error = error
         self.calls = []
 
-    def get_web_acl(self, WebACLArn):
-        self.calls.append(("get_web_acl", WebACLArn))
+    def get_web_acl(self, ARN):
+        # The WAFv2 GetWebACL request parameter is ARN (botocore rejects
+        # WebACLArn for this operation).
+        self.calls.append(("get_web_acl", ARN))
         if self.error is not None:
             raise self.error
         return {"WebACL": self.web_acl}
