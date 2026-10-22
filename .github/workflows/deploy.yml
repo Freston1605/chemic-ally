@@ -356,6 +356,55 @@ jobs:
             --no-fail-on-empty-changeset
 
       # ─────────────────────────────────────────────
+      # M007/S06/T03 (TEMPORARY diagnostic): which CloudFront ARN SHAPE
+      # does WAFv2 accept for the association?
+      #
+      # The first deploy of this edge stack (2026-10-22, run 39732102371)
+      # failed with
+      #
+      #   Error reason: The ARN isn't valid. ... field: RESOURCE_ARN,
+      #   parameter: arn:aws:cloudfront::<account>:distribution/<id>
+      #   (Service: Wafv2, Status Code: 400, InvalidRequest)
+      #
+      # so the account-bearing shape the CloudFront API reports is NOT the
+      # one the association takes. This step REPORTS which shapes WAFv2
+      # accepts, so a repeat of this failure is diagnosed by the run that
+      # hits it instead of by another round of guessing.
+      #
+      # It changes nothing: the web ACL named below does not exist, and the
+      # distribution named below does not exist either, so the call can
+      # only fail. A shape that WAFv2 rejects answers "The ARN isn't
+      # valid"; a shape it accepts answers that the web ACL or the
+      # resource does not exist.
+      #
+      # TEMPORARY: removed once the association is proven green.
+      # ─────────────────────────────────────────────
+      - name: "Diagnose: which CloudFront ARN shape does WAFv2 accept?"
+        run: |
+          set -uo pipefail
+
+          fake_dist="E0PROBE0000000"
+          fake_acl="arn:aws:wafv2:us-east-1:${{ env.AWS_ACCOUNT_ID }}:global/webacl/probe/probe-00000000-0000-0000-0000-000000000000"
+
+          echo "Live distributions (the shape the CloudFront API reports):"
+          aws cloudfront list-distributions --region us-east-1 \
+            --query "DistributionList.Items[].{Id:Id,ARN:ARN,Domain:DomainName}" \
+            --output text 2>&1 || true
+
+          for candidate in \
+            "arn:aws:cloudfront::distribution/${fake_dist}" \
+            "arn:aws:cloudfront::${{ env.AWS_ACCOUNT_ID }}:distribution/${fake_dist}" \
+            "arn:aws:cloudfront::${fake_dist}"; do
+            echo "=== candidate: ${candidate}"
+            aws wafv2 associate-web-acl \
+              --web-acl-arn "$fake_acl" \
+              --resource-arn "$candidate" \
+              --region us-east-1 2>&1 || true
+          done
+
+          exit 0
+
+      # ─────────────────────────────────────────────
       # M007/S05: the edge canary is CI-owned, so the deploy job must know
       # whether THIS run flips the rule. The flip is the only moment a
       # Block-mode probe is worth running: a steady-state Block deploy
@@ -410,55 +459,6 @@ jobs:
 
           echo "waf_action_changed=${changed}" >> "$GITHUB_OUTPUT"
           echo "Edge rule action: live=${live_action:-none} wanted=${WAF_ACTION} changed=${changed}"
-
-      # ─────────────────────────────────────────────
-      # M007/S06/T03 (TEMPORARY diagnostic): which CloudFront ARN SHAPE
-      # does WAFv2 accept for the association?
-      #
-      # The first deploy of this edge stack (2026-10-22, run 39732102371)
-      # failed with
-      #
-      #   Error reason: The ARN isn't valid. ... field: RESOURCE_ARN,
-      #   parameter: arn:aws:cloudfront::<account>:distribution/<id>
-      #   (Service: Wafv2, Status Code: 400, InvalidRequest)
-      #
-      # so the account-bearing shape the CloudFront API reports is NOT the
-      # one the association takes. This step REPORTS which shapes WAFv2
-      # accepts, so a repeat of this failure is diagnosed by the run that
-      # hits it instead of by another round of guessing.
-      #
-      # It changes nothing: the web ACL named below does not exist, and the
-      # distribution named below does not exist either, so the call can
-      # only fail. A shape that WAFv2 rejects answers "The ARN isn't
-      # valid"; a shape it accepts answers that the web ACL or the
-      # resource does not exist.
-      #
-      # TEMPORARY: removed once the association is proven green.
-      # ─────────────────────────────────────────────
-      - name: "Diagnose: which CloudFront ARN shape does WAFv2 accept?"
-        run: |
-          set -uo pipefail
-
-          fake_dist="E0PROBE0000000"
-          fake_acl="arn:aws:wafv2:us-east-1:${{ env.AWS_ACCOUNT_ID }}:global/webacl/probe/probe-00000000-0000-0000-0000-000000000000"
-
-          echo "Live distributions (the shape the CloudFront API reports):"
-          aws cloudfront list-distributions --region us-east-1 \
-            --query "DistributionList.Items[].{Id:Id,ARN:ARN,Domain:DomainName}" \
-            --output text 2>&1 || true
-
-          for candidate in \
-            "arn:aws:cloudfront::distribution/${fake_dist}" \
-            "arn:aws:cloudfront::${{ env.AWS_ACCOUNT_ID }}:distribution/${fake_dist}" \
-            "arn:aws:cloudfront::${fake_dist}"; do
-            echo "=== candidate: ${candidate}"
-            aws wafv2 associate-web-acl \
-              --web-acl-arn "$fake_acl" \
-              --resource-arn "$candidate" \
-              --region us-east-1 2>&1 || true
-          done
-
-          exit 0
 
       # ─────────────────────────────────────────────
       # M007/S02: the edge stack (us-east-1).

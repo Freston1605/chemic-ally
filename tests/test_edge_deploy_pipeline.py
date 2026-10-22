@@ -237,7 +237,13 @@ def _edge_stack_reads_the_arn_from_the_deployed_stack(text):
 
 
 def _edge_stack_deploy_fails_loudly_without_the_arn(text):
-    """A missing DistributionArn output must fail the job."""
+    """A missing distribution ARN output must fail the job.
+
+    BOTH ARN outputs are checked, and the failure must be attached to the
+    emptiness check itself: an ``::error::`` elsewhere in the step would
+    satisfy a looser guard while a missing output still deployed an
+    unassociated edge stack.
+    """
     body = _step_body(text, EDGE_STACK_STEP)
     if not body:
         return False
@@ -245,7 +251,18 @@ def _edge_stack_deploy_fails_loudly_without_the_arn(text):
         return False
     if not re.search(r"exit 1", body):
         return False
-    return re.search(r'\[ -z "\$dist_arn" \]', body) is not None
+    for variable in ("dist_arn", "waf_dist_arn"):
+        if re.search(r'\[ -z "\$' + variable + r'" \]', body) is None:
+            return False
+        attached = re.search(
+            r'if \[ -z "\$' + variable + r'" \][^\n]*\n'
+            r'\s*echo "::error::[^\n]*\n'
+            r'\s*exit 1',
+            body,
+        )
+        if attached is None:
+            return False
+    return True
 
 
 def _edge_stack_targets_us_east_1(text):

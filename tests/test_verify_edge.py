@@ -52,6 +52,16 @@ DISTRIBUTION_ARN = (
 OTHER_DISTRIBUTION_ARN = (
     "arn:aws:cloudfront::768125641662:distribution/E0OTHER"
 )
+# WAFv2 addresses a CloudFront distribution with the ACCOUNT field EMPTY.
+# The association is written in that shape, so the verifier must not
+# compare the two ARN STRINGS: it compares the distribution ID they name
+# (observed live on 2026-10-22, CI run 39732102371).
+WAF_DISTRIBUTION_ARN = (
+    "arn:aws:cloudfront::distribution/E1EXAMPLE"
+)
+WAF_OTHER_DISTRIBUTION_ARN = (
+    "arn:aws:cloudfront::distribution/E0OTHER"
+)
 WEB_ACL_ARN = "arn:aws:wafv2:us-east-1:768125641662:global/webacl/abc"
 
 
@@ -224,6 +234,23 @@ class VerifyEdgeTests(SimpleTestCase):
         )
         self.assertEqual(result, 0)
 
+    def test_waf_shaped_association_passes(self):
+        """WAFv2 reports the association in ITS ARN shape (no account).
+
+        The account-bearing form and the account-less form name the SAME
+        distribution, so a healthy association must not be reported as a
+        detached one.
+        """
+        clients = FakeClients(
+            association_arn=WAF_DISTRIBUTION_ARN,
+            listed_arns=[WAF_DISTRIBUTION_ARN],
+        )
+        result = verify_edge.run(
+            APP_STACK, APP_REGION, EDGE_STACK, EDGE_REGION,
+            client_factory=clients,
+        )
+        self.assertEqual(result, 0)
+
     def test_action_is_read_from_outputs_when_parameters_are_absent(self):
         """A stack that only exports Action/RateLimit is still reportable."""
         edge_stack = _edge_stack(
@@ -267,9 +294,38 @@ class VerifyEdgeFailureTests(SimpleTestCase):
             FakeClients(association_arn=OTHER_DISTRIBUTION_ARN)
         )
 
+    def test_waf_shaped_association_on_another_distribution_is_detected(self):
+        """The same detachment, in the ARN shape WAFv2 actually reports."""
+        self._assert_fails(
+            FakeClients(
+                association_arn=WAF_OTHER_DISTRIBUTION_ARN,
+                listed_arns=[WAF_OTHER_DISTRIBUTION_ARN],
+            )
+        )
+
     def test_detached_web_acl_resource_list_is_detected(self):
         self._assert_fails(
             FakeClients(listed_arns=[OTHER_DISTRIBUTION_ARN])
+        )
+
+    def test_waf_shaped_detached_web_acl_resource_list_is_detected(self):
+        self._assert_fails(
+            FakeClients(listed_arns=[WAF_OTHER_DISTRIBUTION_ARN])
+        )
+
+    def test_malformed_distribution_arn_output_is_detected(self):
+        """An output that names no distribution cannot be verified."""
+        self._assert_fails(
+            FakeClients(
+                app_stack=_app_stack(
+                    outputs=[
+                        {
+                            "OutputKey": "DistributionArn",
+                            "OutputValue": "not-an-arn",
+                        },
+                    ]
+                )
+            )
         )
 
     def test_missing_association_resource_is_detected(self):
