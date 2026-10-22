@@ -1,8 +1,10 @@
 name: Diagnose edge association (temporary)
 
-# TEMPORARY diagnostic: try the association with the live distribution's ARN
-# against a CLOUDFRONT-scope ACL (us-east-1) and a REGIONAL-scope ACL
-# (us-east-2), with several ARN shapes, then delete the throwaway ACLs.
+# TEMPORARY diagnostic: the decisive comparison. The live distribution's ARN
+# is tried against a REGIONAL-scope web ACL (us-east-2) and a
+# CLOUDFRONT-scope web ACL (us-east-1), with several ARN shapes. Every
+# throwaway ACL - including leftovers from earlier runs - is deleted at the
+# end.
 on:
   workflow_dispatch:
 
@@ -28,7 +30,7 @@ jobs:
         run: |
           python3 - <<'PY'
           import boto3
-          from botocore.exceptions import ClientError
+          from botocore.exceptions import BotoCoreError, ClientError
 
           def client(service, region):
               return boto3.client(service, region_name=region)
@@ -40,53 +42,58 @@ jobs:
           dist_id = arn.rsplit("/", 1)[-1]
           print("RESULT stack status:", stack["StackStatus"])
           print("RESULT pipeline arn:", repr(arn))
+          print("RESULT distribution id length:", len(dist_id))
 
           waf_e1 = client("wafv2", "us-east-1")
           waf_e2 = client("wafv2", "us-east-2")
 
-          acl_cf = None
-          acl_reg = None
-          try:
-              acl_cf = waf_e1.create_web_acl(
-                  Name="chemically-diagnostic-cf",
-                  Scope="CLOUDFRONT",
-                  DefaultAction={"Allow": {}},
-                  VisibilityConfig={
-                      "CloudWatchMetricsEnabled": True,
-                      "MetricName": "ChemicAllyDiagCf",
-                      "SampledRequestsEnabled": False,
-                  },
-              )["Summary"]["ARN"]
-              print("RESULT created cf-scope acl:", acl_cf)
-          except ClientError as exc:
-              print("RESULT could not create cf-scope acl:",
-                    exc.response["Error"]["Message"][:200])
+          def delete_all(waf, scope):
+              for acl in waf.list_web_acls(Scope=scope).get("WebACLs", []):
+                  if "chemically-diagnostic" not in acl["Name"]:
+                      continue
+                  try:
+                      lock = waf.get_web_acl(WebACLArn=acl["ARN"])["LockToken"]
+                      waf.delete_web_acl(WebACLArn=acl["ARN"], LockToken=lock)
+                      print("RESULT deleted leftover", acl["ARN"])
+                  except Exception as exc:
+                      print("RESULT leftover not deleted", acl["ARN"], str(exc)[:140])
 
-          try:
-              acl_reg = waf_e2.create_web_acl(
-                  Name="chemically-diagnostic-regional",
-                  Scope="REGIONAL",
-                  DefaultAction={"Allow": {}},
-                  VisibilityConfig={
-                      "CloudWatchMetricsEnabled": True,
-                      "MetricName": "ChemicAllyDiagReg",
-                      "SampledRequestsEnabled": False,
-                  },
-              )["Summary"]["ARN"]
-              print("RESULT created reg-scope acl:", acl_reg)
-          except ClientError as exc:
-              print("RESULT could not create reg-scope acl:",
-                    exc.response["Error"]["Message"][:200])
+          delete_all(waf_e1, "CLOUDFRONT")
+          delete_all(waf_e2, "REGIONAL")
+
+          made = []
+
+          def make(waf, scope, name, metric):
+              try:
+                  acl = waf.create_web_acl(
+                      Name=name,
+                      Scope=scope,
+                      DefaultAction={"Allow": {}},
+                      VisibilityConfig={
+                          "CloudWatchMetricsEnabled": True,
+                          "MetricName": metric,
+                          "SampledRequestsEnabled": False,
+                      },
+                  )["Summary"]["ARN"]
+                  made.append((waf, acl))
+                  print("RESULT created", scope, name, acl)
+                  return acl
+              except Exception as exc:
+                  print("RESULT could not create", scope, name, str(exc)[:200])
+                  return None
+
+          acl_cf = make(waf_e1, "CLOUDFRONT",
+                        "chemically-diagnostic-cf", "ChemicAllyDiagCf")
+          acl_reg = make(waf_e2, "REGIONAL",
+                         "chemically-diagnostic-regional", "ChemicAllyDiagReg")
 
           variants = [
               ("as-is", arn),
               ("with-region", arn.replace("::", ":us-east-1:")),
-              ("colon-resource", arn.replace("/", ":")),
-              ("bare-id", dist_id),
           ]
           for label, waf, acl in (
-              ("cf-scope/us-east-1", waf_e1, acl_cf),
               ("reg-scope/us-east-2", waf_e2, acl_reg),
+              ("cf-scope/us-east-1", waf_e1, acl_cf),
           ):
               if not acl:
                   continue
@@ -94,13 +101,13 @@ jobs:
                   try:
                       waf.associate_web_acl(WebACLArn=acl, ResourceArn=candidate)
                       print("RESULT OK", label, name, candidate)
-                  except ClientError as exc:
-                      print("RESULT FAIL", label, name, candidate,
-                            exc.response["Error"]["Message"][:180])
+                  except Exception as exc:
+                      code = ""
+                      if isinstance(exc, ClientError):
+                          code = exc.response["Error"].get("Code", "")
+                      print("RESULT FAIL", label, name, code, str(exc)[:200])
 
-          for waf, acl in ((waf_e1, acl_cf), (waf_e2, acl_reg)):
-              if not acl:
-                  continue
+          for waf, acl in made:
               try:
                   lock = waf.get_web_acl(WebACLArn=acl)["LockToken"]
                   waf.delete_web_acl(WebACLArn=acl, LockToken=lock)
