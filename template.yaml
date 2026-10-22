@@ -375,6 +375,40 @@ Resources:
           CidrIp: 0.0.0.0/0
 
   # ─────────────────────────────────────────────
+  # CloudWatch interface endpoint (M007/S03)
+  # ─────────────────────────────────────────────
+  # The Lambda publishes the origin guard's refusal metric, and it runs in
+  # a VPC whose subnets have no route to the internet. Without a private
+  # path to the monitoring API the publish HANGS -- and a hanging publish
+  # is on the refusal's critical path, so the refusal itself would time
+  # out and the caller would see a 502 instead of the fixed 403.
+  #
+  # The endpoint gives the function that path. The grant in the role above
+  # is scoped to the ChemicAlly namespace, so the function may publish its
+  # own metrics and nothing else.
+  CloudWatchEndpointSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: HTTPS from the Lambda to the CloudWatch endpoint
+      VpcId: !Ref LambdaVpcId
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 443
+          ToPort: 443
+          CidrIp: 172.31.0.0/16
+          Description: The Lambda's private subnets
+
+  CloudWatchEndpoint:
+    Type: AWS::EC2::VPCEndpoint
+    Properties:
+      VpcId: !Ref LambdaVpcId
+      ServiceName: !Sub "com.amazonaws.${AWS::Region}.monitoring"
+      VpcEndpointType: Interface
+      SubnetIds: !Ref LambdaSubnetIds
+      SecurityGroupIds:
+        - !GetAtt CloudWatchEndpointSecurityGroup.GroupId
+
+  # ─────────────────────────────────────────────
   # CloudFront Distribution
   #
   # The ACM certificate (us-east-1, DNS-validated via Cloudflare) is

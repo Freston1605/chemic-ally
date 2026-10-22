@@ -20,12 +20,15 @@ path is exercised through the real Django test client, so the whole
 middleware stack runs.
 """
 
+from pathlib import Path
 from unittest import mock
 
 from django.test import SimpleTestCase, override_settings
 
 from chemically import metrics
 from chemically.middleware import DEFAULT_ORIGIN_HEADER_NAME, REFUSAL_BODY
+
+REPO_ROOT = Path(__file__).resolve().parents[1]
 
 TEST_SECRET = "test-only-origin-secret"
 
@@ -200,3 +203,54 @@ class RefusalMetricMiddlewareTests(SimpleTestCase):
             )
         self.assertEqual(response.status_code, 200)
         self.assertEqual(client.calls, [])
+
+
+class RefusalMustNotHangTests(SimpleTestCase):
+    """The metric is on the refusal's critical path, so it is bounded.
+
+    The Lambda publishes the refusal metric from inside the refusal path.
+    A publish that hangs (an unreachable endpoint, a throttled API) would
+    outlast the Lambda's timeout and turn the fixed 403 into a gateway
+    error -- the guard would then take the site down instead of protecting
+    it. The client therefore carries tight timeouts and a single attempt,
+    and the stack gives the function a private path to the monitoring API
+    so the publish can actually succeed.
+    """
+
+    def test_the_client_is_bounded(self):
+        self.assertLessEqual(
+            metrics.CONNECT_TIMEOUT_SECONDS,
+            2,
+            "the CloudWatch connect timeout must be tight: the publish is "
+            "on the refusal's critical path.",
+        )
+        self.assertLessEqual(
+            metrics.READ_TIMEOUT_SECONDS,
+            2,
+            "the CloudWatch read timeout must be tight: a hanging publish "
+            "turns the fixed 403 into a gateway error.",
+        )
+        self.assertEqual(
+            metrics.MAX_ATTEMPTS,
+            1,
+            "the publish must not be retried: every retry is more time on "
+            "the refusal's critical path.",
+        )
+
+    def test_the_stack_gives_the_function_a_private_path_to_cloudwatch(self):
+        template = (
+            REPO_ROOT / "template.yaml"
+        ).read_text(encoding="utf-8")
+        self.assertIn(
+            "AWS::EC2::VPCEndpoint",
+            template,
+            "the app stack must declare a CloudWatch VPC endpoint: the "
+            "Lambda runs in a VPC with no route to the internet, so the "
+            "refusal metric could never be published without it.",
+        )
+        self.assertIn(
+            "com.amazonaws.${AWS::Region}.monitoring",
+            template,
+            "the endpoint must be the regional monitoring API (the one "
+            "PutMetricData is served by).",
+        )

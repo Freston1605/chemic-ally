@@ -46,11 +46,17 @@ _client = None
 #: path, so the metric must not be able to hang the refusal: botocore's
 #: defaults (60s connect, 60s read, 5 legacy-mode attempts) can outlast the
 #: 30s Lambda timeout, which would turn the refusal into a gateway error
-#: instead of the fixed 403. Two standard-mode attempts of 2s connect plus
-#: 3s read stay well inside the timeout.
-CONNECT_TIMEOUT_SECONDS = 2
-READ_TIMEOUT_SECONDS = 3
-MAX_ATTEMPTS = 2
+#: instead of the fixed 403.
+#:
+#: The bounds are deliberately tight (1s connect, 1s read, a single
+#: attempt): the metric is best-effort by design, and a refusal that takes
+#: seconds to answer is a refusal that looks like an outage. The endpoint
+#: (a VPC interface endpoint, so the Lambda can reach the monitoring API
+#: without a route to the internet) is what makes the publish succeed;
+#: these bounds are only the safety net.
+CONNECT_TIMEOUT_SECONDS = 1
+READ_TIMEOUT_SECONDS = 1
+MAX_ATTEMPTS = 1
 
 
 def _cloudwatch_client():
