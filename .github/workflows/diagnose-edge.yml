@@ -93,6 +93,20 @@ jobs:
                       print("RESULT processed HeaderValue len:",
                             len(value) if isinstance(value, str) else value)
 
+          edge_cfn = client("cloudformation", "us-east-1")
+          try:
+              edge_stack = edge_cfn.describe_stacks(
+                  StackName="chemically-edge"
+              )["Stacks"][0]
+              print("RESULT edge stack keys:", sorted(edge_stack))
+              print("RESULT edge CreationTimestamp:", repr(
+                  edge_stack.get("CreationTimestamp")))
+              print("RESULT edge LastUpdatedTime:", repr(
+                  edge_stack.get("LastUpdatedTime")))
+              print("RESULT edge StackStatus:", edge_stack.get("StackStatus"))
+          except Exception as exc:
+              print("RESULT edge stack read failed:", str(exc)[:200])
+
           lam = client("lambda", "us-east-2")
           function = outputs["LambdaFunctionArn"].split(":function:")[-1]
           env = lam.get_function_configuration(
