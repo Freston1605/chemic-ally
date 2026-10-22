@@ -130,12 +130,18 @@ def _distribution(origins=None, last_modified=None, distribution_id=None):
         origins = [_origin()]
     if last_modified is None:
         last_modified = NOW - timedelta(hours=2)
+    # The real GetDistribution reply carries the origins under
+    # DistributionConfig, not at the top level. The fake mirrors that
+    # shape, so the witness cannot pass by reading the wrong level.
     return {
         "Id": DISTRIBUTION_ID if distribution_id is None else distribution_id,
         "ARN": DISTRIBUTION_ARN,
         "DomainName": DISTRIBUTION_DOMAIN,
         "LastModifiedTime": last_modified,
-        "Origins": {"Items": origins},
+        "DistributionConfig": {
+            "Comment": "ChemicAlly public distribution",
+            "Origins": {"Items": origins},
+        },
     }
 
 

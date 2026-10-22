@@ -248,8 +248,15 @@ def _origin_for_host(distribution, host):
 
     The header must be on the origin that ACTUALLY serves the Function URL,
     not merely somewhere in the distribution's configuration.
+
+    The origins live under the distribution's ``DistributionConfig`` in the
+    GetDistribution reply (the top level carries the distribution's own
+    fields, not its origins) -- reading them from the wrong level makes the
+    witness report that no origin serves the Function URL, which is exactly
+    the "the header cannot be verified" state it is meant to detect.
     """
-    origins = (distribution.get("Origins") or {}).get("Items") or []
+    config = distribution.get("DistributionConfig") or distribution
+    origins = (config.get("Origins") or {}).get("Items") or []
     for origin in origins:
         domain = origin.get("DomainName") or ""
         if domain.lower() == (host or "").lower():
