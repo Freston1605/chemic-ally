@@ -396,7 +396,6 @@ Resources:
           FromPort: 443
           ToPort: 443
           CidrIp: 172.31.0.0/16
-          Description: The Lambda's private subnets
 
   CloudWatchEndpoint:
     Type: AWS::EC2::VPCEndpoint
