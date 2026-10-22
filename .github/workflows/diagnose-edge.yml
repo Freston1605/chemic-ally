@@ -1,8 +1,8 @@
 name: Diagnose edge association (temporary)
 
-# TEMPORARY diagnostic. It prints the CloudFront distribution's own
-# identifiers, then tries the association with several ARN shapes against
-# ONE throwaway web ACL, and deletes that ACL again at the end.
+# TEMPORARY diagnostic. It tries the association with several ARN shapes
+# against a throwaway web ACL (CLOUDFRONT scope in us-east-1 and REGIONAL
+# scope in us-east-2) and deletes every throwaway ACL again at the end.
 on:
   workflow_dispatch:
 
@@ -30,54 +30,71 @@ jobs:
             --output text | sed -e 's#.*distribution/##')
           echo "distribution id: ${dist_id}"
 
-          echo "=== every top-level key of the distribution object ==="
-          aws cloudfront get-distribution --id "$dist_id" --output json \
+          echo "=== all distributions in the account ==="
+          aws cloudfront list-distributions --output json \
             | python3 -c '
           import json, sys
-          data = json.load(sys.stdin)["Distribution"]
-          print("keys: %s" % sorted(data.keys()))
-          for key in sorted(data.keys()):
-              if key in ("Id", "ARN", "Status", "DomainName", "LastModifiedTime",
-                         "ActiveTrustedSigners", "WebACLId", "Restrictions"):
-                  print("%s=%s" % (key, data.get(key)))
+          for item in json.load(sys.stdin)["DistributionList"].get("Items", []):
+              print("id=%s domain=%s enabled=%s aliases=%s" % (
+                  item.get("Id"), item.get("DomainName"), item.get("Enabled"),
+                  item.get("Aliases", {}).get("Items")))
           '
 
-          echo
-          echo "=== the web ACLs currently in us-east-1 (CLOUDFRONT) ==="
-          aws wafv2 list-web-acls --scope CLOUDFRONT --region us-east-1 \
-            --output json --query 'WebACLs[].{name:Name,arn:ARN,scope:Scope,id:Id}'
+          cleanup() {
+            for scope_pair in "CLOUDFRONT us-east-1" "REGIONAL us-east-2"; do
+              set -- $scope_pair
+              for a in $(aws wafv2 list-web-acls --scope "$1" --region "$2" \
+                  --output json --query "WebACLs[?contains(Name, 'chemically-diagnostic')].ARN" \
+                  --output text 2>/dev/null); do
+                token=$(aws wafv2 get-web-acl --web-acl-arn "$a" --region "$2" \
+                  --output json --query 'LockToken' --output text 2>/dev/null)
+                aws wafv2 delete-web-acl --web-acl-arn "$a" --lock-token "$token" \
+                  --region "$2" >/dev/null 2>&1 && echo "deleted ${a}" || echo "COULD NOT DELETE ${a}"
+              done
+            done
+          }
+          trap cleanup EXIT
 
-          acl=$(aws wafv2 create-web-acl \
-            --name chemically-diagnostic-association \
+          cleanup
+
+          cloudfront_acl=$(aws wafv2 create-web-acl \
+            --name chemically-diagnostic-cf \
             --scope CLOUDFRONT \
             --default-action '{"Allow": {}}' \
-            --visibility-config '{"CloudWatchMetricsEnabled": true, "MetricName": "ChemicAllyDiagnostic", "SampledRequestsEnabled": false}' \
+            --visibility-config '{"CloudWatchMetricsEnabled": true, "MetricName": "ChemicAllyDiagCf", "SampledRequestsEnabled": false}' \
             --region us-east-1 --output json \
-            | python3 -c 'import json,sys; print(json.load(sys.stdin)["Summary"]["ARN"])')
-          echo "throwaway acl: ${acl}"
+            | python3 -c 'import json,sys; print(json.load(sys.stdin)["Summary"]["ARN"])' 2>/dev/null)
+          echo "cloudfront-scope acl: ${cloudfront_acl}"
+
+          regional_acl=$(aws wafv2 create-web-acl \
+            --name chemically-diagnostic-regional \
+            --scope REGIONAL \
+            --default-action '{"Allow": {}}' \
+            --visibility-config '{"CloudWatchMetricsEnabled": true, "MetricName": "ChemicAllyDiagReg", "SampledRequestsEnabled": false}' \
+            --region us-east-2 --output json \
+            | python3 -c 'import json,sys; print(json.load(sys.stdin)["Summary"]["ARN"])' 2>/dev/null)
+          echo "regional-scope acl: ${regional_acl}"
 
           for variant in \
             "arn:aws:cloudfront::768125641662:distribution/${dist_id}" \
             "arn:aws:cloudfront:us-east-1:768125641662:distribution/${dist_id}" \
             "arn:aws:cloudfront::768125641662:distribution:${dist_id}" \
             "${dist_id}" ; do
-            echo "--- trying: ${variant}"
-            aws wafv2 associate-web-acl --web-acl-arn "$acl" --resource-arn "$variant" \
-              --region us-east-1 2>&1 | grep -E "Reason|Parameter|error|Error|\{|\}" | head -6
-            echo "--- exit: $?"
+            echo "--- CLOUDFRONT acl, resource: ${variant}"
+            aws wafv2 associate-web-acl --web-acl-arn "$cloudfront_acl" \
+              --resource-arn "$variant" --region us-east-1 2>&1 \
+              | grep -E "Reason|Parameter|rror" | head -4 || true
+            echo "--- REGIONAL acl, resource: ${variant}"
+            aws wafv2 associate-web-acl --web-acl-arn "$regional_acl" \
+              --resource-arn "$variant" --region us-east-2 2>&1 \
+              | grep -E "Reason|Parameter|rror" | head -4 || true
           done
 
-          echo "=== cleaning up every throwaway ACL ==="
-          for name in chemically-diagnostic-association; do
-            for a in $(aws wafv2 list-web-acls --scope CLOUDFRONT --region us-east-1 \
-                --output json --query "WebACLs[?Name=='$name'].ARN" --output text); do
-              token=$(aws wafv2 get-web-acl --web-acl-arn "$a" --region us-east-1 \
-                --output json --query 'LockToken' --output text)
-              aws wafv2 delete-web-acl --web-acl-arn "$a" --lock-token "$token" \
-                --region us-east-1 2>&1 | head -3
-              echo "deleted ${a}"
-            done
-          done
+          echo "=== final cleanup ==="
+          cleanup
           echo "=== remaining CLOUDFRONT ACLs ==="
           aws wafv2 list-web-acls --scope CLOUDFRONT --region us-east-1 \
-            --output json --query 'WebACLs[].Name'
+            --output json --query 'WebACLs[].Name' || true
+          echo "=== remaining REGIONAL ACLs ==="
+          aws wafv2 list-web-acls --scope REGIONAL --region us-east-2 \
+            --output json --query 'WebACLs[].Name' || true
