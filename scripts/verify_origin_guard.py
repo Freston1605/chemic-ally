@@ -264,16 +264,34 @@ def _origin_for_host(distribution, host):
     return None
 
 
+def _custom_header_items(origin):
+    """Return the origin's custom headers as a list of {HeaderName, ...}.
+
+    The CloudFront API carries the origin's custom headers in a structure
+    - ``CustomHeaders: {Quantity: N, Items: [...]}`` - not in a plain
+    list, so reading it as a list yields the structure's KEYS (strings) and
+    every later access to a header fails. The template's
+    ``OriginCustomHeaders`` is the CloudFormation spelling of the same
+    thing, and the resource provider maps one onto the other.
+    """
+    headers = origin.get("CustomHeaders") or {}
+    if isinstance(headers, dict):
+        return list(headers.get("Items") or [])
+    return list(headers)
+
+
 def _origin_header_value(origin, header_name):
     """Return the stamped value of ``header_name``, or None when absent.
 
-    The CloudFront API calls the origin's custom headers ``CustomHeaders``.
+    The CloudFront API calls the origin's custom headers ``CustomHeaders``
+    and carries them in a structure (``{Quantity, Items}``);
     CloudFormation's template property is ``OriginCustomHeaders``, and the
-    resource provider maps one onto the other -- so a witness that reads
-    the template's name from an API reply finds nothing and reports a
-    missing header that is actually there.
+    resource provider maps one onto the other. A witness that reads the
+    template's name from an API reply finds nothing, and one that reads
+    the API's structure as a list sees its own keys -- so a live,
+    correctly stamped header gets reported missing.
     """
-    for header in origin.get("CustomHeaders") or []:
+    for header in _custom_header_items(origin):
         if header.get("HeaderName") == header_name:
             return header.get("HeaderValue")
     return None

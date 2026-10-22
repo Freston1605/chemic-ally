@@ -524,11 +524,18 @@ class OriginHeaderFieldNameTests(SimpleTestCase):
             "the witness must read the origin's CustomHeaders (the API's "
             "name), not the template's OriginCustomHeaders.",
         )
+        self.assertIn(
+            'headers.get("Items")',
+            self.witness,
+            "the API carries the headers in a structure ({Quantity, "
+            "Items}); reading it as a list yields the structure's keys and "
+            "a live header looks missing.",
+        )
 
     def test_the_ensurer_writes_the_api_field(self):
         self.assertIn(
-            'origin["CustomHeaders"] = headers',
+            'origin["CustomHeaders"] = {"Quantity": len(headers), "Items": headers}',
             self.ensurer,
-            "the repair script must write CustomHeaders (the API's name); "
-            "the API rejects OriginCustomHeaders.",
+            "the repair script must write CustomHeaders in the API's "
+            "structure shape; the API rejects OriginCustomHeaders.",
         )
