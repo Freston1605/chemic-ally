@@ -228,8 +228,6 @@ def _edge_stack_is_deployed_before_the_app_stack(text):
     return edge < app
 
 
-
-
 def _app_stack_receives_the_edge_web_acl_arn(text):
     """The app deploy must receive the edge stack's web ACL ARN.
 
@@ -245,8 +243,6 @@ def _app_stack_receives_the_edge_web_acl_arn(text):
     return "steps.edge-acl.outputs.arn" in app_body
 
 
-
-
 def _edge_acl_arn_read_fails_loudly_when_missing(text):
     """A missing web ACL ARN must fail the job, not deploy an unattached rule."""
     body = _step_body(text, EDGE_ACL_STEP)
@@ -257,8 +253,6 @@ def _edge_acl_arn_read_fails_loudly_when_missing(text):
     if not re.search(r"exit 1", body):
         return False
     return "WebACLArn" in body
-
-
 
 
 def _edge_stack_targets_us_east_1(text):
@@ -287,10 +281,6 @@ def _edge_stack_passes_the_action_and_the_limit(text):
     if "WafAction=" not in body:
         return False
     return "WafRateLimit=" in body
-
-
-
-
 
 
 def _edge_action_defaults_to_count(text):
@@ -334,8 +324,6 @@ def _edge_verification_runs_after_the_app_deploy(text):
     if app < 0 or verify < 0:
         return False
     return app < verify
-
-
 
 
 def _edge_verification_cannot_be_swallowed(text):
@@ -386,8 +374,6 @@ class EdgeDeployPipelineTests(SimpleTestCase):
             "the job when the output is missing: a deployment that "
             "silently attached no rule would look green.",
         )
-
-
 
     def test_edge_stack_targets_us_east_1(self):
         self.assertTrue(

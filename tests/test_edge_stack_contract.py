@@ -140,8 +140,6 @@ def _app_stack_exports_distribution_arn(text):
     return not re.search(r"distribution/[A-Z0-9]{8,}", output)
 
 
-
-
 def _distribution_has_no_name_property(text):
     """The distribution must not carry a `Name:` property.
 
@@ -173,8 +171,6 @@ def _edge_template_exports_the_web_acl_arn(text):
     return "WafWebACLAssociation" not in text
 
 
-
-
 def _app_stack_attaches_the_edge_web_acl(text):
     """The app stack must attach the edge web ACL to the distribution.
 
@@ -196,8 +192,6 @@ def _app_stack_attaches_the_edge_web_acl(text):
     if "EdgeWebACLArn" not in distribution:
         return False
     return "AWS::NoValue" in distribution
-
-
 
 
 def _edge_template_owns_only_the_edge(text):
@@ -326,7 +320,6 @@ class AppStackHandoverTests(SimpleTestCase):
             "stack can associate the WAF rule with the live distribution.",
         )
 
-
     def test_distribution_carries_no_name_property(self):
         self.assertTrue(
             _distribution_has_no_name_property(self.template),
@@ -352,8 +345,6 @@ class EdgeStackContractTests(SimpleTestCase):
             "carry a WafWebACLAssociation: the WAFv2 API cannot accept a "
             "CloudFront distribution ARN (R026).",
         )
-
-
 
     def test_edge_stack_owns_only_the_edge_control(self):
         self.assertTrue(
@@ -500,9 +491,6 @@ class EdgeStackContractNegativeTests(SimpleTestCase):
             "distribution: the resource type has no such property.",
         )
 
-
-
-
     def test_edge_stack_association_is_detected(self):
         mutated = self._mutate(
             self.edge,
@@ -542,8 +530,6 @@ class EdgeStackContractNegativeTests(SimpleTestCase):
             "the attachment guard must fail when the distribution no longer "
             "carries the edge web ACL.",
         )
-
-
 
     def test_application_resource_in_the_edge_stack_is_detected(self):
         mutated = self._mutate(

@@ -267,8 +267,6 @@ def _edge_stack_exports_the_web_acl(text):
     return "WafWebACLAssociation" not in text
 
 
-
-
 class WafRateRuleWiringTests(SimpleTestCase):
     """R026 / THROT-01: the edge rate limit must stay wired and reviewable."""
 
