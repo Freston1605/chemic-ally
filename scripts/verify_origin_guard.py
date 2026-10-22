@@ -338,23 +338,36 @@ def _alarm_name(cfn_client, stack_name):
     return "{}{}".format(stack_name, ALARM_NAME_SUFFIX)
 
 
-def _http_get(url, timeout):
+def _http_get(url, timeout, attempts=2):
     """GET ``url`` and return ``(status, body_text)``.
 
     HTTP error responses are returned rather than raised, so their status
     and body can be asserted (a 403 refusal is the expected answer of the
     direct probe). Transport failures become a RuntimeError.
+
+    A read timeout is retried: the probe hits a cold Lambda (the image
+    imports chempy and scipy), and a timeout on the first attempt says
+    nothing about the guard's state. A refusal, a 200 and every other
+    status are returned as they are.
     """
-    request = urllib.request.Request(url, method="GET")
-    try:
-        with urllib.request.urlopen(request, timeout=timeout) as response:
-            return response.status, response.read().decode("utf-8", "replace")
-    except urllib.error.HTTPError as exc:
-        return exc.code, exc.read().decode("utf-8", "replace")
-    except urllib.error.URLError as exc:
-        raise RuntimeError(
-            "could not reach {}: {}".format(url, exc.reason)
-        ) from None
+    last_error = None
+    for attempt in range(max(1, attempts)):
+        request = urllib.request.Request(url, method="GET")
+        try:
+            with urllib.request.urlopen(request, timeout=timeout) as response:
+                return (
+                    response.status,
+                    response.read().decode("utf-8", "replace"),
+                )
+        except urllib.error.HTTPError as exc:
+            return exc.code, exc.read().decode("utf-8", "replace")
+        except (urllib.error.URLError, TimeoutError, OSError) as exc:
+            last_error = exc
+            if attempt + 1 < max(1, attempts):
+                continue
+    raise RuntimeError(
+        "could not reach {}: {}".format(url, last_error)
+    ) from None
 
 
 def _check_header_live(facts, min_header_age_minutes, now):
@@ -580,7 +593,7 @@ def run(
     expect_enforcement=None,
     metric_wait_seconds=180,
     min_header_age_minutes=10,
-    timeout_seconds=30,
+    timeout_seconds=60,
     *,
     client_factory=boto3.client,
     http_get=None,
@@ -736,8 +749,8 @@ def main(argv=None, client_factory=boto3.client, http_get=None, sleep=time.sleep
     parser.add_argument(
         "--timeout-seconds",
         type=float,
-        default=30,
-        help="HTTP timeout of each probe",
+        default=60,
+        help="HTTP timeout of each probe (the probe hits a cold Lambda)",
     )
     args = parser.parse_args(argv)
 
