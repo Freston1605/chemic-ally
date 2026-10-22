@@ -43,6 +43,7 @@ from types import SimpleNamespace
 
 from django.test import SimpleTestCase
 
+from chemically.metrics import METRIC_NAMESPACE, REFUSAL_METRIC_NAME
 from chemically.middleware import DEFAULT_ORIGIN_HEADER_NAME, REFUSAL_BODY
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
@@ -515,6 +516,13 @@ class ConstantsAndSecretTests(SimpleTestCase):
         self.assertEqual(
             verify_origin_guard.DEFAULT_ORIGIN_HEADER_NAME,
             DEFAULT_ORIGIN_HEADER_NAME,
+        )
+
+    def test_the_metric_constants_match_the_metrics_module(self):
+        """The witness must poll the metric the application publishes."""
+        self.assertEqual(verify_origin_guard.METRIC_NAMESPACE, METRIC_NAMESPACE)
+        self.assertEqual(
+            verify_origin_guard.REFUSAL_METRIC_NAME, REFUSAL_METRIC_NAME
         )
 
     def test_the_secret_is_never_printed(self):
