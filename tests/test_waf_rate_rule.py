@@ -248,26 +248,25 @@ def _action_is_the_parameter_switch(text):
     return DEFAULT_ACTION in allowed and BLOCKING_ACTION in allowed
 
 
-def _association_binds_distribution(text):
-    """A WebACLAssociation must bind the ACL to the imported distribution."""
-    association = _resource(text, "WafWebACLAssociation")
-    if not association:
+def _edge_stack_exports_the_web_acl(text):
+    """The edge stack must export the web ACL's ARN for the app stack.
+
+    The WAFv2 API cannot associate a web ACL with a CloudFront
+    distribution (it rejects every distribution ARN), so the handover is
+    "the edge stack hands over the web ACL, the app stack attaches it
+    through the distribution's WebACLId". The edge stack therefore has no
+    association resource and must export the ARN.
+    """
+    outputs = _entry_bodies(text, "Outputs")
+    exported = outputs.get("WebACLArn", "")
+    if not exported:
         return False
-    if "Type: AWS::WAFv2::WebACLAssociation" not in association:
+    if "Fn::GetAtt: WafWebACL.Arn" not in exported:
         return False
-    if re.search(
-        r"WebACLArn:[ \t]*(?:\n[ \t]+)?Fn::GetAtt:[ \t]*WafWebACL\.Arn",
-        association,
-    ) is None:
-        return False
-    # The ARN must come from the parameter the app stack exports, so the
-    # two stacks cannot drift apart (a hard-coded ARN would let them).
-    target = re.search(
-        r"ResourceArn:[ \t]*(?:\n[ \t]+)?Ref:[ \t]*DistributionArn[ \t]*$",
-        association,
-        re.MULTILINE,
-    )
-    return target is not None
+    # The edge stack must not try to associate the rule itself.
+    return "WafWebACLAssociation" not in text
+
+
 
 
 class WafRateRuleWiringTests(SimpleTestCase):
@@ -326,12 +325,13 @@ class WafRateRuleWiringTests(SimpleTestCase):
             "parameter change and the rollback is the same change (R026).",
         )
 
-    def test_web_acl_is_associated_with_the_imported_distribution(self):
+    def test_edge_stack_exports_the_web_acl_arn(self):
         self.assertTrue(
-            _association_binds_distribution(self.template),
-            "edge-template.yaml must declare an AWS::WAFv2::WebACLAssociation "
-            "that binds the web ACL to the DistributionArn parameter, so the "
-            "edge stack cannot drift from the live distribution (R026).",
+            _edge_stack_exports_the_web_acl(self.template),
+            "edge-template.yaml must export the web ACL's ARN (and must not "
+            "carry a WafWebACLAssociation: the WAFv2 API cannot accept a "
+            "CloudFront distribution ARN, so the app stack attaches the rule "
+            "through the distribution's WebACLId) (R026).",
         )
 
 
@@ -561,26 +561,27 @@ class WafRateRuleGuardNegativeTests(SimpleTestCase):
             "value: the switch would be unreachable.",
         )
 
-    def test_removed_association_is_detected(self):
+    def test_association_resource_in_the_edge_stack_is_detected(self):
         mutated = self._mutate(
-            "    Type: AWS::WAFv2::WebACLAssociation",
-            "    Type: AWS::WAFv2::IPSet",
+            "  WafWebACL:",
+            "  WafWebACLAssociation:\n"
+            "    Type: AWS::WAFv2::WebACLAssociation\n"
+            "  WafWebACL:",
         )
         self.assertFalse(
-            _association_binds_distribution(mutated),
-            "the association guard must fail when the web ACL is not "
-            "associated with the distribution.",
+            _edge_stack_exports_the_web_acl(mutated),
+            "the export guard must fail when the edge stack tries to "
+            "associate the rule itself: the WAFv2 API rejects every "
+            "CloudFront distribution ARN.",
         )
 
-    def test_hardcoded_distribution_arn_is_detected(self):
+    def test_missing_export_is_detected(self):
         mutated = self._mutate(
-            "      ResourceArn:\n        Ref: DistributionArn",
-            "      ResourceArn: arn:aws:cloudfront::123456789012:distribution/"
-            "E1EXAMPLE",
+            "  WebACLArn:",
+            "  WebACLArnRemoved:",
         )
         self.assertFalse(
-            _association_binds_distribution(mutated),
-            "the association guard must fail when the resource ARN is a "
-            "hard-coded literal instead of a reference to the imported "
-            "DistributionArn parameter.",
+            _edge_stack_exports_the_web_acl(mutated),
+            "the export guard must fail when the web ACL's ARN is not "
+            "exported: the app stack would have nothing to attach.",
         )

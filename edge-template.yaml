@@ -28,6 +28,31 @@ Description: >
 # request. Switching to Block is a parameter change on this stack, which
 # is also the rollback.
 #
+# NOTE ON THE ATTACHMENT (M007/S06, corrected on 2026-10-22):
+#
+# This stack creates the web ACL and EXPORTS its ARN. It does NOT create
+# an AWS::WAFv2::WebACLAssociation, and it does NOT take the
+# distribution's ARN: the WAFv2 API does not accept a CloudFront
+# distribution ARN at all. AWS's own CLI reference for associate-web-acl
+# says:
+#
+#   "Use this for all resource types except for Amazon CloudFront
+#    distributions. For Amazon CloudFront, call UpdateDistribution for the
+#    distribution and provide the Amazon Resource Name (ARN) of the web ACL
+#    in the web ACL ID."
+#
+# Observed live: every shape of the distribution ARN was rejected with
+#   WAFInvalidParameterException ... field: RESOURCE_ARN, parameter:
+#   arn:aws:cloudfront::...:distribution/<id>
+# (CI run 39732102371 and the follow-up diagnostics).
+#
+# So the attachment lives on the DISTRIBUTION: the us-east-2 app stack sets
+# the distribution's WebACLId to this stack's WebACLArn output. The
+# handover is therefore the other way round -- the edge stack hands over
+# the ACL, the app stack attaches it -- and the edge stack no longer needs
+# to know the distribution at all, which also removes the circular
+# dependency the old direction would have created.
+#
 # The resources below are unconditional on purpose (D015): the stack either
 # creates a working rule or the deploy fails loudly. A security control
 # that can be deployed in a state where it does nothing is worse than a
@@ -44,16 +69,6 @@ Description: >
 # long form.
 # ─────────────────────────────────────────────
 Parameters:
-  DistributionArn:
-    Type: String
-    Description: >
-      ARN of the live CloudFront distribution, exported by the us-east-2
-      app stack as its DistributionArnForWaf output -- the shape the WAFv2
-      association requires, with the ACCOUNT field EMPTY
-      (arn:<partition>:cloudfront::distribution/<id>). The account-bearing
-      form is rejected by WAFv2 with "The ARN isn't valid ... field:
-      RESOURCE_ARN" (observed live on 2026-10-22). The web ACL is
-      associated with exactly this distribution.
   WafRateLimit:
     Type: Number
     Default: 2000
@@ -168,20 +183,11 @@ Resources:
             MetricName: EdgeRateLimit
             SampledRequestsEnabled: true
 
-  # The association binds the web ACL to the distribution handed over by the
-  # app stack. It references the DistributionArn PARAMETER, never a
-  # hard-coded ARN, so the two stacks cannot drift apart silently.
-  WafWebACLAssociation:
-    Type: AWS::WAFv2::WebACLAssociation
-    Properties:
-      WebACLArn:
-        Fn::GetAtt: WafWebACL.Arn
-      ResourceArn:
-        Ref: DistributionArn
-
 Outputs:
   WebACLArn:
-    Description: ARN of the edge web ACL
+    Description: >
+      ARN of the edge web ACL. The us-east-2 app stack attaches it to the
+      CloudFront distribution through the distribution's WebACLId.
     Value:
       Fn::GetAtt: WafWebACL.Arn
   WebACLId:

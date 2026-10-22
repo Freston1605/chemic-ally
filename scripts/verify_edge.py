@@ -1,31 +1,35 @@
 #!/usr/bin/env python3
-"""Post-deploy verifier for the edge stack (M007/S02).
+"""Post-deploy verifier for the edge stack (M007/S02 + M007/S06).
 
 The CloudFront rate limit lives in its own stack (``chemically-edge`` in
 us-east-1) because AWS accepts WAFv2 web ACLs with ``Scope: CLOUDFRONT``
 only in us-east-1, while the application stack deploys to us-east-2
-(D015/D018). Two stacks can drift apart silently, and the failure that
-matters is a DETACHED association: the web ACL exists, the deployment looks
-healthy, and the rate limit is attached to a distribution that no longer
-serves traffic -- a security control that appears deployed and enforces
-nothing.
+(D015/D018).
 
-This script is the witness that the edge control is bound to the
-distribution that is actually live:
+HOW THE RULE IS ATTACHED (M007/S06, corrected on 2026-10-22): the WAFv2
+API does not accept a CloudFront distribution ARN at all -- every shape was
+rejected live with ``WAFInvalidParameterException ... field:
+RESOURCE_ARN``. AWS's own CLI reference for ``associate-web-acl`` says so
+explicitly: "Use this for all resource types except for Amazon CloudFront
+distributions. For Amazon CloudFront, call ``UpdateDistribution`` for the
+distribution and provide the Amazon Resource Name (ARN) of the web ACL in
+the web ACL ID."
 
-* the app stack's ``DistributionArn`` output is the authority on which
-  distribution serves traffic (it is built from the distribution resource
-  itself, never from a literal);
-* the edge stack's ``WebACLAssociation`` resource must reference exactly
-  that ARN;
-* the web ACL's own resource list must contain that ARN;
-* the rule's live action and limit are reported, so the operator can see
-  whether the canary (``Count``) or enforcement (``Block``) is in force --
-  and an unreportable mode is a failure, not an ``unknown``.
+So the attachment lives on the DISTRIBUTION: the edge stack creates the web
+ACL and exports its ARN, and the application stack sets the distribution's
+``WebACLId`` to that ARN. This script proves that attachment is real:
 
-Everything here is read-only: it calls ``cloudformation:DescribeStacks``,
-``cloudformation:DescribeStackResources`` and ``wafv2:ListResourcesForWebACL``.
-Nothing is created, changed or deleted.
+* both stacks are in a state whose resources are the live ones;
+* the edge stack exports a web ACL ARN;
+* the app stack exports the live distribution's ARN;
+* the LIVE distribution (read through the CloudFront API, not through a
+  template assertion) carries exactly that web ACL ARN as its ``WebACLId``.
+
+A rule that exists but is not attached is a control that enforces nothing,
+and that is the failure this script exists to make visible.
+
+Everything here is read-only: it calls ``cloudformation:DescribeStacks`` and
+``cloudfront:GetDistribution``. Nothing is created, changed or deleted.
 
 Exit codes: 0 = every check passes, 1 = one or more checks failed. AWS API
 failures bubble as raised exceptions so a throttling error or a lost
@@ -40,10 +44,13 @@ import sys
 
 import boto3
 
-# The edge stack must be in a state whose resources are the live ones. A
-# stack that is mid-update is in flux; one that rolled back holds the
-# resources of the last GOOD deploy, which is worth reporting but still
-# describes what is live.
+# CloudFront is a global service; its API endpoint lives in us-east-1. The
+# client is therefore always created there, whatever region the stack is in.
+CLOUDFRONT_REGION = "us-east-1"
+
+# The stack must be in a state whose resources are the live ones. A stack
+# that is mid-update is in flux, so what it reports is not authoritative; a
+# create that rolled back (ROLLBACK_COMPLETE) has no live resources at all.
 ACCEPTABLE_STACK_STATUSES = {
     "CREATE_COMPLETE",
     "UPDATE_COMPLETE",
@@ -52,17 +59,6 @@ ACCEPTABLE_STACK_STATUSES = {
 }
 UNHEALTHY_STATUS_SUFFIXES = ("_FAILED", "_IN_PROGRESS")
 UNHEALTHY_STATUSES = {"DELETE_COMPLETE", "ROLLBACK_COMPLETE"}
-
-# The association resource inside the edge stack. It is located by its
-# RESOURCE TYPE first (the template's logical name is an implementation
-# detail that may be renamed); the logical name is only a fallback for
-# clients that do not report the type.
-ASSOCIATION_RESOURCE_TYPE = "AWS::WAFv2::WebACLAssociation"
-ASSOCIATION_LOGICAL_NAME = "WafWebACLAssociation"
-
-# The rule action the edge template allows. Anything else means the stack
-# drifted and the live mode cannot be reported to the operator.
-VALID_ACTIONS = {"Count", "Block"}
 
 
 def _stack_outputs(stack):
@@ -73,62 +69,17 @@ def _stack_outputs(stack):
 
 
 def _distribution_id_from_arn(arn):
-    """Return the distribution id named by a CloudFront distribution ARN.
-
-    WAFv2 and the CloudFront API do NOT use the same ARN shape for the
-    same distribution, and the association is written in WAFv2's shape:
-
-    * the CloudFront API (and the app stack's ``DistributionArn`` output)
-      report ``arn:aws:cloudfront::<account>:distribution/<id>``;
-    * WAFv2 addresses the distribution with the ACCOUNT field EMPTY:
-      ``arn:aws:cloudfront::distribution/<id>``.
-
-    A comparison of the two ARN STRINGS would therefore report a detached
-    association for a perfectly healthy one. The distribution ID is the
-    identity that both shapes carry, so that is what is compared (the id
-    is unique, so the check stays tight).
-
-    The WAF Classic shape ``arn:aws:cloudfront::<id>`` is accepted too.
-    """
+    """Return the distribution id in a CloudFront distribution ARN."""
     if not isinstance(arn, str):
         return None
-    marker = "distribution/"
-    index = arn.find(marker)
-    if index != -1:
-        tail = arn[index + len(marker):]
-        # The id is the first segment after "distribution/"; a wrapped
-        # association id (".../<id>/association/<token>") keeps it first.
-        return tail.split("/")[0] or None
     prefix = "arn:aws:cloudfront::"
-    if arn.startswith(prefix):
-        tail = arn[len(prefix):]
-        if tail and ":" not in tail and "/" not in tail:
-            return tail
-    return None
-
-
-def _stack_parameters(stack):
-    return {
-        parameter.get("ParameterKey"): parameter.get("ParameterValue")
-        for parameter in stack.get("Parameters", []) or []
-    }
-
-
-def _stack_resources(cfn_client, stack_name):
-    """Return the stack's resources as a list of raw resource dicts."""
-    response = cfn_client.describe_stack_resources(StackName=stack_name)
-    return list(response.get("StackResources", []) or [])
-
-
-def _find_association(resources):
-    """Return the WebACLAssociation resource, or None when there is none."""
-    for resource in resources:
-        if resource.get("ResourceType") == ASSOCIATION_RESOURCE_TYPE:
-            return resource
-    for resource in resources:
-        if resource.get("LogicalResourceId") == ASSOCIATION_LOGICAL_NAME:
-            return resource
-    return None
+    if not arn.startswith(prefix):
+        return None
+    remainder = arn[len(prefix):]
+    account, _, resource = remainder.partition(":")
+    if not account or not resource.startswith("distribution/"):
+        return None
+    return resource[len("distribution/"):] or None
 
 
 def _describe_stack(cfn_client, stack_name, region):
@@ -158,52 +109,13 @@ def _describe_stack(cfn_client, stack_name, region):
         )
     if status == "UPDATE_ROLLBACK_COMPLETE":
         print(
-            f"WARN: stack {stack_name} StackStatus={status} -- the last edge "
+            f"WARN: stack {stack_name} StackStatus={status} -- the last "
             "deploy was rolled back; what is verified below is the last GOOD "
             "deploy"
         )
     else:
         print(f"PASS: stack {stack_name} StackStatus={status}")
     return stack
-
-
-def _live_rule_settings(edge_stack, edge_stack_name):
-    """Resolve the deployed action and limit; fail when they are unknown."""
-    parameters = _stack_parameters(edge_stack)
-    outputs = _stack_outputs(edge_stack)
-    action = parameters.get("WafAction") or outputs.get("Action")
-    limit = parameters.get("WafRateLimit") or outputs.get("RateLimit")
-    if not action:
-        raise RuntimeError(
-            f"Stack {edge_stack_name!r} does not report the rule action "
-            "(WafAction parameter / Action output); the live mode cannot be "
-            "reported and the edge stack drifted from the deploy contract"
-        )
-    if action not in VALID_ACTIONS:
-        raise RuntimeError(
-            f"Stack {edge_stack_name!r} reports the rule action {action!r}, "
-            f"which is not one of {sorted(VALID_ACTIONS)}; the live mode "
-            "cannot be reported"
-        )
-    if not limit:
-        raise RuntimeError(
-            f"Stack {edge_stack_name!r} does not report the rate limit "
-            "(WafRateLimit parameter / RateLimit output); the live ceiling "
-            "cannot be reported"
-        )
-    try:
-        limit_value = int(str(limit))
-    except (TypeError, ValueError):
-        raise RuntimeError(
-            f"Stack {edge_stack_name!r} reports the rate limit {limit!r}, "
-            "which is not a number"
-        ) from None
-    if limit_value <= 0:
-        raise RuntimeError(
-            f"Stack {edge_stack_name!r} reports the rate limit {limit!r}, "
-            "which cannot be a live ceiling"
-        )
-    return action, limit_value
 
 
 def run(
@@ -214,115 +126,78 @@ def run(
     *,
     client_factory=boto3.client,
 ):
-    """Verify the edge association; return 0 or raise RuntimeError."""
+    """Verify the edge attachment; return 0 or raise RuntimeError."""
     app_client = client_factory("cloudformation", region_name=app_region)
     edge_client = client_factory("cloudformation", region_name=edge_region)
-    waf_client = client_factory("wafv2", region_name=edge_region)
+    cloudfront_client = client_factory(
+        "cloudfront", region_name=CLOUDFRONT_REGION
+    )
 
     app_stack = _describe_stack(app_client, app_stack_name, app_region)
     edge_stack = _describe_stack(edge_client, edge_stack_name, edge_region)
 
     app_outputs = _stack_outputs(app_stack)
-    distribution_arn = app_outputs.get("DistributionArn")
-    if not distribution_arn:
-        raise RuntimeError(
-            f"Stack {app_stack_name!r} does not export a DistributionArn "
-            "output; the template drifted from the deploy contract and the "
-            "live distribution cannot be identified"
-        )
-    distribution_id = _distribution_id_from_arn(distribution_arn)
-    if not distribution_id:
-        raise RuntimeError(
-            f"The DistributionArn output of stack {app_stack_name!r} is not "
-            f"a CloudFront distribution ARN: {distribution_arn!r}"
-        )
-
     edge_outputs = _stack_outputs(edge_stack)
+
     web_acl_arn = edge_outputs.get("WebACLArn")
     if not web_acl_arn:
         raise RuntimeError(
             f"Stack {edge_stack_name!r} does not export a WebACLArn output; "
-            "the edge stack drifted from the deploy contract"
+            "the edge stack drifted from the deploy contract and there is no "
+            "rule to attach."
         )
 
-    resources = _stack_resources(edge_client, edge_stack_name)
-    association = _find_association(resources)
-    if association is None:
+    distribution_arn = app_outputs.get("DistributionArn")
+    if not distribution_arn:
         raise RuntimeError(
-            f"Stack {edge_stack_name!r} declares no WebACLAssociation "
-            "resource; the rate rule is not attached to anything"
+            f"Stack {app_stack_name!r} does not export a DistributionArn "
+            "output; the live distribution cannot be identified."
         )
-    associated_arn = association.get("PhysicalResourceId")
-    if not associated_arn:
+    distribution_id = _distribution_id_from_arn(distribution_arn)
+    if not distribution_id:
         raise RuntimeError(
-            f"Stack {edge_stack_name!r} declares a WebACLAssociation without "
-            "a physical id; the rate rule is not attached to anything"
+            "the DistributionArn output of stack {!r} is not a CloudFront "
+            "distribution ARN: {!r}".format(app_stack_name, distribution_arn)
         )
-    # The association's physical id is the distribution it binds the web ACL
-    # to. WAFv2 reports it in ITS ARN shape (the account field is empty),
-    # so the comparison is by distribution ID and not by ARN string. Some
-    # CloudFormation versions report it wrapped in the resource ARN, so an
-    # ARN that CONTAINS the live distribution ARN is accepted too -- the
-    # distribution ID is unique, so this stays a tight check.
-    associated_id = _distribution_id_from_arn(associated_arn)
-    if associated_id is None:
-        if distribution_arn not in associated_arn:
-            raise RuntimeError(
-                f"the edge stack associates the rate rule with "
-                f"{associated_arn!r} while the live distribution is "
-                f"{distribution_arn!r}; the edge control is attached to a "
-                "distribution that does not serve traffic"
+
+    response = cloudfront_client.get_distribution(Id=distribution_id)
+    distribution = (response or {}).get("Distribution") or {}
+    config = distribution.get("DistributionConfig") or {}
+    attached = config.get("WebACLId")
+    if not attached:
+        raise RuntimeError(
+            "the live distribution {} carries NO web ACL: the edge rate "
+            "limit is not attached, so it enforces nothing. The edge stack "
+            "exports {} -- the app stack must set the distribution's "
+            "WebACLId to it.".format(distribution_id, web_acl_arn)
+        )
+    if attached != web_acl_arn:
+        raise RuntimeError(
+            "the live distribution is attached to the web ACL {} while the "
+            "edge stack exports {}; the distribution is protected by a "
+            "different rule than the one this pipeline deploys".format(
+                attached, web_acl_arn
             )
-    elif associated_id != distribution_id:
-        raise RuntimeError(
-            f"the edge stack associates the rate rule with {associated_arn!r} "
-            f"(distribution {associated_id}) while the live distribution is "
-            f"{distribution_id}; the edge control is attached to a "
-            "distribution that does not serve traffic"
         )
     print(
-        "PASS: the edge association targets the live distribution "
-        f"({distribution_id})"
+        "PASS: the live distribution {} carries the edge web ACL ({})".format(
+            distribution_id, web_acl_arn
+        )
     )
-
-    listed = waf_client.list_resources_for_web_acl(WebACLArn=web_acl_arn)
-    listed_arns = listed.get("ResourceArns", []) or []
-    listed_ids = [
-        found
-        for found in (_distribution_id_from_arn(arn) for arn in listed_arns)
-        if found
-    ]
-    if distribution_id not in listed_ids:
-        raise RuntimeError(
-            f"the web ACL {web_acl_arn} is associated with {listed_arns!r} "
-            f"instead of the live distribution {distribution_id!r}; the "
-            "association is detached"
-        )
-    print(f"PASS: the web ACL itself reports the live distribution ({web_acl_arn})")
-
-    action, limit = _live_rule_settings(edge_stack, edge_stack_name)
-    print(f"PASS: the live edge rule action is {action} (limit {limit})")
-    if action == "Block":
-        print(
-            "NOTE: the edge rule is BLOCKING. The canary is over and the "
-            "inherited 2000/300s ceiling is being enforced at the edge."
-        )
-    else:
-        print(
-            "NOTE: the edge rule is COUNTING. It measures the traffic "
-            "without refusing anything - that is the canary mode."
-        )
-
     return 0
 
 
 def main(argv=None, client_factory=boto3.client) -> int:
     parser = argparse.ArgumentParser(
-        description="Verify the edge stack's WAF association"
+        description="Verify the edge stack's WAF attachment"
     )
-    parser.add_argument("--app-stack-name", default="chemically")
+    parser.add_argument(
+        "--app-stack-name", default="chemically", help="app stack name"
+    )
     parser.add_argument("--app-region", default="us-east-2")
-    parser.add_argument("--edge-stack-name", default="chemically-edge")
+    parser.add_argument(
+        "--edge-stack-name", default="chemically-edge", help="edge stack name"
+    )
     parser.add_argument("--edge-region", default="us-east-1")
     args = parser.parse_args(argv)
     try:

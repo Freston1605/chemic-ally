@@ -40,6 +40,7 @@ DEPLOY_WORKFLOW = REPO_ROOT / ".github" / "workflows" / "deploy.yml"
 RUNBOOK = REPO_ROOT / "OPS_PLAYBOOK.md"
 
 APP_STACK_STEP = "SAM deploy"
+EDGE_ACL_STEP = "Read the edge web ACL ARN"
 EDGE_STACK_STEP = "Deploy the edge stack (us-east-1)"
 EDGE_VERIFY_STEP = "Verify the edge association"
 
@@ -211,58 +212,53 @@ def _runbook_states_the_ci_reverts_a_manual_block(text):
     return ".github/workflows/deploy.yml" in flat
 
 
-def _edge_stack_is_deployed_after_the_app_stack(text):
-    """The edge stack must be deployed after the app stack."""
-    app = _step_index(text, APP_STACK_STEP)
-    edge = _step_index(text, EDGE_STACK_STEP)
-    if app < 0 or edge < 0:
-        return False
-    return app < edge
+def _edge_stack_is_deployed_before_the_app_stack(text):
+    """The edge stack must be deployed BEFORE the app stack.
 
-
-def _edge_stack_reads_the_arn_from_the_deployed_stack(text):
-    """The ARN must come from the app stack's outputs, not from a literal."""
-    body = _step_body(text, EDGE_STACK_STEP)
-    if not body:
-        return False
-    if "describe-stacks" not in body:
-        return False
-    if "DistributionArn" not in body:
-        return False
-    if "--stack-name chemically" not in body:
-        return False
-    # A literal ARN in the workflow would be a stale association waiting to
-    # happen; the ARN must be read, never written down.
-    return re.search(r"distribution/[A-Z0-9]{6,}", body) is None
-
-
-def _edge_stack_deploy_fails_loudly_without_the_arn(text):
-    """A missing distribution ARN output must fail the job.
-
-    BOTH ARN outputs are checked, and the failure must be attached to the
-    emptiness check itself: an ``::error::`` elsewhere in the step would
-    satisfy a looser guard while a missing output still deployed an
-    unassociated edge stack.
+    The WAFv2 API cannot associate a web ACL with a CloudFront
+    distribution, so the attachment lives on the distribution: the edge
+    stack creates the rule and hands over its ARN, and the app stack
+    attaches it through the distribution's WebACLId. The rule must
+    therefore exist before the distribution references it.
     """
-    body = _step_body(text, EDGE_STACK_STEP)
+    edge = _step_index(text, EDGE_STACK_STEP)
+    app = _step_index(text, APP_STACK_STEP)
+    if edge < 0 or app < 0:
+        return False
+    return edge < app
+
+
+
+
+def _app_stack_receives_the_edge_web_acl_arn(text):
+    """The app deploy must receive the edge stack's web ACL ARN.
+
+    The ARN is read from the edge stack's own output and handed to the
+    app stack, which attaches it to the distribution. It is never written
+    down in the workflow.
+    """
+    app_body = _step_body(text, APP_STACK_STEP)
+    if not app_body:
+        return False
+    if "EdgeWebACLArn=" not in app_body:
+        return False
+    return "steps.edge-acl.outputs.arn" in app_body
+
+
+
+
+def _edge_acl_arn_read_fails_loudly_when_missing(text):
+    """A missing web ACL ARN must fail the job, not deploy an unattached rule."""
+    body = _step_body(text, EDGE_ACL_STEP)
     if not body:
         return False
     if "::error::" not in body:
         return False
     if not re.search(r"exit 1", body):
         return False
-    for variable in ("dist_arn", "waf_dist_arn"):
-        if re.search(r'\[ -z "\$' + variable + r'" \]', body) is None:
-            return False
-        attached = re.search(
-            r'if \[ -z "\$' + variable + r'" \][^\n]*\n'
-            r'\s*echo "::error::[^\n]*\n'
-            r'\s*exit 1',
-            body,
-        )
-        if attached is None:
-            return False
-    return True
+    return "WebACLArn" in body
+
+
 
 
 def _edge_stack_targets_us_east_1(text):
@@ -283,41 +279,18 @@ def _edge_stack_targets_us_east_1(text):
     return "EDGE_STACK_NAME" in body
 
 
-def _edge_stack_passes_the_arn_and_the_action(text):
-    """The edge deploy must pass the distribution ARN and the rule action."""
+def _edge_stack_passes_the_action_and_the_limit(text):
+    """The edge deploy must pass the rule action and the rate limit."""
     body = _step_body(text, EDGE_STACK_STEP)
     if not body:
-        return False
-    if "DistributionArn=" not in body:
         return False
     if "WafAction=" not in body:
         return False
     return "WafRateLimit=" in body
 
 
-def _edge_stack_passes_the_waf_shaped_arn(text):
-    """The edge deploy must pass the ARN in the shape WAFv2 accepts.
 
-    WAFv2 addresses a CloudFront distribution with the ACCOUNT field EMPTY
-    (arn:<partition>:cloudfront::distribution/<id>). The account-bearing
-    form -- the one the CloudFront API reports -- is rejected by the
-    association with "The ARN isn't valid ... field: RESOURCE_ARN"
-    (observed live on 2026-10-22, run 39732102371), so the edge deploy
-    must read and pass the WAF-shaped stack output, never the
-    account-bearing one.
-    """
-    body = _step_body(text, EDGE_STACK_STEP)
-    if not body:
-        return False
-    if "DistributionArnForWaf" not in body:
-        return False
-    if 'DistributionArn="$waf_dist_arn"' not in body:
-        return False
-    # The account-bearing output must not be what is handed to the edge
-    # stack: that is the shape the association rejects.
-    if 'DistributionArn="$dist_arn"' in body:
-        return False
-    return True
+
 
 
 def _edge_action_defaults_to_count(text):
@@ -350,19 +323,19 @@ def _edge_verification_is_wired_to_the_script(text):
     return "--edge-region us-east-1" in body
 
 
-def _edge_verification_is_the_step_directly_after_the_edge_deploy(text):
-    """The check must be the very next step: an attributable edge check.
+def _edge_verification_runs_after_the_app_deploy(text):
+    """The attachment check must run after the app stack attached the rule.
 
-    The verifier's whole value is that the operator can read the live
-    edge mode in the CI log. A step in between (or a check folded into the
-    deploy step) is neither attributable nor guaranteed to run before the
-    job moves on to the next stage.
+    The app stack is what attaches the web ACL to the distribution, so
+    checking before that would check a distribution that has no rule yet.
     """
-    bounds = _step_block(text, EDGE_STACK_STEP)
-    if bounds is None:
+    app = _step_index(text, APP_STACK_STEP)
+    verify = _step_index(text, EDGE_VERIFY_STEP)
+    if app < 0 or verify < 0:
         return False
-    following = _next_step_item(text, bounds[1])
-    return following == EDGE_VERIFY_STEP
+    return app < verify
+
+
 
 
 def _edge_verification_cannot_be_swallowed(text):
@@ -390,27 +363,31 @@ class EdgeDeployPipelineTests(SimpleTestCase):
         super().setUpClass()
         cls.workflow = DEPLOY_WORKFLOW.read_text(encoding="utf-8")
 
-    def test_edge_stack_is_deployed_after_the_app_stack(self):
+    def test_edge_stack_is_deployed_before_the_app_stack(self):
         self.assertTrue(
-            _edge_stack_is_deployed_after_the_app_stack(self.workflow),
-            "the edge stack must be deployed AFTER the app stack: it takes "
-            "the distribution ARN the app stack exports.",
+            _edge_stack_is_deployed_before_the_app_stack(self.workflow),
+            "the edge stack must be deployed BEFORE the app stack: it "
+            "creates the web ACL that the app stack attaches to the "
+            "distribution.",
         )
 
-    def test_edge_stack_reads_the_arn_from_the_deployed_stack(self):
+    def test_app_stack_receives_the_edge_web_acl_arn(self):
         self.assertTrue(
-            _edge_stack_reads_the_arn_from_the_deployed_stack(self.workflow),
-            "the edge deploy must read DistributionArn from the deployed "
-            "app stack's outputs; a literal ARN would attach the rule to a "
-            "stale distribution.",
+            _app_stack_receives_the_edge_web_acl_arn(self.workflow),
+            "the app deploy must receive the edge stack's web ACL ARN: the "
+            "attachment lives on the distribution (the WAFv2 API cannot take "
+            "a CloudFront ARN).",
         )
 
-    def test_edge_stack_fails_loudly_without_the_arn(self):
+    def test_edge_acl_arn_read_fails_loudly_when_missing(self):
         self.assertTrue(
-            _edge_stack_deploy_fails_loudly_without_the_arn(self.workflow),
-            "a missing DistributionArn output must fail the deploy job "
-            "loudly instead of deploying an unassociated edge stack.",
+            _edge_acl_arn_read_fails_loudly_when_missing(self.workflow),
+            "the step that reads the edge stack's web ACL ARN must fail "
+            "the job when the output is missing: a deployment that "
+            "silently attached no rule would look green.",
         )
+
+
 
     def test_edge_stack_targets_us_east_1(self):
         self.assertTrue(
@@ -420,20 +397,11 @@ class EdgeDeployPipelineTests(SimpleTestCase):
             "only be created there.",
         )
 
-    def test_edge_stack_passes_the_arn_and_the_action(self):
+    def test_edge_stack_passes_the_action_and_the_limit(self):
         self.assertTrue(
-            _edge_stack_passes_the_arn_and_the_action(self.workflow),
-            "the edge deploy must pass DistributionArn, WafRateLimit and "
-            "WafAction to the edge stack.",
-        )
-
-    def test_edge_stack_passes_the_waf_shaped_arn(self):
-        self.assertTrue(
-            _edge_stack_passes_the_waf_shaped_arn(self.workflow),
-            "the edge deploy must hand the edge stack the WAFv2-shaped "
-            "distribution ARN (the account field is empty); the "
-            "account-bearing form is rejected by the association with 'The "
-            "ARN isn't valid'.",
+            _edge_stack_passes_the_action_and_the_limit(self.workflow),
+            "the edge deploy must pass WafRateLimit and WafAction to the "
+            "edge stack.",
         )
 
     def test_edge_action_defaults_to_count(self):
@@ -456,14 +424,12 @@ class EdgeDeployPipelineTests(SimpleTestCase):
             "us-east-1 edge stack.",
         )
 
-    def test_edge_verification_is_the_step_directly_after_the_edge_deploy(self):
+    def test_edge_verification_runs_after_the_app_deploy(self):
         self.assertTrue(
-            _edge_verification_is_the_step_directly_after_the_edge_deploy(
-                self.workflow
-            ),
-            "the association check must be its own step directly after the "
-            "edge deploy so the CI log attributes the edge state to a "
-            "named step.",
+            _edge_verification_runs_after_the_app_deploy(self.workflow),
+            "the attachment check must run after the app stack deployed, "
+            "because the app stack is what attaches the web ACL to the "
+            "distribution.",
         )
 
     def test_edge_verification_cannot_be_swallowed(self):
@@ -508,9 +474,12 @@ class EdgeDeployPipelineNegativeTests(SimpleTestCase):
         )
         return self.workflow.replace(old, new, 1)
 
-    def test_edge_deploy_before_the_app_deploy_is_detected(self):
+    def test_edge_deploy_after_the_app_deploy_is_detected(self):
+        # Move the APP step in front of the edge step: the edge stack is
+        # then deployed after the app stack, which is the wrong order --
+        # the distribution would reference a web ACL that does not exist.
         mutated = _move_step_before(
-            self.workflow, EDGE_STACK_STEP, APP_STACK_STEP
+            self.workflow, APP_STACK_STEP, EDGE_STACK_STEP
         )
         self.assertIsNotNone(
             mutated,
@@ -521,15 +490,16 @@ class EdgeDeployPipelineNegativeTests(SimpleTestCase):
         # guard would fail for the wrong reason (a missing step) and the
         # ordering assertion would never be exercised.
         self.assertIn(EDGE_STACK_STEP, mutated)
-        self.assertLess(
+        self.assertGreater(
             _step_index(mutated, EDGE_STACK_STEP),
             _step_index(mutated, APP_STACK_STEP),
-            "the mutation must place the edge step before the app deploy.",
+            "the mutation must place the edge step after the app deploy.",
         )
         self.assertFalse(
-            _edge_stack_is_deployed_after_the_app_stack(mutated),
+            _edge_stack_is_deployed_before_the_app_stack(mutated),
             "the ordering guard must fail when the edge step is moved "
-            "BEFORE the app deploy: the ARN it reads would not exist yet.",
+            "AFTER the app deploy: the distribution would reference a web "
+            "ACL that does not exist yet.",
         )
 
     def test_renamed_edge_step_is_detected(self):
@@ -538,33 +508,32 @@ class EdgeDeployPipelineNegativeTests(SimpleTestCase):
             "      - name: Edge stack placeholder (us-east-1)",
         )
         self.assertFalse(
-            _edge_stack_is_deployed_after_the_app_stack(mutated),
+            _edge_stack_is_deployed_before_the_app_stack(mutated),
             "the ordering guard must fail when the edge step is renamed "
             "away: the stack would no longer be deployed at all.",
         )
 
-    def test_hardcoded_distribution_arn_is_detected(self):
+    def test_hardcoded_web_acl_arn_is_detected(self):
         mutated = self._mutate(
-            "          dist_arn=$(aws cloudformation describe-stacks \\",
-            "          dist_arn=arn:aws:cloudfront::768125641662:distribution/"
-            "E1EXAMPLE\n"
-            "          # dist_arn=$(aws cloudformation describe-stacks \\",
+            "              EdgeWebACLArn=${{ steps.edge-acl.outputs.arn }} \\",
+            "              EdgeWebACLArn=arn:aws:wafv2:us-east-1:768125641662:"
+            "global/webacl/literal/literal \\",
         )
         self.assertFalse(
-            _edge_stack_reads_the_arn_from_the_deployed_stack(mutated),
-            "the ARN guard must fail when a literal distribution ARN "
-            "replaces the read from the deployed stack.",
+            _app_stack_receives_the_edge_web_acl_arn(mutated),
+            "the ARN guard must fail when a literal web ACL ARN replaces "
+            "the read from the edge stack.",
         )
 
     def test_missing_error_handling_is_detected(self):
         mutated = self._mutate(
-            '            echo "::error::The chemically stack did not export '
-            'DistributionArn; the edge stack cannot be associated with the '
-            'live distribution."\n            exit 1\n',
+            '            echo "::error::The edge stack ${EDGE_STACK_NAME} '
+            'did not export WebACLArn; the distribution cannot be attached '
+            'to the rate rule."\n            exit 1\n',
             "",
         )
         self.assertFalse(
-            _edge_stack_deploy_fails_loudly_without_the_arn(mutated),
+            _edge_acl_arn_read_fails_loudly_when_missing(mutated),
             "the guard must fail when the deploy stops failing loudly on a "
             "missing ARN.",
         )
@@ -586,7 +555,7 @@ class EdgeDeployPipelineNegativeTests(SimpleTestCase):
             "",
         )
         self.assertFalse(
-            _edge_stack_passes_the_arn_and_the_action(mutated),
+            _edge_stack_passes_the_action_and_the_limit(mutated),
             "the parameter guard must fail when the rule action is no "
             "longer passed to the edge stack.",
         )
@@ -623,20 +592,24 @@ class EdgeDeployPipelineNegativeTests(SimpleTestCase):
             "scripts/verify_edge.py.",
         )
 
-    def test_a_step_between_the_edge_deploy_and_the_check_is_detected(self):
-        mutated = self._mutate(
-            "      - name: Verify the edge association",
-            "      - name: Announce the edge stack\n"
-            "        run: echo 'edge stack deployed'\n"
-            "\n"
-            "      - name: Verify the edge association",
+    def test_the_check_before_the_app_deploy_is_detected(self):
+        """The attachment check must not run before the app stack attached.
+
+        Checking earlier would inspect a distribution that has no rule yet
+        and report a false failure -- or, worse, be skipped.
+        """
+        mutated = _move_step_before(
+            self.workflow, EDGE_VERIFY_STEP, APP_STACK_STEP
+        )
+        self.assertIsNotNone(
+            mutated,
+            "the workflow no longer contains the edge verification step; "
+            "the negative case cannot be constructed.",
         )
         self.assertFalse(
-            _edge_verification_is_the_step_directly_after_the_edge_deploy(
-                mutated
-            ),
-            "the adjacency guard must fail when another step is inserted "
-            "between the edge deploy and the association check.",
+            _edge_verification_runs_after_the_app_deploy(mutated),
+            "the ordering guard must fail when the attachment check runs "
+            "before the app deploy.",
         )
 
     def test_swallowing_the_verification_is_detected(self):

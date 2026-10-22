@@ -140,34 +140,6 @@ def _app_stack_exports_distribution_arn(text):
     return not re.search(r"distribution/[A-Z0-9]{8,}", output)
 
 
-def _app_stack_exports_the_waf_distribution_arn(text):
-    """The app stack must export the WAFv2-shaped distribution ARN.
-
-    WAFv2 addresses a CloudFront distribution with the ACCOUNT field EMPTY
-    (arn:<partition>:cloudfront::distribution/<id>). The account-bearing
-    form -- the one the CloudFront API reports, and the one the identity
-    verifier compares against the live distribution -- is rejected by the
-    association with "The ARN isn't valid ... field: RESOURCE_ARN"
-    (observed live on 2026-10-22, CI run 39732102371).
-
-    The two stacks therefore need BOTH shapes, each built from the
-    distribution resource itself so neither can be a stale literal.
-    """
-    output = _output(text, "DistributionArnForWaf")
-    if not output:
-        return False
-    # The value must be built from the distribution resource itself.
-    if "CloudFrontDistribution" not in output:
-        return False
-    if "cloudfront::distribution/" not in output:
-        return False
-    # The account field must be EMPTY: an account id in the value is
-    # exactly the shape WAFv2 rejects.
-    if "AccountId" in output:
-        return False
-    if re.search(r"[0-9]{12}:distribution/", output):
-        return False
-    return not re.search(r"distribution/[A-Z0-9]{8,}", output)
 
 
 def _distribution_has_no_name_property(text):
@@ -185,32 +157,47 @@ def _distribution_has_no_name_property(text):
     return re.search(r"^[ \t]+Name:[ \t]*\S", body, re.MULTILINE) is None
 
 
-def _edge_template_requires_the_distribution_arn(text):
-    """The edge stack must take the distribution ARN as a required parameter.
+def _edge_template_exports_the_web_acl_arn(text):
+    """The edge stack must export the web ACL's ARN for the app stack.
 
-    A defaulted parameter could carry a stale ARN into a deploy and
-    associate the rule with a distribution that is no longer live.
+    The WAFv2 API cannot associate a web ACL with a CloudFront
+    distribution, so the handover runs the other way round: the edge stack
+    hands over the rule, the app stack attaches it to the distribution
+    through the distribution's WebACLId.
     """
-    parameter = _parameter(text, "DistributionArn")
+    output = _output(text, "WebACLArn")
+    if not output:
+        return False
+    if "Fn::GetAtt: WafWebACL.Arn" not in output:
+        return False
+    return "WafWebACLAssociation" not in text
+
+
+
+
+def _app_stack_attaches_the_edge_web_acl(text):
+    """The app stack must attach the edge web ACL to the distribution.
+
+    The attachment is the distribution's own WebACLId (the WAFv2 API
+    cannot take a CloudFront ARN), and it is gated on the EdgeWebACLArn
+    parameter so the first deploy - before the edge stack exists - is a
+    valid state rather than a failed one.
+    """
+    parameter = _parameter(text, "EdgeWebACLArn")
     if not parameter:
         return False
-    if re.search(r"Type:[ \t]*String", parameter) is None:
+    if re.search(r"Type:[ 	]*String", parameter) is None:
         return False
-    return re.search(r"Default:[ \t]*\S", parameter) is None
+    distribution = _resource(text, "CloudFrontDistribution")
+    if not distribution:
+        return False
+    if "WebACLId:" not in distribution:
+        return False
+    if "EdgeWebACLArn" not in distribution:
+        return False
+    return "AWS::NoValue" in distribution
 
 
-def _edge_template_has_no_hardcoded_distribution(text):
-    """The edge stack must not name a distribution of its own.
-
-    It may not reference the app stack's resource logical ID, and it may
-    not carry a literal distribution ARN: the whole point of the
-    parameter is that the two stacks cannot drift apart.
-    """
-    if "CloudFrontDistribution" in text:
-        return False
-    if re.search(r"arn:aws:cloudfront::[0-9]{12}:distribution/", text):
-        return False
-    return True
 
 
 def _edge_template_owns_only_the_edge(text):
@@ -323,6 +310,14 @@ class AppStackHandoverTests(SimpleTestCase):
             "edge stack associates the WAF rule with) survives deploys.",
         )
 
+    def test_app_stack_attaches_the_edge_web_acl(self):
+        self.assertTrue(
+            _app_stack_attaches_the_edge_web_acl(self.template),
+            "template.yaml must attach the edge stack's web ACL to the "
+            "distribution through the distribution's WebACLId, gated on the "
+            "EdgeWebACLArn parameter (R026).",
+        )
+
     def test_app_stack_exports_the_distribution_arn(self):
         self.assertTrue(
             _app_stack_exports_distribution_arn(self.template),
@@ -331,14 +326,6 @@ class AppStackHandoverTests(SimpleTestCase):
             "stack can associate the WAF rule with the live distribution.",
         )
 
-    def test_app_stack_exports_the_waf_shaped_distribution_arn(self):
-        self.assertTrue(
-            _app_stack_exports_the_waf_distribution_arn(self.template),
-            "template.yaml must export a DistributionArnForWaf output in "
-            "the shape WAFv2 accepts for a CloudFront distribution (the "
-            "account field is EMPTY), because the account-bearing form is "
-            "rejected by the association with 'The ARN isn't valid'.",
-        )
 
     def test_distribution_carries_no_name_property(self):
         self.assertTrue(
@@ -358,21 +345,15 @@ class EdgeStackContractTests(SimpleTestCase):
         super().setUpClass()
         cls.template = EDGE_TEMPLATE.read_text(encoding="utf-8")
 
-    def test_edge_stack_requires_the_distribution_arn_parameter(self):
+    def test_edge_stack_exports_the_web_acl_arn(self):
         self.assertTrue(
-            _edge_template_requires_the_distribution_arn(self.template),
-            "edge-template.yaml must declare DistributionArn as a required "
-            "String parameter with no default, so the association can never "
-            "carry a stale ARN.",
+            _edge_template_exports_the_web_acl_arn(self.template),
+            "edge-template.yaml must export the web ACL's ARN and must not "
+            "carry a WafWebACLAssociation: the WAFv2 API cannot accept a "
+            "CloudFront distribution ARN (R026).",
         )
 
-    def test_edge_stack_hardcodes_no_distribution(self):
-        self.assertTrue(
-            _edge_template_has_no_hardcoded_distribution(self.template),
-            "edge-template.yaml must not reference the app stack's "
-            "distribution resource or a literal distribution ARN; it takes "
-            "the imported parameter.",
-        )
+
 
     def test_edge_stack_owns_only_the_edge_control(self):
         self.assertTrue(
@@ -519,79 +500,57 @@ class EdgeStackContractNegativeTests(SimpleTestCase):
             "distribution: the resource type has no such property.",
         )
 
-    def test_missing_waf_distribution_arn_output_is_detected(self):
-        mutated = self._mutate(
-            self.app,
-            "  DistributionArnForWaf:\n",
-            "  DistributionArnForWafRemoved:\n",
-        )
-        self.assertFalse(
-            _app_stack_exports_the_waf_distribution_arn(mutated),
-            "the WAF-ARN guard must fail when the DistributionArnForWaf "
-            "output is renamed away: the edge stack would then be handed "
-            "the account-bearing ARN that WAFv2 rejects.",
-        )
 
-    def test_account_bearing_waf_distribution_arn_is_detected(self):
-        mutated = self._mutate(
-            self.app,
-            "arn:${AWS::Partition}:cloudfront::distribution/"
-            "${CloudFrontDistribution}",
-            "arn:${AWS::Partition}:cloudfront::${AWS::AccountId}:distribution/"
-            "${CloudFrontDistribution}",
-        )
-        self.assertFalse(
-            _app_stack_exports_the_waf_distribution_arn(mutated),
-            "the WAF-ARN guard must fail when the exported ARN carries the "
-            "account id again: that is the shape WAFv2 rejects.",
-        )
 
-    def test_hardcoded_waf_distribution_arn_output_is_detected(self):
-        mutated = self._mutate(
-            self.app,
-            "arn:${AWS::Partition}:cloudfront::distribution/"
-            "${CloudFrontDistribution}",
-            "arn:${AWS::Partition}:cloudfront::distribution/E1EXAMPLE",
-        )
-        self.assertFalse(
-            _app_stack_exports_the_waf_distribution_arn(mutated),
-            "the WAF-ARN guard must fail when the exported ARN is a literal "
-            "instead of a reference to the distribution resource.",
-        )
 
-    def test_defaulted_distribution_arn_parameter_is_detected(self):
+    def test_edge_stack_association_is_detected(self):
         mutated = self._mutate(
             self.edge,
-            "  DistributionArn:\n    Type: String\n",
-            "  DistributionArn:\n    Type: String\n"
-            "    Default: arn:aws:cloudfront::768125641662:distribution/E1EXAMPLE\n",
+            "  WafWebACL:",
+            "  WafWebACLAssociation:\n"
+            "    Type: AWS::WAFv2::WebACLAssociation\n"
+            "  WafWebACL:",
         )
         self.assertFalse(
-            _edge_template_requires_the_distribution_arn(mutated),
-            "the edge-stack guard must fail when the distribution ARN "
-            "parameter carries a default that could be stale.",
+            _edge_template_exports_the_web_acl_arn(mutated),
+            "the export guard must fail when the edge stack tries to "
+            "associate the rule itself.",
         )
 
-    def test_hardcoded_distribution_in_the_edge_stack_is_detected(self):
+    def test_missing_edge_web_acl_arn_export_is_detected(self):
         mutated = self._mutate(
-            self.edge,
-            "      ResourceArn:\n        Ref: DistributionArn",
-            "      ResourceArn:\n        Fn::Sub: "
-            '"arn:aws:cloudfront::${AWS::AccountId}:distribution/'
-            '${CloudFrontDistribution}"',
+            self.edge, "  WebACLArn:", "  WebACLArnRemoved:"
         )
         self.assertFalse(
-            _edge_template_has_no_hardcoded_distribution(mutated),
-            "the edge-stack guard must fail when the edge template names a "
-            "distribution instead of taking the imported parameter.",
+            _edge_template_exports_the_web_acl_arn(mutated),
+            "the export guard must fail when the web ACL's ARN is not "
+            "exported: the app stack would have nothing to attach.",
         )
+
+    def test_missing_edge_web_acl_attachment_is_detected(self):
+        mutated = self._mutate(
+            self.app,
+            "        WebACLId:\n"
+            "          Fn::If:\n"
+            "            - HasEdgeWebACL\n"
+            "            - Ref: EdgeWebACLArn\n"
+            "            - Ref: AWS::NoValue\n",
+            "",
+        )
+        self.assertFalse(
+            _app_stack_attaches_the_edge_web_acl(mutated),
+            "the attachment guard must fail when the distribution no longer "
+            "carries the edge web ACL.",
+        )
+
+
 
     def test_application_resource_in_the_edge_stack_is_detected(self):
         mutated = self._mutate(
             self.edge,
-            "  WafWebACLAssociation:",
+            "  WafWebACL:",
             "  DjangoFunction:\n    Type: AWS::Serverless::Function\n"
-            "  WafWebACLAssociation:",
+            "  WafWebACL:",
         )
         self.assertFalse(
             _edge_template_owns_only_the_edge(mutated),

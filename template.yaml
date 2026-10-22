@@ -127,10 +127,40 @@ Parameters:
       CloudFront origin header with the guard inert; true hands the secret
       to Lambda and starts refusing direct Function-URL calls.
 
+  # ─────────────────────────────────────────────
+  # Edge web ACL attachment (M007/S06)
+  # ─────────────────────────────────────────────
+  # The CloudFront rate limit is attached to the distribution through the
+  # distribution's own WebACLId, NOT through an
+  # AWS::WAFv2::WebACLAssociation. The WAFv2 API does not accept a
+  # CloudFront distribution ARN: AWS's own CLI reference for
+  # associate-web-acl says "For Amazon CloudFront, call UpdateDistribution
+  # for the distribution and provide the Amazon Resource Name (ARN) of the
+  # web ACL in the web ACL ID" -- and every ARN shape was rejected live
+  # (WAFInvalidParameterException, field: RESOURCE_ARN).
+  #
+  # So the us-east-1 edge stack creates the web ACL and exports its ARN;
+  # this stack attaches that ARN to the distribution. The handover runs the
+  # other way round, and neither stack has to know the other's resources.
+  #
+  # Empty means "no edge rule attached" - the state before the edge stack
+  # exists. It is never a silent default: the deploy job always passes the
+  # edge stack's live ARN, and the post-deploy verification proves the
+  # attachment.
+  EdgeWebACLArn:
+    Type: String
+    Default: ""
+    Description: >
+      ARN of the us-east-1 edge stack's CloudFront-scoped web ACL, attached
+      to the distribution below. Empty means no edge rule is attached yet.
+
 Conditions:
   # CloudFormation has no Boolean parameter type, so the rollout switch is
   # a String restricted to "true"/"false" and turned into a condition here.
   EnforceOriginGuardEnabled: !Equals [!Ref EnforceOriginGuard, "true"]
+
+  # The edge web ACL is attached only when its ARN is known.
+  HasEdgeWebACL: !Not [!Equals [!Ref EdgeWebACLArn, ""]]
 
 Globals:
   Function:
@@ -348,6 +378,16 @@ Resources:
     Properties:
       DistributionConfig:
         Comment: ChemicAlly public distribution (us-east-2 app stack)
+        # M007/S06: the edge rate limit is attached HERE, on the
+        # distribution, because the WAFv2 API cannot associate a web ACL
+        # with a CloudFront distribution ARN. The value is the us-east-1
+        # edge stack's web ACL ARN; empty (no edge stack yet) means no rule
+        # is attached.
+        WebACLId:
+          Fn::If:
+            - HasEdgeWebACL
+            - Ref: EdgeWebACLArn
+            - Ref: AWS::NoValue
         Aliases:
           - !Ref DomainName
           - !Sub "www.${DomainName}"
@@ -459,33 +499,11 @@ Outputs:
       identity of the live distribution: the deploy job and the identity
       verifier compare it against the live distribution.
     Value: !Sub "arn:aws:cloudfront::${AWS::AccountId}:distribution/${CloudFrontDistribution}"
-  # M007/S06/T03: the WAFv2 CloudFront association takes the distribution
-  # ARN in a DIFFERENT shape, and the difference is not cosmetic.
-  #
-  # WAFv2 rejects the account-bearing form above. Observed live on
-  # 2026-10-22 (CI run 39732102371, the first deploy of the us-east-1 edge
-  # stack): the WafWebACLAssociation resource failed with
-  #
-  #   Error reason: The ARN isn't valid. ... field: RESOURCE_ARN,
-  #   parameter: arn:aws:cloudfront::<account>:distribution/<id>
-  #   (Service: Wafv2, Status Code: 400, HandlerErrorCode: InvalidRequest)
-  #
-  # WAFv2 addresses a CloudFront distribution with the ACCOUNT field EMPTY
-  # (arn:<partition>:cloudfront::distribution/<id>). It is a different ARN
-  # shape, not a different distribution: both forms name the same
-  # distribution id, and the WAF association resolves the id.
-  #
-  # The app stack exports BOTH forms, each built from the distribution
-  # resource itself (never a literal), so the two stacks cannot drift apart
-  # and neither form has to be written down by hand.
-  DistributionArnForWaf:
-    Description: >
-      ARN of the CloudFront distribution in the shape the WAFv2 web ACL
-      association requires: the account field is EMPTY
-      (arn:<partition>:cloudfront::distribution/<id>). The us-east-1 edge
-      stack (edge-template.yaml) takes THIS output as its DistributionArn
-      parameter, so the association cannot fail on the ARN's shape.
-    Value: !Sub "arn:${AWS::Partition}:cloudfront::distribution/${CloudFrontDistribution}"
+  # M007/S06: the WAFv2 web ACL is attached to the distribution through
+  # the distribution's WebACLId (see the EdgeWebACLArn parameter), so
+  # there is no second ARN shape to export. The canonical, account-bearing
+  # DistributionArn above is the live distribution's identity: the deploy
+  # job and the identity verifier compare it against the live distribution.
   EcrRepositoryUri:
     Description: ECR repository URI for pushing images
     Value: !Sub "${AWS::AccountId}.dkr.ecr.${AWS::Region}.amazonaws.com/chemically"
