@@ -51,17 +51,14 @@ jobs:
             --query "Stacks[0].Outputs[?OutputKey=='WebACLArn'].OutputValue" \
             --output text)
           echo "acl: ${acl_arn}"
-          aws wafv2 get-web-acl --web-acl-arn "$acl_arn" --region us-east-1 \
-            --output json 2>&1 | python3 -c '
-          import json, sys
-          try:
-              data = json.load(sys.stdin)
-          except Exception as exc:
-              print("could not read the ACL:", exc)
-              raise SystemExit(0)
-          web_acl = data.get("WebACL", {})
-          for rule in web_acl.get("Rules", []):
-              print(json.dumps(rule, indent=1)[:1500])
+          pip install --quiet boto3
+          AWS_ARN="$acl_arn" python3 -c '
+          import json, os
+          import boto3
+          client = boto3.client("wafv2", region_name="us-east-1")
+          data = client.get_web_acl(ARN=os.environ["AWS_ARN"])
+          for rule in data.get("WebACL", {}).get("Rules", []):
+              print(json.dumps(rule, indent=1)[:2000])
           '
 
           echo "=== the Lambda role's inline policies ==="
