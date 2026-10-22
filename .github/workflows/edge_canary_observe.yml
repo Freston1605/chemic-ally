@@ -1,0 +1,100 @@
+name: Edge canary observation (read-only)
+
+# M007/S06/T01: the Count window must be re-readable AFTER traffic has
+# flowed, and a redeploy per observation is not an observation tool.
+#
+# The edge rule is CREATED by the very deploy that runs the Count
+# observer, so on that deploy the observation window legitimately holds no
+# datapoint ("warming up"). This workflow is the observation tool for
+# every later run: it is dispatch-only and strictly READ-ONLY. It
+# configures credentials, runs the read-only observer and uploads the
+# JSON record. It contains no stack write of any kind, no image build and
+# no cluster access, so dispatching it can never change what is live.
+#
+# The record is the same evidence the deploy job uploads (the artifact
+# name is the same on purpose), so the budget review (M007/S06/T02) can
+# read either one.
+
+on:
+  workflow_dispatch:
+    inputs:
+      minutes:
+        description: "The size of the observation window in minutes"
+        required: true
+        default: "1440"
+        type: string
+      expect_action:
+        description: "The live action the deploy declared (Count during the canary)"
+        required: true
+        default: "Count"
+        type: choice
+        options:
+          - Count
+          - Block
+
+# The token of a read-only workflow: it reads the repository and nothing
+# else.
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: false
+
+env:
+  PYTHON_VERSION: "3.14"
+  # CloudFront is a global service: the CLOUDFRONT-scoped web ACL and the
+  # WAF counters it publishes only live in us-east-1 (D015/D018).
+  AWS_REGION: us-east-1
+  # The edge stack the observer reads. Declared once so the observer and
+  # the record can never disagree about which stack holds the rule.
+  EDGE_STACK_NAME: chemically-edge
+
+jobs:
+  observe:
+    name: Observe the edge Count window
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+
+      - name: Install the observer's dependencies
+        run: pip install boto3
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v5
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      # The SAME arguments the deploy job's observer step uses, with the
+      # window and the expected action as dispatch inputs. The observer is
+      # read-only: it reads the live stack, the live web ACL, the WAF
+      # counters and the public site's status, and writes the JSON record.
+      # A window with no datapoint on a rule that is still young is
+      # reported as "warming up" (no observation), never as zero traffic.
+      - name: Observe the edge canary window
+        run: |
+          python scripts/verify_edge_canary.py \
+            --edge-stack-name "$EDGE_STACK_NAME" \
+            --edge-region us-east-1 \
+            --expect-action "${{ inputs.expect_action }}" \
+            --minutes ${{ inputs.minutes }} \
+            --site-url https://chemic-ally.xyz \
+            --record-out edge-canary-count-record.json
+
+      # The record is uploaded even when the observation failed: a failed
+      # run's record is exactly the record worth reading.
+      - name: Upload the edge canary record
+        if: always()
+        uses: actions/upload-artifact@v5
+        with:
+          name: edge-canary-count-record
+          path: edge-canary-count-record.json
+          if-no-files-found: warn
+          retention-days: 30

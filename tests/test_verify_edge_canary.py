@@ -32,7 +32,7 @@ import shutil
 import sys
 import tempfile
 from contextlib import redirect_stdout
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 from django.test import SimpleTestCase
@@ -61,6 +61,11 @@ DISCOVERED_DIMENSIONS = [
 
 FIXED_NOW = datetime(2026, 10, 22, 12, 0, 0, tzinfo=timezone.utc)
 
+#: The edge stack's creation time in the default fixture: well before any
+#: observation window, so the rule COULD have been observed for the whole
+#: window and an empty window is a real fault.
+STACK_CREATED_AT = datetime(2026, 10, 1, 9, 0, 0, tzinfo=timezone.utc)
+
 
 class AwsApiError(Exception):
     """A stand-in for a botocore error (throttling, lost connection)."""
@@ -74,15 +79,28 @@ class AwsClientError(Exception):
         self.response = {"ErrorCode": code, "ErrorMessage": message}
 
 
-def _stack(outputs=None, stack_status="UPDATE_COMPLETE"):
+def _stack(outputs=None, stack_status="UPDATE_COMPLETE",
+           created_at=STACK_CREATED_AT):
     return {
         "StackName": EDGE_STACK,
         "StackStatus": stack_status,
+        "CreationTimestamp": created_at,
         "Outputs": outputs
         if outputs is not None
         else [{"OutputKey": "WebACLArn", "OutputValue": WEB_ACL_ARN}],
         "Parameters": [],
     }
+
+
+def _young_stack(minutes_ago=5, **kwargs):
+    """The edge stack as it looks minutes after it was CREATED.
+
+    This is the state of the very deploy that CREATES the rule: the rule
+    is minutes old, so the observation window legitimately holds nothing.
+    """
+    return _stack(
+        created_at=FIXED_NOW - timedelta(minutes=minutes_ago), **kwargs
+    )
 
 
 def _rule(action="Count", limit=2000, window=300, name="EdgeRateLimit"):
@@ -236,6 +254,37 @@ def _run(clients=None, http_get=None, **kwargs):
     kwargs.setdefault("http_get", http_get or _http_get_ok)
     kwargs.setdefault("now", lambda: FIXED_NOW)
     return verify_edge_canary.run(**kwargs)
+
+
+def _load_mutated_module(case, old, new):
+    """Return the observer module with ``old`` replaced by ``new``.
+
+    The mutation is applied to the TRACKED source and the result is
+    imported as a separate module, so a guard that depends on the source
+    can be proved non-vacuous: the mutated module really behaves
+    differently, it is not a re-implementation of the expected outcome.
+    """
+    source = MODULE_PATH.read_text(encoding="utf-8")
+    case.assertIn(
+        old,
+        source,
+        "the observer source no longer contains {!r}; the mutation cannot "
+        "be constructed and the negative case needs to be updated.".format(
+            old
+        ),
+    )
+    mutated_source = source.replace(old, new, 1)
+    directory = tempfile.mkdtemp()
+    case.addCleanup(shutil.rmtree, directory, True)
+    path = os.path.join(directory, "verify_edge_canary_mutated.py")
+    with open(path, "w", encoding="utf-8") as handle:
+        handle.write(mutated_source)
+    name = "verify_edge_canary_mutated_{}".format(abs(hash(mutated_source)))
+    spec = importlib.util.spec_from_file_location(name, path)
+    module = importlib.util.module_from_spec(spec)
+    sys.modules[name] = module
+    spec.loader.exec_module(module)
+    return module
 
 
 class CanaryObserverHappyPathTests(SimpleTestCase):
@@ -778,6 +827,218 @@ class CanaryObserverConstantsTests(SimpleTestCase):
         self.assertEqual(
             verify_edge_canary.DEFAULT_EDGE_REGION, "us-east-1"
         )
+
+
+class CanaryObserverWarmingUpGateTests(SimpleTestCase):
+    """G10: an empty window on a YOUNG rule is not a failure.
+
+    The edge rule is CREATED by the very deploy that runs this observer,
+    so the first run's window legitimately holds no datapoint. That run is
+    healthy: it exits 0, it says so in one line, and its traffic figures
+    stay ``null`` -- never 0, because "nothing observed" is not "no
+    traffic".
+    """
+
+    def _empty_window_clients(self, young=True):
+        stack = _young_stack() if young else _stack()
+        return FakeClients(
+            cfn=FakeCloudFormation(stack=stack),
+            cloudwatch=FakeCloudWatch(datapoints={}),
+        )
+
+    def _run_and_read(self, clients):
+        record_path = _record_path(self)
+        buffer = io.StringIO()
+        with redirect_stdout(buffer):
+            result = _run(clients, record_out=record_path)
+        with open(record_path, encoding="utf-8") as handle:
+            return result, json.load(handle), buffer.getvalue()
+
+    def test_a_young_rule_with_an_empty_window_passes(self):
+        result, record, _ = self._run_and_read(self._empty_window_clients())
+        self.assertEqual(result, 0)
+        self.assertEqual(record["status"], "pass")
+        self.assertEqual(record["observation_state"], "warming_up")
+
+    def test_the_warming_up_run_says_so_in_one_line(self):
+        _, _, output = self._run_and_read(self._empty_window_clients())
+        self.assertIn(
+            "the rule is younger than the window; no observation is expected "
+            "yet",
+            output,
+        )
+
+    def test_the_warming_up_record_has_no_traffic_figures(self):
+        _, record, _ = self._run_and_read(self._empty_window_clients())
+        self.assertIsNone(record["scoped_requests"])
+        self.assertIsNone(record["observed_rate_per_window"])
+        self.assertNotEqual(record["scoped_requests"], 0)
+        self.assertNotEqual(record["observed_rate_per_window"], 0)
+
+    def test_the_warming_up_record_says_why(self):
+        _, record, _ = self._run_and_read(self._empty_window_clients())
+        self.assertIn("younger than the window", record[
+            "observation_state_reason"
+        ])
+
+    def test_the_warming_up_run_still_proves_the_site_serves_200(self):
+        _, record, _ = self._run_and_read(self._empty_window_clients())
+        self.assertEqual(record["site_status"], 200)
+
+    def test_the_warming_up_run_claims_no_ceiling_verdict(self):
+        """No datapoint is not a verdict: the ceiling stays undecided."""
+        _, record, _ = self._run_and_read(self._empty_window_clients())
+        self.assertIsNone(record["ceiling_reached"])
+
+    def test_the_warming_up_record_carries_the_rule_age(self):
+        _, record, _ = self._run_and_read(self._empty_window_clients())
+        self.assertEqual(
+            record["stack_created_at"],
+            (FIXED_NOW - timedelta(minutes=5)).isoformat(),
+        )
+
+    def test_an_old_rule_with_an_empty_window_still_fails(self):
+        """The existing FAIL stands: an empty window on a live rule."""
+        with self.assertRaises(RuntimeError) as ctx:
+            _run(self._empty_window_clients(young=False))
+        self.assertIn("no data is not zero traffic", str(ctx.exception))
+
+    def test_the_failed_empty_window_is_recorded_as_such(self):
+        record_path = _record_path(self)
+        with self.assertRaises(RuntimeError):
+            _run(
+                self._empty_window_clients(young=False),
+                record_out=record_path,
+            )
+        with open(record_path, encoding="utf-8") as handle:
+            record = json.load(handle)
+        self.assertEqual(record["status"], "fail")
+        self.assertEqual(record["observation_state"], "no_observation")
+        self.assertIsNone(record["scoped_requests"])
+
+    def test_a_missing_creation_timestamp_does_not_excuse_an_empty_window(
+        self,
+    ):
+        """An unreadable rule age is not a licence to relax the failure."""
+        stack = _stack()
+        del stack["CreationTimestamp"]
+        clients = FakeClients(
+            cfn=FakeCloudFormation(stack=stack),
+            cloudwatch=FakeCloudWatch(datapoints={}),
+        )
+        with self.assertRaises(RuntimeError) as ctx:
+            _run(clients)
+        self.assertIn("no data is not zero traffic", str(ctx.exception))
+
+    def test_an_unpublished_counter_is_still_refused_while_warming_up(self):
+        """A metric that was never published is a misread, not a warm-up."""
+        clients = FakeClients(
+            cfn=FakeCloudFormation(stack=_young_stack()),
+            cloudwatch=FakeCloudWatch(
+                metrics=[_metric("ChemicAllyEdgeWebAcl")], datapoints={}
+            ),
+        )
+        with self.assertRaises(RuntimeError) as ctx:
+            _run(clients)
+        self.assertIn("not looking at the right metric", str(ctx.exception))
+
+
+class CanaryObserverWindowCoverageGateTests(SimpleTestCase):
+    """G10 itself: the rule's age decides whether an empty window is a fault."""
+
+    def test_a_young_rule_does_not_cover_the_window(self):
+        created = FIXED_NOW - timedelta(minutes=5)
+        window_start = FIXED_NOW - timedelta(minutes=1440)
+        self.assertFalse(
+            verify_edge_canary.gate_window_covers_the_rule(
+                created, window_start
+            )
+        )
+
+    def test_an_old_rule_covers_the_window(self):
+        created = FIXED_NOW - timedelta(days=3)
+        window_start = FIXED_NOW - timedelta(minutes=1440)
+        self.assertTrue(
+            verify_edge_canary.gate_window_covers_the_rule(
+                created, window_start
+            )
+        )
+
+    def test_a_rule_created_exactly_at_the_window_start_covers_it(self):
+        window_start = FIXED_NOW - timedelta(minutes=60)
+        self.assertTrue(
+            verify_edge_canary.gate_window_covers_the_rule(
+                window_start, window_start
+            )
+        )
+
+    def test_an_unreadable_timestamp_does_not_cover_the_window(self):
+        window_start = FIXED_NOW - timedelta(minutes=60)
+        self.assertTrue(
+            verify_edge_canary.gate_window_covers_the_rule(None, window_start)
+        )
+        self.assertTrue(
+            verify_edge_canary.gate_window_covers_the_rule(
+                "not-a-timestamp", window_start
+            )
+        )
+
+    def test_an_iso_timestamp_is_understood(self):
+        window_start = FIXED_NOW - timedelta(minutes=1440)
+        self.assertFalse(
+            verify_edge_canary.gate_window_covers_the_rule(
+                "2026-10-22T11:55:00Z", window_start
+            )
+        )
+
+
+class CanaryObserverWarmingUpMutationTests(SimpleTestCase):
+    """The warming-up gate must be load-bearing.
+
+    The mutation is applied to the TRACKED source of the observer and the
+    mutated module is imported and run: if the gate were removed, the
+    warming-up scenario would fail -- and the positive case above would
+    go red with it. A guard that cannot fail is a comment.
+    """
+
+    def _run_with_mutated_module(self, module):
+        clients = FakeClients(
+            cfn=FakeCloudFormation(stack=_young_stack()),
+            cloudwatch=FakeCloudWatch(datapoints={}),
+        )
+        return module.run(
+            client_factory=clients,
+            http_get=_http_get_ok,
+            now=lambda: FIXED_NOW,
+        )
+
+    def test_removing_the_gate_makes_the_warming_up_run_fail(self):
+        module = _load_mutated_module(
+            self,
+            "            covers_window = gate_window_covers_the_rule(\n"
+            "                stack.get(\"CreationTimestamp\"), window_start\n"
+            "            )\n",
+            "            covers_window = True\n",
+        )
+        with self.assertRaises(RuntimeError):
+            self._run_with_mutated_module(module)
+
+    def test_a_gate_that_always_covers_the_window_is_detected(self):
+        module = _load_mutated_module(
+            self,
+            "    covers = created <= start\n",
+            "    covers = True\n",
+        )
+        with self.assertRaises(RuntimeError):
+            self._run_with_mutated_module(module)
+
+    def test_the_unmutated_observer_passes_the_same_scenario(self):
+        """The mutation is meaningful only if the real source passes."""
+        clients = FakeClients(
+            cfn=FakeCloudFormation(stack=_young_stack()),
+            cloudwatch=FakeCloudWatch(datapoints={}),
+        )
+        self.assertEqual(_run(clients), 0)
 
 
 class CanaryObserverCliTests(SimpleTestCase):

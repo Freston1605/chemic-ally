@@ -30,6 +30,20 @@ Three states are reported per counter and they are NOT interchangeable:
 * ``unknown`` -- the metric was not published for this web ACL at all.
   This is NOT zero: it means we are not looking at the right metric.
 
+The WINDOW as a whole has its own state, and it is the state that keeps
+"no data is not zero traffic" honest:
+
+* ``observed`` -- the window holds at least one datapoint;
+* ``warming_up`` -- the window holds NO datapoint and the rule is YOUNGER
+  than the window, so there is nothing to observe yet. The edge rule is
+  CREATED by the very deploy that runs this observer, so the first run
+  legitimately observes nothing; that run is healthy and exits 0. The
+  traffic figures stay ``null`` -- never 0 -- so no downstream reader can
+  mistake "nothing observed" for "no traffic";
+* ``no_observation`` -- the window holds NO datapoint and the rule was
+  old enough to have been observed. An empty window on a live rule is a
+  real problem and fails the run.
+
 Everything here is read-only. It calls ``cloudformation:DescribeStacks``,
 ``wafv2:GetWebACL``, ``cloudwatch:ListMetrics`` and
 ``cloudwatch:GetMetricStatistics``, and it issues ONE HTTP GET. Nothing is
@@ -110,6 +124,16 @@ STATE_VALUE = "value"
 STATE_OBSERVED_ZERO = "observed-zero"
 STATE_UNKNOWN = "unknown"
 
+#: The states the WINDOW as a whole can be in.
+OBSERVATION_STATE_OBSERVED = "observed"
+OBSERVATION_STATE_WARMING_UP = "warming_up"
+OBSERVATION_STATE_NO_OBSERVATION = "no_observation"
+
+#: The message a young rule with an empty window produces.
+WARMING_UP_MESSAGE = (
+    "the rule is younger than the window; no observation is expected yet"
+)
+
 #: The message an empty window produces. "No data" is not "zero traffic".
 NO_OBSERVATIONS_MESSAGE = (
     "the canary window contains no observations -- no data is not zero "
@@ -123,6 +147,31 @@ def _stack_outputs(stack):
         output.get("OutputKey"): output.get("OutputValue")
         for output in stack.get("Outputs", []) or []
     }
+
+
+def _as_utc_datetime(value):
+    """Coerce a CloudFormation timestamp into an aware datetime (or None).
+
+    CloudFormation returns ``CreationTimestamp`` as a datetime, but a
+    caller (a test, a future API shape) may hand over an ISO-8601 string.
+    A naive value is read as UTC, which is what CloudFormation means.
+    An unreadable value returns None: the caller then refuses to relax
+    anything on the strength of a timestamp it could not read.
+    """
+    if value is None:
+        return None
+    if isinstance(value, datetime):
+        moment = value
+    else:
+        try:
+            moment = datetime.fromisoformat(
+                str(value).replace("Z", "+00:00")
+            )
+        except (TypeError, ValueError):
+            return None
+    if moment.tzinfo is None:
+        moment = moment.replace(tzinfo=timezone.utc)
+    return moment
 
 
 def _http_get(url, timeout):
@@ -402,6 +451,49 @@ def gate_ceiling_reported(action, metrics, record):
     return False
 
 
+def gate_window_covers_the_rule(stack_created_at, window_start):
+    """G10: could the rule have been observed for the WHOLE window?
+
+    The edge rule is CREATED by the very deploy that runs this observer,
+    so on that run the observation window legitimately holds no datapoint.
+    The rule's age comes from the edge stack's ``CreationTimestamp`` (the
+    stack that holds the rule -- it is already read by ``gate_stack_live``)
+    and the window's start; the question is exact: could the rule have
+    been counted for the WHOLE window?
+
+    Returns True when it could (the rule existed at or before the window
+    started) and False when it could not (the rule is younger than the
+    window). An unreadable timestamp is NOT a licence to relax anything:
+    the gate then returns True, so an empty window on a rule of unknown
+    age stays a failure.
+    """
+    created = _as_utc_datetime(stack_created_at)
+    if created is None:
+        print(
+            "NOTE: the edge stack reports no readable CreationTimestamp; "
+            "the rule's age cannot be established, so an empty window is "
+            "NOT excused"
+        )
+        return True
+    start = _as_utc_datetime(window_start)
+    covers = created <= start
+    if covers:
+        print(
+            "PASS: the rule existed for the whole window (created at {}, "
+            "the window starts at {})".format(
+                created.isoformat(), start.isoformat()
+            )
+        )
+    else:
+        print(
+            "NOTE: the rule is younger than the window (created at {}, the "
+            "window starts at {})".format(
+                created.isoformat(), start.isoformat()
+            )
+        )
+    return covers
+
+
 # --------------------------------------------------------------------------
 # Reading the counters
 # --------------------------------------------------------------------------
@@ -484,6 +576,20 @@ def _scoped_requests(metrics):
     return total
 
 
+def _window_has_observation(discovered_names, metrics):
+    """True when the window holds at least one real datapoint.
+
+    A counter in the ``observed-zero`` state holds NO datapoint (nothing
+    was counted), so it is not an observation; only the ``value`` state is.
+    """
+    for name in COUNTER_NAMES:
+        if name not in discovered_names:
+            continue
+        if (metrics.get(name) or {}).get("state") == STATE_VALUE:
+            return True
+    return False
+
+
 def _windows(window_minutes, evaluation_window_seconds):
     """How many evaluation windows the observation window holds."""
     return max(
@@ -543,9 +649,12 @@ def run(
         "evaluation_window_seconds": None,
         "metrics": {},
         "discovered_metric_names": [],
-        "scoped_requests": 0,
-        "observed_rate_per_window": 0.0,
-        "ceiling_reached": False,
+        "scoped_requests": None,
+        "observed_rate_per_window": None,
+        "observation_state": None,
+        "observation_state_reason": None,
+        "stack_created_at": None,
+        "ceiling_reached": None,
         "site_status": None,
         "status": "running",
     }
@@ -607,27 +716,96 @@ def run(
             evaluation_window,
         )
         record["metrics"] = metrics
-        gate_counters_readable(discovered_names, metrics, require_data)
-        gate_no_blocks_in_count_mode(action, metrics)
-        gate_allowed_requests_positive(action, metrics, require_data)
 
-        scoped = _scoped_requests(metrics)
-        windows = _windows(window_minutes, evaluation_window)
-        record["scoped_requests"] = scoped
-        record["observed_rate_per_window"] = scoped / float(windows)
-        print(
-            "PASS: {} scoped request(s) over {} window(s) -> {:.2f} "
-            "request(s) per {}s window".format(
-                scoped, windows, record["observed_rate_per_window"],
-                evaluation_window
-            )
+        # The WINDOW's own state. A window with no datapoint at all is
+        # only benign when the rule is YOUNGER than the window: the deploy
+        # that CREATES the rule is the deploy that runs this observer, so
+        # the first run legitimately observes nothing.
+        created = _as_utc_datetime(stack.get("CreationTimestamp"))
+        record["stack_created_at"] = (
+            created.isoformat() if created is not None else None
         )
+        has_observation = _window_has_observation(discovered_names, metrics)
+        warming_up = False
+        if has_observation:
+            record["observation_state"] = OBSERVATION_STATE_OBSERVED
+            gate_counters_readable(discovered_names, metrics, require_data)
+        else:
+            # A counter that was never published is a misread, not a
+            # warm-up: that failure stands in every state.
+            gate_counters_readable(discovered_names, metrics, False)
+            covers_window = gate_window_covers_the_rule(
+                stack.get("CreationTimestamp"), window_start
+            )
+            if covers_window:
+                record["observation_state"] = OBSERVATION_STATE_NO_OBSERVATION
+                record["observation_state_reason"] = (
+                    "the window holds no datapoint and the rule existed for "
+                    "the whole window, so an empty window is a real problem"
+                )
+                if require_data:
+                    raise RuntimeError(NO_OBSERVATIONS_MESSAGE)
+            else:
+                warming_up = True
+                record["observation_state"] = OBSERVATION_STATE_WARMING_UP
+                record["observation_state_reason"] = (
+                    "the edge stack was created at {}, after the window "
+                    "started at {}, so the rule is younger than the window "
+                    "and could not have been observed for the whole "
+                    "window".format(
+                        record["stack_created_at"], window_start.isoformat()
+                    )
+                )
+                print(WARMING_UP_MESSAGE)
+
+        if has_observation:
+            gate_no_blocks_in_count_mode(action, metrics)
+            gate_allowed_requests_positive(action, metrics, require_data)
+        elif warming_up:
+            print(
+                "NOTE: the scoped-traffic assertions are not applied while "
+                "the rule is warming up: no traffic can have been counted "
+                "yet"
+            )
+        else:
+            print(
+                "NOTE: the window holds no observation; the scope-down is "
+                "NOT proven"
+            )
+
+        if has_observation:
+            scoped = _scoped_requests(metrics)
+            windows = _windows(window_minutes, evaluation_window)
+            record["scoped_requests"] = scoped
+            record["observed_rate_per_window"] = scoped / float(windows)
+            print(
+                "PASS: {} scoped request(s) over {} window(s) -> {:.2f} "
+                "request(s) per {}s window".format(
+                    scoped, windows, record["observed_rate_per_window"],
+                    evaluation_window
+                )
+            )
+        else:
+            # No data is not zero traffic: the figures stay null, so no
+            # downstream reader can mistake "nothing observed" for "no
+            # traffic".
+            print(
+                "NOTE: the window holds no observation, so no traffic figure "
+                "is recorded (null, never 0: no data is not zero traffic)"
+            )
 
         site_status, _ = http_get(site_url, timeout_seconds)
         record["site_status"] = site_status
         gate_site_serves_200(site_status)
 
-        gate_ceiling_reported(action, metrics, record)
+        if has_observation:
+            gate_ceiling_reported(action, metrics, record)
+        else:
+            record["ceiling_reached"] = None
+            print(
+                "NOTE: the ceiling could not be observed in this window; no "
+                "conclusion about it is recorded"
+            )
 
         record["status"] = "pass"
         return 0
