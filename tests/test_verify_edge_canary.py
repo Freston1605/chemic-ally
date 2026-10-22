@@ -860,6 +860,22 @@ class CanaryObserverWarmingUpGateTests(SimpleTestCase):
         with open(record_path, encoding="utf-8") as handle:
             return result, json.load(handle), buffer.getvalue()
 
+    def test_a_young_rule_with_no_published_counter_passes(self):
+        """A rule that has never run has published no counter at all.
+
+        CloudWatch publishes the WAFv2 counters only once the rule has
+        been evaluated, so the deploy that CREATES the rule discovers no
+        counter names. That is the warm-up state, not a misread of the
+        metric namespace.
+        """
+        clients = FakeClients(
+            cfn=FakeCloudFormation(stack=_young_stack()),
+            cloudwatch=FakeCloudWatch(metrics=[]),
+        )
+        result, record, _ = self._run_and_read(clients)
+        self.assertEqual(result, 0)
+        self.assertEqual(record["observation_state"], "warming_up")
+
     def test_a_young_rule_with_an_empty_window_passes(self):
         result, record, _ = self._run_and_read(self._empty_window_clients())
         self.assertEqual(result, 0)

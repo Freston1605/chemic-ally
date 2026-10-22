@@ -767,13 +767,30 @@ def run(
             record["observation_state"] = OBSERVATION_STATE_OBSERVED
             gate_counters_readable(discovered_names, metrics, require_data)
         else:
-            # A counter that was never published is a misread, not a
-            # warm-up: that failure stands in every state.
-            gate_counters_readable(discovered_names, metrics, False)
             covers_window = gate_window_covers_the_rule(
                 stack.get("CreationTimestamp"), window_start
             )
-            if covers_window:
+            if not discovered_names and not covers_window:
+                # The rule is YOUNGER than the window and has never been
+                # evaluated, so CloudWatch has not published a single
+                # counter for it yet. That is the warm-up state, not a
+                # misread: a rule that has never run cannot have
+                # published counters.
+                warming_up = True
+                record["observation_state"] = OBSERVATION_STATE_WARMING_UP
+                record["observation_state_reason"] = (
+                    "the rule was created at {}, after the window started "
+                    "at {}, and no counter has been published for it yet, so "
+                    "the canary window has no data yet".format(
+                        record["stack_created_at"], window_start.isoformat()
+                    )
+                )
+                print(WARMING_UP_MESSAGE)
+            else:
+                # A counter that was never published is a misread, not a
+                # warm-up: that failure stands in every other state.
+                gate_counters_readable(discovered_names, metrics, False)
+            if covers_window and not warming_up:
                 record["observation_state"] = OBSERVATION_STATE_NO_OBSERVATION
                 record["observation_state_reason"] = (
                     "the window holds no datapoint and the rule existed for "
