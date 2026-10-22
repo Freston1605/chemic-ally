@@ -84,7 +84,7 @@ def _stack(outputs=None, stack_status="UPDATE_COMPLETE",
     return {
         "StackName": EDGE_STACK,
         "StackStatus": stack_status,
-        "CreationTimestamp": created_at,
+        "CreationTime": created_at,
         "Outputs": outputs
         if outputs is not None
         else [{"OutputKey": "WebACLArn", "OutputValue": WEB_ACL_ARN}],
@@ -943,7 +943,7 @@ class CanaryObserverWarmingUpGateTests(SimpleTestCase):
     ):
         """An unreadable rule age is not a licence to relax the failure."""
         stack = _stack()
-        del stack["CreationTimestamp"]
+        del stack["CreationTime"]
         clients = FakeClients(
             cfn=FakeCloudFormation(stack=stack),
             cloudwatch=FakeCloudWatch(datapoints={}),
@@ -1038,7 +1038,9 @@ class CanaryObserverWarmingUpMutationTests(SimpleTestCase):
         module = _load_mutated_module(
             self,
             "            covers_window = gate_window_covers_the_rule(\n"
-            "                stack.get(\"CreationTimestamp\"), window_start\n"
+            "                stack.get(\"CreationTime\") or "
+            "stack.get(\"CreationTimestamp\"),\n"
+            "                window_start\n"
             "            )\n",
             "            covers_window = True\n",
         )

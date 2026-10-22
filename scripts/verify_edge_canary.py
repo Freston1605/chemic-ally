@@ -152,7 +152,7 @@ def _stack_outputs(stack):
 def _as_utc_datetime(value):
     """Coerce a CloudFormation timestamp into an aware datetime (or None).
 
-    CloudFormation returns ``CreationTimestamp`` as a datetime, but a
+    CloudFormation returns the stack's ``CreationTime`` as a datetime, but a
     caller (a test, a future API shape) may hand over an ISO-8601 string.
     A naive value is read as UTC, which is what CloudFormation means.
     An unreadable value returns None: the caller then refuses to relax
@@ -490,7 +490,7 @@ def gate_window_covers_the_rule(stack_created_at, window_start):
 
     The edge rule is CREATED by the very deploy that runs this observer,
     so on that run the observation window legitimately holds no datapoint.
-    The rule's age comes from the edge stack's ``CreationTimestamp`` (the
+    The rule's age comes from the edge stack's ``CreationTime`` (the
     stack that holds the rule -- it is already read by ``gate_stack_live``)
     and the window's start; the question is exact: could the rule have
     been counted for the WHOLE window?
@@ -504,7 +504,7 @@ def gate_window_covers_the_rule(stack_created_at, window_start):
     created = _as_utc_datetime(stack_created_at)
     if created is None:
         print(
-            "NOTE: the edge stack reports no readable CreationTimestamp; "
+            "NOTE: the edge stack reports no readable CreationTime; "
             "the rule's age cannot be established, so an empty window is "
             "NOT excused"
         )
@@ -757,7 +757,12 @@ def run(
         # only benign when the rule is YOUNGER than the window: the deploy
         # that CREATES the rule is the deploy that runs this observer, so
         # the first run legitimately observes nothing.
-        created = _as_utc_datetime(stack.get("CreationTimestamp"))
+        # The CloudFormation stack's field is CreationTime (the
+        # resource type's attribute, CreationTimestamp, is a different
+        # thing and the stack does not carry it).
+        created = _as_utc_datetime(
+            stack.get("CreationTime") or stack.get("CreationTimestamp")
+        )
         record["stack_created_at"] = (
             created.isoformat() if created is not None else None
         )
@@ -768,7 +773,8 @@ def run(
             gate_counters_readable(discovered_names, metrics, require_data)
         else:
             covers_window = gate_window_covers_the_rule(
-                stack.get("CreationTimestamp"), window_start
+                stack.get("CreationTime") or stack.get("CreationTimestamp"),
+                window_start
             )
             if not discovered_names and not covers_window:
                 # The rule is YOUNGER than the window and has never been
