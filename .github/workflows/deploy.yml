@@ -380,6 +380,24 @@ jobs:
         run: |
           set -euo pipefail
 
+          # A stack left in ROLLBACK_COMPLETE by an earlier failed CREATE
+          # cannot be updated -- CloudFormation refuses with "is in
+          # ROLLBACK_COMPLETE state and can not be updated". Such a stack
+          # holds no live resources (the rolled-back create deleted them),
+          # so deleting it and re-creating it is safe and is the only way
+          # forward. A healthy stack is never touched.
+          edge_status=$(aws cloudformation describe-stacks \
+            --stack-name "$EDGE_STACK_NAME" --region us-east-1 \
+            --query "Stacks[0].StackStatus" --output text 2>/dev/null \
+            || echo "ABSENT")
+          if [ "$edge_status" = "ROLLBACK_COMPLETE" ]; then
+            echo "The edge stack ${EDGE_STACK_NAME} is in ROLLBACK_COMPLETE from an earlier failed create; deleting it so it can be re-created."
+            aws cloudformation delete-stack \
+              --stack-name "$EDGE_STACK_NAME" --region us-east-1
+            aws cloudformation wait stack-delete-complete \
+              --stack-name "$EDGE_STACK_NAME" --region us-east-1
+          fi
+
           echo "Deploying the edge stack (action: ${WAF_ACTION})"
 
           sam deploy \

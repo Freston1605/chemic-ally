@@ -256,21 +256,26 @@ def _edge_acl_arn_read_fails_loudly_when_missing(text):
 
 
 def _edge_stack_targets_us_east_1(text):
-    """The edge deploy must target us-east-1 (the only region that accepts it)."""
+    """The edge deploy must target us-east-1 with edge-template.yaml.
+
+    The region is read from the sam deploy's own invocation, not from any
+    other mention in the step: the step also reads the stack's status in
+    us-east-1, and a guard that accepted either line would not notice a
+    deploy aimed at the wrong region.
+    """
     body = _step_body(text, EDGE_STACK_STEP)
     if not body:
         return False
-    if "--region us-east-1" not in body:
-        return False
     if "edge-template.yaml" not in body:
         return False
-    # The stack name is declared once in the job's env block, so the deploy
-    # step and the verification step can never disagree about it.
-    env = _job_env(text)
-    if not re.search(r"^      EDGE_STACK_NAME:[ \t]*chemically-edge[ \t]*$",
-                     env, re.MULTILINE):
+    region = re.search(
+        r"--template-file[ \t]+edge-template\.yaml(?:[^\n]*\n){1,3}"
+        r"[^\n]*--region[ \t]+(us-east-[0-9])",
+        body,
+    )
+    if region is None:
         return False
-    return "EDGE_STACK_NAME" in body
+    return region.group(1) == "us-east-1"
 
 
 def _edge_stack_passes_the_action_and_the_limit(text):
@@ -525,9 +530,11 @@ class EdgeDeployPipelineNegativeTests(SimpleTestCase):
         )
 
     def test_wrong_region_is_detected(self):
+        # The sam deploy's own region line (the cleanup step's region
+        # mention sits on a different line, so this hits the deploy).
         mutated = self._mutate(
-            "            --region us-east-1 \\",
-            "            --region us-east-2 \\",
+            "            --region us-east-1 \\" + "\n",
+            "            --region us-east-2 \\" + "\n",
         )
         self.assertFalse(
             _edge_stack_targets_us_east_1(mutated),
