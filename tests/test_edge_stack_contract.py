@@ -140,6 +140,36 @@ def _app_stack_exports_distribution_arn(text):
     return not re.search(r"distribution/[A-Z0-9]{8,}", output)
 
 
+def _app_stack_exports_the_waf_distribution_arn(text):
+    """The app stack must export the WAFv2-shaped distribution ARN.
+
+    WAFv2 addresses a CloudFront distribution with the ACCOUNT field EMPTY
+    (arn:<partition>:cloudfront::distribution/<id>). The account-bearing
+    form -- the one the CloudFront API reports, and the one the identity
+    verifier compares against the live distribution -- is rejected by the
+    association with "The ARN isn't valid ... field: RESOURCE_ARN"
+    (observed live on 2026-10-22, CI run 39732102371).
+
+    The two stacks therefore need BOTH shapes, each built from the
+    distribution resource itself so neither can be a stale literal.
+    """
+    output = _output(text, "DistributionArnForWaf")
+    if not output:
+        return False
+    # The value must be built from the distribution resource itself.
+    if "CloudFrontDistribution" not in output:
+        return False
+    if "cloudfront::distribution/" not in output:
+        return False
+    # The account field must be EMPTY: an account id in the value is
+    # exactly the shape WAFv2 rejects.
+    if "AccountId" in output:
+        return False
+    if re.search(r"[0-9]{12}:distribution/", output):
+        return False
+    return not re.search(r"distribution/[A-Z0-9]{8,}", output)
+
+
 def _distribution_has_no_name_property(text):
     """The distribution must not carry a `Name:` property.
 
@@ -299,6 +329,15 @@ class AppStackHandoverTests(SimpleTestCase):
             "template.yaml must export a DistributionArn output built from "
             "the CloudFrontDistribution resource, so the us-east-1 edge "
             "stack can associate the WAF rule with the live distribution.",
+        )
+
+    def test_app_stack_exports_the_waf_shaped_distribution_arn(self):
+        self.assertTrue(
+            _app_stack_exports_the_waf_distribution_arn(self.template),
+            "template.yaml must export a DistributionArnForWaf output in "
+            "the shape WAFv2 accepts for a CloudFront distribution (the "
+            "account field is EMPTY), because the account-bearing form is "
+            "rejected by the association with 'The ARN isn't valid'.",
         )
 
     def test_distribution_carries_no_name_property(self):
@@ -478,6 +517,46 @@ class EdgeStackContractNegativeTests(SimpleTestCase):
             _distribution_has_no_name_property(mutated),
             "the guard must fail when a Name property is added to the "
             "distribution: the resource type has no such property.",
+        )
+
+    def test_missing_waf_distribution_arn_output_is_detected(self):
+        mutated = self._mutate(
+            self.app,
+            "  DistributionArnForWaf:\n",
+            "  DistributionArnForWafRemoved:\n",
+        )
+        self.assertFalse(
+            _app_stack_exports_the_waf_distribution_arn(mutated),
+            "the WAF-ARN guard must fail when the DistributionArnForWaf "
+            "output is renamed away: the edge stack would then be handed "
+            "the account-bearing ARN that WAFv2 rejects.",
+        )
+
+    def test_account_bearing_waf_distribution_arn_is_detected(self):
+        mutated = self._mutate(
+            self.app,
+            "arn:${AWS::Partition}:cloudfront::distribution/"
+            "${CloudFrontDistribution}",
+            "arn:${AWS::Partition}:cloudfront::${AWS::AccountId}:distribution/"
+            "${CloudFrontDistribution}",
+        )
+        self.assertFalse(
+            _app_stack_exports_the_waf_distribution_arn(mutated),
+            "the WAF-ARN guard must fail when the exported ARN carries the "
+            "account id again: that is the shape WAFv2 rejects.",
+        )
+
+    def test_hardcoded_waf_distribution_arn_output_is_detected(self):
+        mutated = self._mutate(
+            self.app,
+            "arn:${AWS::Partition}:cloudfront::distribution/"
+            "${CloudFrontDistribution}",
+            "arn:${AWS::Partition}:cloudfront::distribution/E1EXAMPLE",
+        )
+        self.assertFalse(
+            _app_stack_exports_the_waf_distribution_arn(mutated),
+            "the WAF-ARN guard must fail when the exported ARN is a literal "
+            "instead of a reference to the distribution resource.",
         )
 
     def test_defaulted_distribution_arn_parameter_is_detected(self):

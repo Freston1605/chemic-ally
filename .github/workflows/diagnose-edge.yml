@@ -1,9 +1,9 @@
 name: Diagnose edge association (temporary)
 
 # TEMPORARY diagnostic: read-only. It reports the state the edge stack's
-# WebACLAssociation needs (the live CloudFront distribution, the caller
-# identity, and the web ACLs in us-east-1) so a failed association can be
-# diagnosed without touching anything.
+# WebACLAssociation needs (the live CloudFront distribution, when it was last
+# modified, and the template the stack is actually running) so a failed
+# association can be diagnosed without touching anything.
 on:
   workflow_dispatch:
 
@@ -24,31 +24,19 @@ jobs:
 
       - name: Report the live state
         run: |
-          set -euo pipefail
-          echo "=== caller identity (us-east-2) ==="
-          aws sts get-caller-identity
-          echo
-          echo "=== caller identity (us-east-1) ==="
-          aws sts get-caller-identity --region us-east-1
-          echo
-          echo "=== app stack outputs ==="
-          aws cloudformation describe-stacks --stack-name chemically \
-            --region us-east-2 \
-            --query 'Stacks[0].{status:StackStatus,outputs:Outputs,params:Parameters}' \
-            --output json
-          echo
+          set -uo pipefail
           echo "=== every CloudFront distribution in the account ==="
           aws cloudfront list-distributions --output json \
             | python3 -c '
           import json, sys
-          data = json.load(sys.stdin)["DistributionList"]
-          for item in data.get("Items", []):
-              print("id=%s domain=%s enabled=%s aliases=%s" % (
+          for item in json.load(sys.stdin)["DistributionList"].get("Items", []):
+              print("id=%s domain=%s enabled=%s last_modified=%s aliases=%s" % (
                   item.get("Id"), item.get("DomainName"), item.get("Enabled"),
-                  item.get("Aliases")))
+                  item.get("LastModifiedTime"),
+                  item.get("Aliases", {}).get("Items")))
           '
           echo
-          echo "=== the distribution the stack names ==="
+          echo "=== the distribution the stack names (full config) ==="
           dist_id=$(aws cloudformation describe-stacks --stack-name chemically \
             --region us-east-2 \
             --query "Stacks[0].Outputs[?OutputKey=='DistributionArn'].OutputValue" \
@@ -59,33 +47,29 @@ jobs:
           import json, sys
           data = json.load(sys.stdin)["Distribution"]
           cfg = data["DistributionConfig"]
-          print("id=%s domain=%s enabled=%s" % (
-              data.get("Id"), data.get("DomainName"), cfg.get("Enabled")))
+          print("id=%s domain=%s last_modified=%s comment=%r" % (
+              data.get("Id"), data.get("DomainName"),
+              data.get("LastModifiedTime"), cfg.get("Comment")))
           for origin in cfg.get("Origins", {}).get("Items", []):
-              print("origin domain=%s headers=%s" % (
-                  origin.get("DomainName"),
-                  [(h.get("HeaderName"), "<value>" if h.get("HeaderValue") else "")
-                   for h in origin.get("OriginCustomHeaders", [])]))
-          ' || echo "get-distribution FAILED for ${dist_id}"
-          echo
-          echo "=== CLOUDFRONT web ACLs in us-east-1 ==="
-          aws wafv2 list-web-acls --scope CLOUDFRONT --region us-east-1 \
-            --output json \
-            | python3 -c '
-          import json, sys
-          for acl in json.load(sys.stdin).get("WebACLs", []):
-              print("name=%s id=%s scope=%s" % (
-                  acl.get("Name"), acl.get("Id"), acl.get("Scope")))
+              print("origin id=%s domain=%s headers=%r" % (
+                  origin.get("Id"), origin.get("DomainName"),
+                  origin.get("OriginCustomHeaders")))
           '
           echo
-          echo "=== a dry-run association against the live distribution ==="
-          web_acl=$(aws wafv2 list-web-acls --scope CLOUDFRONT --region us-east-1 \
-            --output json --query 'WebACLs[0].ARN' --output text)
-          echo "web acl: ${web_acl}"
-          arn=$(aws cloudformation describe-stacks --stack-name chemically \
+          echo "=== the template the stack is actually running (origin block) ==="
+          aws cloudformation get-template --stack-name chemically \
+            --region us-east-2 --template-stage Original \
+            --query 'TemplateBody' --output text \
+            | grep -n -A 6 "OriginCustomHeaders" || echo "NO OriginCustomHeaders IN THE RUNNING TEMPLATE"
+          echo
+          echo "=== recent stack events for the distribution ==="
+          aws cloudformation describe-stack-events --stack-name chemically \
             --region us-east-2 \
-            --query "Stacks[0].Outputs[?OutputKey=='DistributionArn'].OutputValue" \
-            --output text)
-          echo "resource arn: ${arn}"
-          aws wafv2 associate-web-acl --web-acl-arn "$web_acl" --resource-arn "$arn" \
-            --region us-east-1 2>&1 | head -20 || true
+            --query "StackEvents[?contains(ResourceName, 'CloudFrontDistribution')].[Timestamp,LogicalResourceId,ResourceType,ResourceStatus]" \
+            --output text | head -12
+          echo
+          echo "=== the edge stack's state (us-east-1) ==="
+          aws cloudformation describe-stacks --stack-name chemically-edge \
+            --region us-east-1 \
+            --query 'Stacks[0].{status:StackStatus,outputs:Outputs}' \
+            --output json 2>&1 | head -20

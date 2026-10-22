@@ -412,6 +412,55 @@ jobs:
           echo "Edge rule action: live=${live_action:-none} wanted=${WAF_ACTION} changed=${changed}"
 
       # ─────────────────────────────────────────────
+      # M007/S06/T03 (TEMPORARY diagnostic): which CloudFront ARN SHAPE
+      # does WAFv2 accept for the association?
+      #
+      # The first deploy of this edge stack (2026-10-22, run 39732102371)
+      # failed with
+      #
+      #   Error reason: The ARN isn't valid. ... field: RESOURCE_ARN,
+      #   parameter: arn:aws:cloudfront::<account>:distribution/<id>
+      #   (Service: Wafv2, Status Code: 400, InvalidRequest)
+      #
+      # so the account-bearing shape the CloudFront API reports is NOT the
+      # one the association takes. This step REPORTS which shapes WAFv2
+      # accepts, so a repeat of this failure is diagnosed by the run that
+      # hits it instead of by another round of guessing.
+      #
+      # It changes nothing: the web ACL named below does not exist, and the
+      # distribution named below does not exist either, so the call can
+      # only fail. A shape that WAFv2 rejects answers "The ARN isn't
+      # valid"; a shape it accepts answers that the web ACL or the
+      # resource does not exist.
+      #
+      # TEMPORARY: removed once the association is proven green.
+      # ─────────────────────────────────────────────
+      - name: "Diagnose: which CloudFront ARN shape does WAFv2 accept?"
+        run: |
+          set -uo pipefail
+
+          fake_dist="E0PROBE0000000"
+          fake_acl="arn:aws:wafv2:us-east-1:${{ env.AWS_ACCOUNT_ID }}:global/webacl/probe/probe-00000000-0000-0000-0000-000000000000"
+
+          echo "Live distributions (the shape the CloudFront API reports):"
+          aws cloudfront list-distributions --region us-east-1 \
+            --query "DistributionList.Items[].{Id:Id,ARN:ARN,Domain:DomainName}" \
+            --output text 2>&1 || true
+
+          for candidate in \
+            "arn:aws:cloudfront::distribution/${fake_dist}" \
+            "arn:aws:cloudfront::${{ env.AWS_ACCOUNT_ID }}:distribution/${fake_dist}" \
+            "arn:aws:cloudfront::${fake_dist}"; do
+            echo "=== candidate: ${candidate}"
+            aws wafv2 associate-web-acl \
+              --web-acl-arn "$fake_acl" \
+              --resource-arn "$candidate" \
+              --region us-east-1 2>&1 || true
+          done
+
+          exit 0
+
+      # ─────────────────────────────────────────────
       # M007/S02: the edge stack (us-east-1).
       #
       # AWS accepts WAFv2 web ACLs with Scope CLOUDFRONT only in us-east-1,
@@ -436,14 +485,38 @@ jobs:
             echo "::error::The chemically stack did not export DistributionArn; the edge stack cannot be associated with the live distribution."
             exit 1
           fi
-          echo "Deploying the edge stack against ${dist_arn} (action: ${WAF_ACTION})"
+
+          # M007/S06/T03: WAFv2 does NOT accept the account-bearing
+          # distribution ARN. On the first deploy of this edge stack
+          # (2026-10-22, run 39732102371) the WafWebACLAssociation
+          # resource failed with
+          #
+          #   Error reason: The ARN isn't valid. ... field: RESOURCE_ARN,
+          #   parameter: arn:aws:cloudfront::<account>:distribution/<id>
+          #   (Service: Wafv2, Status Code: 400, InvalidRequest)
+          #
+          # WAFv2 addresses a CloudFront distribution with the ACCOUNT field
+          # EMPTY. The app stack exports that shape separately as
+          # DistributionArnForWaf, so the association gets the ARN WAFv2
+          # actually accepts -- and the ARN is still read from the deployed
+          # stack, never written down here.
+          waf_dist_arn=$(aws cloudformation describe-stacks \
+            --stack-name chemically \
+            --region "${{ env.AWS_REGION }}" \
+            --query "Stacks[0].Outputs[?OutputKey=='DistributionArnForWaf'].OutputValue" \
+            --output text)
+          if [ -z "$waf_dist_arn" ] || [ "$waf_dist_arn" = "None" ]; then
+            echo "::error::The chemically stack did not export DistributionArnForWaf; the edge stack cannot be associated with the live distribution."
+            exit 1
+          fi
+          echo "Deploying the edge stack against ${waf_dist_arn} (action: ${WAF_ACTION})"
 
           sam deploy \
             --template-file edge-template.yaml \
             --stack-name "$EDGE_STACK_NAME" \
             --region us-east-1 \
             --parameter-overrides \
-              DistributionArn="$dist_arn" \
+              DistributionArn="$waf_dist_arn" \
               WafRateLimit=2000 \
               WafAction="$WAF_ACTION" \
             --no-fail-on-empty-changeset

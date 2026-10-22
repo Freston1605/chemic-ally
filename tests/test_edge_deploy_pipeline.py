@@ -278,6 +278,31 @@ def _edge_stack_passes_the_arn_and_the_action(text):
     return "WafRateLimit=" in body
 
 
+def _edge_stack_passes_the_waf_shaped_arn(text):
+    """The edge deploy must pass the ARN in the shape WAFv2 accepts.
+
+    WAFv2 addresses a CloudFront distribution with the ACCOUNT field EMPTY
+    (arn:<partition>:cloudfront::distribution/<id>). The account-bearing
+    form -- the one the CloudFront API reports -- is rejected by the
+    association with "The ARN isn't valid ... field: RESOURCE_ARN"
+    (observed live on 2026-10-22, run 39732102371), so the edge deploy
+    must read and pass the WAF-shaped stack output, never the
+    account-bearing one.
+    """
+    body = _step_body(text, EDGE_STACK_STEP)
+    if not body:
+        return False
+    if "DistributionArnForWaf" not in body:
+        return False
+    if 'DistributionArn="$waf_dist_arn"' not in body:
+        return False
+    # The account-bearing output must not be what is handed to the edge
+    # stack: that is the shape the association rejects.
+    if 'DistributionArn="$dist_arn"' in body:
+        return False
+    return True
+
+
 def _edge_action_defaults_to_count(text):
     """The edge rule must ship counting; the switch is one reviewable change."""
     env = _job_env(text)
@@ -383,6 +408,15 @@ class EdgeDeployPipelineTests(SimpleTestCase):
             _edge_stack_passes_the_arn_and_the_action(self.workflow),
             "the edge deploy must pass DistributionArn, WafRateLimit and "
             "WafAction to the edge stack.",
+        )
+
+    def test_edge_stack_passes_the_waf_shaped_arn(self):
+        self.assertTrue(
+            _edge_stack_passes_the_waf_shaped_arn(self.workflow),
+            "the edge deploy must hand the edge stack the WAFv2-shaped "
+            "distribution ARN (the account field is empty); the "
+            "account-bearing form is rejected by the association with 'The "
+            "ARN isn't valid'.",
         )
 
     def test_edge_action_defaults_to_count(self):

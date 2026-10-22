@@ -454,10 +454,38 @@ Outputs:
     Value: !GetAtt CloudFrontDistribution.DomainName
   DistributionArn:
     Description: >
-      ARN of the CloudFront distribution. The us-east-1 edge stack
-      (edge-template.yaml) takes this ARN as a parameter to associate the
-      WAF web ACL with, so the two stacks cannot drift apart.
+      ARN of the CloudFront distribution, in the form the CloudFront API
+      reports it (the account field is populated). This is the canonical
+      identity of the live distribution: the deploy job and the identity
+      verifier compare it against the live distribution.
     Value: !Sub "arn:aws:cloudfront::${AWS::AccountId}:distribution/${CloudFrontDistribution}"
+  # M007/S06/T03: the WAFv2 CloudFront association takes the distribution
+  # ARN in a DIFFERENT shape, and the difference is not cosmetic.
+  #
+  # WAFv2 rejects the account-bearing form above. Observed live on
+  # 2026-10-22 (CI run 39732102371, the first deploy of the us-east-1 edge
+  # stack): the WafWebACLAssociation resource failed with
+  #
+  #   Error reason: The ARN isn't valid. ... field: RESOURCE_ARN,
+  #   parameter: arn:aws:cloudfront::<account>:distribution/<id>
+  #   (Service: Wafv2, Status Code: 400, HandlerErrorCode: InvalidRequest)
+  #
+  # WAFv2 addresses a CloudFront distribution with the ACCOUNT field EMPTY
+  # (arn:<partition>:cloudfront::distribution/<id>). It is a different ARN
+  # shape, not a different distribution: both forms name the same
+  # distribution id, and the WAF association resolves the id.
+  #
+  # The app stack exports BOTH forms, each built from the distribution
+  # resource itself (never a literal), so the two stacks cannot drift apart
+  # and neither form has to be written down by hand.
+  DistributionArnForWaf:
+    Description: >
+      ARN of the CloudFront distribution in the shape the WAFv2 web ACL
+      association requires: the account field is EMPTY
+      (arn:<partition>:cloudfront::distribution/<id>). The us-east-1 edge
+      stack (edge-template.yaml) takes THIS output as its DistributionArn
+      parameter, so the association cannot fail on the ARN's shape.
+    Value: !Sub "arn:${AWS::Partition}:cloudfront::distribution/${CloudFrontDistribution}"
   EcrRepositoryUri:
     Description: ECR repository URI for pushing images
     Value: !Sub "${AWS::AccountId}.dkr.ecr.${AWS::Region}.amazonaws.com/chemically"

@@ -72,6 +72,41 @@ def _stack_outputs(stack):
     }
 
 
+def _distribution_id_from_arn(arn):
+    """Return the distribution id named by a CloudFront distribution ARN.
+
+    WAFv2 and the CloudFront API do NOT use the same ARN shape for the
+    same distribution, and the association is written in WAFv2's shape:
+
+    * the CloudFront API (and the app stack's ``DistributionArn`` output)
+      report ``arn:aws:cloudfront::<account>:distribution/<id>``;
+    * WAFv2 addresses the distribution with the ACCOUNT field EMPTY:
+      ``arn:aws:cloudfront::distribution/<id>``.
+
+    A comparison of the two ARN STRINGS would therefore report a detached
+    association for a perfectly healthy one. The distribution ID is the
+    identity that both shapes carry, so that is what is compared (the id
+    is unique, so the check stays tight).
+
+    The WAF Classic shape ``arn:aws:cloudfront::<id>`` is accepted too.
+    """
+    if not isinstance(arn, str):
+        return None
+    marker = "distribution/"
+    index = arn.find(marker)
+    if index != -1:
+        tail = arn[index + len(marker):]
+        # The id is the first segment after "distribution/"; a wrapped
+        # association id (".../<id>/association/<token>") keeps it first.
+        return tail.split("/")[0] or None
+    prefix = "arn:aws:cloudfront::"
+    if arn.startswith(prefix):
+        tail = arn[len(prefix):]
+        if tail and ":" not in tail and "/" not in tail:
+            return tail
+    return None
+
+
 def _stack_parameters(stack):
     return {
         parameter.get("ParameterKey"): parameter.get("ParameterValue")
@@ -195,6 +230,12 @@ def run(
             "output; the template drifted from the deploy contract and the "
             "live distribution cannot be identified"
         )
+    distribution_id = _distribution_id_from_arn(distribution_arn)
+    if not distribution_id:
+        raise RuntimeError(
+            f"The DistributionArn output of stack {app_stack_name!r} is not "
+            f"a CloudFront distribution ARN: {distribution_arn!r}"
+        )
 
     edge_outputs = _stack_outputs(edge_stack)
     web_acl_arn = edge_outputs.get("WebACLArn")
@@ -218,27 +259,43 @@ def run(
             "a physical id; the rate rule is not attached to anything"
         )
     # The association's physical id is the distribution it binds the web ACL
-    # to. Some CloudFormation versions report it wrapped in the resource
-    # ARN, so an ARN that CONTAINS the live distribution ARN is accepted --
-    # the distribution ARN is unique, so this stays a tight check.
-    if associated_arn != distribution_arn and distribution_arn not in associated_arn:
+    # to. WAFv2 reports it in ITS ARN shape (the account field is empty),
+    # so the comparison is by distribution ID and not by ARN string. Some
+    # CloudFormation versions report it wrapped in the resource ARN, so an
+    # ARN that CONTAINS the live distribution ARN is accepted too -- the
+    # distribution ID is unique, so this stays a tight check.
+    associated_id = _distribution_id_from_arn(associated_arn)
+    if associated_id is None:
+        if distribution_arn not in associated_arn:
+            raise RuntimeError(
+                f"the edge stack associates the rate rule with "
+                f"{associated_arn!r} while the live distribution is "
+                f"{distribution_arn!r}; the edge control is attached to a "
+                "distribution that does not serve traffic"
+            )
+    elif associated_id != distribution_id:
         raise RuntimeError(
             f"the edge stack associates the rate rule with {associated_arn!r} "
-            f"while the live distribution is {distribution_arn!r}; the edge "
-            "control is attached to a distribution that does not serve "
-            "traffic"
+            f"(distribution {associated_id}) while the live distribution is "
+            f"{distribution_id}; the edge control is attached to a "
+            "distribution that does not serve traffic"
         )
     print(
         "PASS: the edge association targets the live distribution "
-        f"({distribution_arn})"
+        f"({distribution_id})"
     )
 
     listed = waf_client.list_resources_for_web_acl(WebACLArn=web_acl_arn)
     listed_arns = listed.get("ResourceArns", []) or []
-    if distribution_arn not in listed_arns:
+    listed_ids = [
+        found
+        for found in (_distribution_id_from_arn(arn) for arn in listed_arns)
+        if found
+    ]
+    if distribution_id not in listed_ids:
         raise RuntimeError(
             f"the web ACL {web_acl_arn} is associated with {listed_arns!r} "
-            f"instead of the live distribution {distribution_arn!r}; the "
+            f"instead of the live distribution {distribution_id!r}; the "
             "association is detached"
         )
     print(f"PASS: the web ACL itself reports the live distribution ({web_acl_arn})")

@@ -48,8 +48,12 @@ Parameters:
     Type: String
     Description: >
       ARN of the live CloudFront distribution, exported by the us-east-2
-      app stack as its DistributionArn output. The web ACL is associated
-      with exactly this distribution.
+      app stack as its DistributionArnForWaf output -- the shape the WAFv2
+      association requires, with the ACCOUNT field EMPTY
+      (arn:<partition>:cloudfront::distribution/<id>). The account-bearing
+      form is rejected by WAFv2 with "The ARN isn't valid ... field:
+      RESOURCE_ARN" (observed live on 2026-10-22). The web ACL is
+      associated with exactly this distribution.
   WafRateLimit:
     Type: Number
     Default: 2000
