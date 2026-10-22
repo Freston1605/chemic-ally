@@ -121,7 +121,7 @@ def _origin(domain=FUNCTION_HOST, headers=None):
     return {
         "Id": "DjangoLambda",
         "DomainName": domain,
-        "OriginCustomHeaders": headers,
+        "CustomHeaders": headers,
     }
 
 

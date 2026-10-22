@@ -265,8 +265,15 @@ def _origin_for_host(distribution, host):
 
 
 def _origin_header_value(origin, header_name):
-    """Return the stamped value of ``header_name``, or None when absent."""
-    for header in origin.get("OriginCustomHeaders") or []:
+    """Return the stamped value of ``header_name``, or None when absent.
+
+    The CloudFront API calls the origin's custom headers ``CustomHeaders``.
+    CloudFormation's template property is ``OriginCustomHeaders``, and the
+    resource provider maps one onto the other -- so a witness that reads
+    the template's name from an API reply finds nothing and reports a
+    missing header that is actually there.
+    """
+    for header in origin.get("CustomHeaders") or []:
         if header.get("HeaderName") == header_name:
             return header.get("HeaderValue")
     return None

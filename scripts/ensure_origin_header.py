@@ -67,7 +67,7 @@ def _origin_for_host(config, host):
 
 def _stamped_value(origin, header_name):
     """Return the value the origin stamps for ``header_name``, or None."""
-    for header in origin.get("OriginCustomHeaders") or []:
+    for header in origin.get("CustomHeaders") or []:
         if header.get("HeaderName") == header_name:
             return header.get("HeaderValue")
     return None
@@ -133,7 +133,10 @@ def run(
         )
         return 0
 
-    headers = list(origin.get("OriginCustomHeaders") or [])
+    # The CloudFront API calls the origin's custom headers CustomHeaders;
+    # the template's OriginCustomHeaders is the CloudFormation spelling of
+    # the same thing (the resource provider maps one onto the other).
+    headers = list(origin.get("CustomHeaders") or [])
     replaced = False
     for header in headers:
         if header.get("HeaderName") == header_name:
@@ -142,7 +145,7 @@ def run(
             break
     if not replaced:
         headers.append({"HeaderName": header_name, "HeaderValue": secret})
-    origin["OriginCustomHeaders"] = headers
+    origin["CustomHeaders"] = headers
 
     response = cloudfront_client.update_distribution(
         DistributionConfig=config,

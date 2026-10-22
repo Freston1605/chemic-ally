@@ -91,7 +91,7 @@ def _distribution(headers=None):
                         "CustomOriginConfig": {
                             "OriginProtocolPolicy": "https-only"
                         },
-                        "OriginCustomHeaders": headers or [],
+                        "CustomHeaders": headers or [],
                     }
                 ],
             },
@@ -170,7 +170,7 @@ class EnsureOriginHeaderTests(SimpleTestCase):
         self.assertEqual(result, 0)
         self.assertEqual(len(cloudfront.updates), 1)
         origins = cloudfront.updates[0]["config"]["Origins"]["Items"]
-        headers = origins[0]["OriginCustomHeaders"]
+        headers = origins[0]["CustomHeaders"]
         self.assertEqual(len(headers), 1)
         self.assertEqual(headers[0]["HeaderName"], HEADER_NAME)
         self.assertEqual(headers[0]["HeaderValue"], SECRET)
@@ -202,7 +202,7 @@ class EnsureOriginHeaderTests(SimpleTestCase):
         result, _ = self._run(cloudfront)
         self.assertEqual(result, 0)
         headers = cloudfront.updates[0]["config"]["Origins"]["Items"][0][
-            "OriginCustomHeaders"
+            "CustomHeaders"
         ]
         self.assertEqual(len(headers), 1)
         self.assertEqual(headers[0]["HeaderValue"], SECRET)

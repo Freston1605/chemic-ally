@@ -494,3 +494,41 @@ class OriginHeaderDeliveryTests(SimpleTestCase):
             "the ensure step must not be swallowable: an unstamped origin "
             "header means the guard must not be enforced.",
         )
+
+
+class OriginHeaderFieldNameTests(SimpleTestCase):
+    """The API's field name is CustomHeaders, not OriginCustomHeaders.
+
+    CloudFormation's template property is ``OriginCustomHeaders`` and the
+    CloudFront API's is ``CustomHeaders`` -- the resource provider maps one
+    onto the other. A witness or a repair script that reads or writes the
+    template's name against the API therefore finds nothing (and the API
+    rejects the write), which is exactly how a live, correctly stamped
+    header was reported missing.
+    """
+
+    @classmethod
+    def setUpClass(cls):
+        super().setUpClass()
+        cls.witness = (REPO_ROOT / "scripts" / "verify_origin_guard.py").read_text(
+            encoding="utf-8"
+        )
+        cls.ensurer = (
+            REPO_ROOT / "scripts" / "ensure_origin_header.py"
+        ).read_text(encoding="utf-8")
+
+    def test_the_witness_reads_the_api_field(self):
+        self.assertIn(
+            'origin.get("CustomHeaders")',
+            self.witness,
+            "the witness must read the origin's CustomHeaders (the API's "
+            "name), not the template's OriginCustomHeaders.",
+        )
+
+    def test_the_ensurer_writes_the_api_field(self):
+        self.assertIn(
+            'origin["CustomHeaders"] = headers',
+            self.ensurer,
+            "the repair script must write CustomHeaders (the API's name); "
+            "the API rejects OriginCustomHeaders.",
+        )
