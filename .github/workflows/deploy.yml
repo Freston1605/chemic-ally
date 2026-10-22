@@ -307,6 +307,7 @@ jobs:
       # Lambda whose origin guard is inert, i.e. the Function-URL bypass
       # around the WAF would be back.
       - name: Verify the origin secret is configured
+        id: origin-secret
         env:
           ORIGIN_SECRET: ${{ secrets.ORIGIN_SECRET }}
         run: |
@@ -314,6 +315,14 @@ jobs:
             echo "::error::The ORIGIN_SECRET GitHub secret is not set. The CloudFront origin header guard (M006/S03, R029) cannot be deployed without it."
             exit 1
           fi
+          # A truncated hash of the secret, NEVER the secret itself. It goes
+          # into the distribution's Comment so that CloudFormation notices
+          # when the secret changes: its diff does not see a change to the
+          # nested Origins.Items[].OriginCustomHeaders, so without this the
+          # header update would be silently dropped and the distribution
+          # would keep serving without the header.
+          fingerprint=$(printf '%s' "$ORIGIN_SECRET" | sha256sum | cut -c1-12)
+          echo "fingerprint=${fingerprint}" >> "$GITHUB_OUTPUT"
 
       # ─────────────────────────────────────────────
       # M007/S04: the two-phase rollout is "header first, enforcement
@@ -442,6 +451,7 @@ jobs:
               RDSPassword=${{ secrets.RDS_PASSWORD }} \
               DjangoSecretKey=${{ secrets.DJANGO_SECRET_KEY }} \
               OriginSecret=${{ secrets.ORIGIN_SECRET }} \
+              OriginSecretFingerprint=${{ steps.origin-secret.outputs.fingerprint }} \
               EnforceOriginGuard=${{ env.ENFORCE_ORIGIN_GUARD }} \
               EdgeWebACLArn=${{ steps.edge-acl.outputs.arn }} \
             --no-fail-on-empty-changeset

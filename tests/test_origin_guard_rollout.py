@@ -397,3 +397,57 @@ class OriginGuardRolloutNegativeTests(SimpleTestCase):
             "the workflow guard must fail when the secret is no longer "
             "passed: phase 1 needs it to stamp the CloudFront header.",
         )
+
+
+class OriginHeaderLandingTests(SimpleTestCase):
+    """The origin header must actually reach the live distribution.
+
+    CloudFormation's diff does not detect a change to a nested list
+    property like ``Origins.Items[].OriginCustomHeaders``: the update is
+    silently dropped and the live distribution keeps serving WITHOUT the
+    header -- which is exactly what happened in production (the header was
+    never stamped, and the origin-guard witness reported it).
+
+    The distribution's Comment is a plain string CloudFormation DOES diff,
+    so it carries a fingerprint of the secret: a changed secret changes the
+    Comment, CloudFormation updates the distribution, and the update
+    carries the full configuration including the header.
+    """
+
+    @classmethod
+    def setUpClass(cls):
+        super().setUpClass()
+        cls.template = TEMPLATE.read_text(encoding="utf-8")
+        cls.workflow = DEPLOY_WORKFLOW.read_text(encoding="utf-8")
+
+    def test_the_comment_carries_the_secret_fingerprint(self):
+        self.assertIn(
+            "OriginSecretFingerprint",
+            self.template,
+            "template.yaml must declare the OriginSecretFingerprint "
+            "parameter: it is what makes CloudFormation notice that the "
+            "origin header changed.",
+        )
+        self.assertRegex(
+            self.template,
+            r"Comment:[^\n]*OriginSecretFingerprint",
+            "the distribution's Comment must carry the fingerprint, so a "
+            "changed secret always produces a distribution update (the "
+            "header change itself is invisible to CloudFormation's diff).",
+        )
+
+    def test_the_workflow_passes_the_fingerprint(self):
+        self.assertIn(
+            "OriginSecretFingerprint=",
+            self.workflow,
+            "the deploy job must pass the fingerprint to the app stack, or "
+            "the distribution would never be updated when the secret "
+            "changes.",
+        )
+        self.assertIn(
+            "sha256sum",
+            self.workflow,
+            "the fingerprint must be a hash of the secret: the secret itself "
+            "must never reach the workflow's output or the distribution's "
+            "Comment.",
+        )

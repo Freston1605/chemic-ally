@@ -154,6 +154,28 @@ Parameters:
       ARN of the us-east-1 edge stack's CloudFront-scoped web ACL, attached
       to the distribution below. Empty means no edge rule is attached yet.
 
+  # ─────────────────────────────────────────────
+  # Origin secret fingerprint (M007/S06)
+  # ─────────────────────────────────────────────
+  # The CloudFront origin header carries the shared origin secret, and
+  # CloudFormation's diff does NOT detect a change to a nested list property
+  # like Origins.Items[].OriginCustomHeaders: the update is silently
+  # dropped, and the live distribution keeps serving without the header.
+  #
+  # The distribution's Comment is a plain string CloudFormation DOES diff,
+  # so it carries a FINGERPRINT of the secret: whenever the secret changes,
+  # the Comment changes with it, CloudFormation updates the distribution, and
+  # the update carries the full configuration -- including the header. The
+  # fingerprint is a truncated hash: it proves WHICH secret is in force
+  # without revealing it.
+  OriginSecretFingerprint:
+    Type: String
+    Default: ""
+    Description: >
+      Truncated hash of the shared origin secret, used only to make the
+      distribution's Comment change when the secret changes. It never
+      contains any part of the secret itself.
+
 Conditions:
   # CloudFormation has no Boolean parameter type, so the rollout switch is
   # a String restricted to "true"/"false" and turned into a condition here.
@@ -377,7 +399,9 @@ Resources:
     Type: AWS::CloudFront::Distribution
     Properties:
       DistributionConfig:
-        Comment: ChemicAlly public distribution (us-east-2 app stack)
+        # The fingerprint makes CloudFormation notice a change to the
+        # origin header (see the OriginSecretFingerprint parameter).
+        Comment: !Sub "ChemicAlly public distribution (us-east-2 app stack) [origin ${OriginSecretFingerprint}]"
         # M007/S06: the edge rate limit is attached HERE, on the
         # distribution, because the WAFv2 API cannot associate a web ACL
         # with a CloudFront distribution ARN. The value is the us-east-1
