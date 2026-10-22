@@ -332,6 +332,8 @@ aws wafv2 list-resources-for-web-acl --web-acl-arn "$EDGE_ACL" --region us-east-
 
 **Switching the rule from Count to Block (the canary, and the rollback):**
 
+The full canary procedure -- the window, the counters, the flip, the proof, the evidence and the rollback -- is in "Canarying the edge rate rule: Count first, then Block" further down this page.
+
 ```bash
 sam deploy --template-file edge-template.yaml --stack-name chemically-edge \
   --region us-east-1 \
@@ -361,6 +363,170 @@ so the region is a parameter, not a second credential set.
 **Rollback:** the two stacks are independent. If the edge deploy fails, the
 site keeps serving and the in-app throttles (D016) remain the only bound --
 re-run the edge deploy. The app stack never depends on the edge stack.
+
+### Canarying the edge rate rule: Count first, then Block
+
+The edge rate rule ships in `Count` mode and stays there until somebody
+reads the window and decides to flip it. This section is the whole
+procedure: how long to watch, what the counters mean, how to flip, what
+the proof shows, which evidence to keep, and how to roll back.
+
+**The two phases.**
+
+| Phase | What is live | What the rule does |
+|-------|--------------|--------------------|
+| **Count (the default)** | `WAF_ACTION: Count` | Measures the traffic against the ceiling without touching a single request. |
+| **Block** | `WAF_ACTION: Block` | Refuses the request at the edge, before it reaches Lambda. |
+
+The switch between them is ONE workflow setting, `WAF_ACTION`, in
+`.github/workflows/deploy.yml`. Its default is `Count`, so a deploy nobody
+reviewed can never refuse traffic.
+
+**CI owns the switch.** The deploy job passes `WAF_ACTION` to the edge
+stack on every run, so a manual edge deploy that sets the action to
+`Block` is **reverted by the next CI run**, which redeploys the edge stack
+with the workflow's setting -- unless `WAF_ACTION` is changed to `Block` at
+the same time. The manual command that CI would undo is:
+
+```bash
+sam deploy --template-file edge-template.yaml --stack-name chemically-edge \
+  --region us-east-1 \
+  --parameter-overrides DistributionArn="$DIST_ARN" WafRateLimit=2000 WafAction=Block
+```
+
+A rollback that must hold is therefore made in the workflow, never by hand.
+
+**The window is a judgement call, not a constant.** How long the rule
+counts is decided by how much real traffic has to pass before the counters
+mean something: a quiet hour of counters proves nothing about a busy day.
+The decision belongs to the operator, with the counters in hand. Read the
+window first, then choose it. The deploy job observes 24 hours by default
+(`--minutes 1440`).
+
+**The observer.** Read the live Count window with:
+
+```bash
+python scripts/verify_edge_canary.py --edge-stack-name chemically-edge --edge-region us-east-1 --expect-action Count --minutes 1440 --site-url https://chemic-ally.xyz --record-out edge-canary-count-record.json
+```
+
+It is read-only: it creates, changes and deletes nothing. In one run it
+proves:
+
+* the live action, the live ceiling and the live evaluation window -- the
+  inherited 2000/300s -- all read from the LIVE web ACL and not from the
+  stack parameter (the parameter is what was REQUESTED; the ACL is what
+  is ENFORCED);
+* the three counters for the window, with the metric dimensions DISCOVERED
+  through `cloudwatch:ListMetrics` and never guessed;
+* that the ordinary site still serves 200 -- the "no legitimate request was
+  refused" observation, taken live rather than assumed.
+
+**The three counters.** They live in the `AWS/WAFV2` namespace, on the
+`EdgeRateLimit` rule:
+
+| Counter | What it means |
+|---------|---------------|
+| `AllowedRequests` | Traffic that flowed through the rule's scope-down. |
+| `CountedRequests` | Requests that reached the ceiling. In Count mode they were measured instead of refused. |
+| `BlockedRequests` | Refusals. It must stay 0 while the rule counts. |
+
+**"No data is not zero traffic."** A window with no datapoints is not
+evidence of a quiet site; it is evidence that nothing was observed. The
+observer fails on an empty window on purpose (`--require-data` is on by
+default) instead of reporting a comfortable zero.
+
+**The ceiling-breach rule.** `CountedRequests > 0` means at least one
+source address reached the inherited 2000/300s ceiling, i.e. real requests
+WOULD have been refused. The ceiling is inherited and is NOT retuned by
+this milestone (D021): the recorded numbers are the INPUT to the budget
+review, not a licence to change the limit here.
+
+**The budget-review hand-off.** The observer's JSON record -- uploaded by
+the deploy job as the `edge-canary-count-record` artifact -- is what the
+budget review (M007/S06) reads. The review decides whether 2000/300s
+stays.
+
+**The flip.** Change `WAF_ACTION` to `Block` in `.github/workflows/deploy.yml`
+and push to `main`. That single reviewed change is the whole operation:
+the deploy job detects that the live action changed and runs the block
+probe automatically.
+
+**What the probe does and proves.** It sends a bounded, paced burst at
+`/hplc/api/levels/` -- a cheap read-only path inside the rule's scope --
+and proves that the edge refused the request before the origin ever saw
+it:
+
+* the edge answered with a 403 whose body is NOT the origin guard's
+  refusal body ("Forbidden: request did not arrive through the CloudFront
+  origin.") -- that body would mean the request never came through
+  CloudFront at all;
+* the same path WAS answered by the origin a moment earlier, before the
+  trip: the proof that the path is live and that the refusal is new;
+* the WAF's `BlockedRequests` counter increased;
+* the Lambda `Invocations` counter did NOT grow by the blocked requests --
+  the origin never saw them;
+* the ordinary site still serves 200 afterwards.
+
+The deploy job runs exactly this command:
+
+```bash
+python scripts/verify_edge_block.py --edge-stack-name chemically-edge --edge-region us-east-1 --site-url https://chemic-ally.xyz --path /hplc/api/levels/ --confirm-live --record-out edge-canary-block-record.json
+```
+
+**The safety bounds.** The burst is capped (`--requests`, default 2600)
+and paced (`--rate`, default 12/s, so roughly three to four minutes). It
+only touches the cheap read-only API path; the equilibria solver path is
+never used by the probe. The rule aggregates per source IP, so no visitor
+is refused -- only the probe's own address. That address stays over the
+ceiling for the rest of the evaluation window, which is why the probe runs
+as the LAST step of the deploy job: nothing that runs after it may be
+affected by that.
+
+**The evidence to keep.** For the Count window and for the flip, keep:
+
+* the CI run URL of the deploy job;
+* the observer's printed lines;
+* the `edge-canary-count-record` artifact;
+* the probe's printed lines;
+* the `edge-canary-block-record` artifact;
+* the counter readings -- the three numbers the window produced;
+* the green `live-probe` job.
+
+**What to read when the canary looks wrong.**
+
+* the observer's own FAIL line -- it names the contract that failed (the
+  stack does not describe the live deployment, the web ACL holds no
+  `EdgeRateLimit` rule, the live action contradicts the deploy, the
+  ceiling is unreadable, the window holds no observations,
+  `BlockedRequests` moved while the rule counts, or the site did not
+  serve 200);
+* the probe's own FAIL line -- it names the contract that failed (the
+  rule is not blocking, the probe path is outside the rule's scope, the
+  address was already over the ceiling, the WAF counter did not move, the
+  origin-side counter is unreadable, or the origin-side counter shows the
+  blocked requests);
+* the `BlockedRequests` counter in the `AWS/WAFV2` namespace -- while the
+  rule counts it must be 0;
+* the `live-probe` job -- if it went red, the ordinary site is in trouble
+  and that is the first thing to look at.
+
+**The rollback.** Set `WAF_ACTION` back to `Count` and push to `main`. It
+is a parameter change, not a code change, and the rule stops refusing at
+once. A rollback that must hold is made in the workflow, because CI owns
+the switch.
+
+**The permissions the canary needs.** In us-east-1 the observer and the
+probe need read access: `wafv2:GetWebACL`, `cloudformation:DescribeStacks`,
+`cloudwatch:ListMetrics` and `cloudwatch:GetMetricStatistics`. The canary
+needs CloudWatch READ in us-east-1, which the edge deploy alone does not
+need. The origin-side counter additionally needs Lambda read in us-east-2.
+
+**The CI steps the operator will look for.** The deploy job's step names
+are "Read the live edge rule action" (it decides whether this run is a
+flip), "Observe the edge canary (Count mode)" (the observer) and "Prove
+the edge block (Block mode)" (the probe). If one of them is missing from
+the run, the runbook and the workflow have drifted apart -- re-read this
+section before flipping anything.
 
 ### Rolling out the origin guard: header first, enforcement second
 
