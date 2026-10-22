@@ -288,15 +288,32 @@ def _edge_stack_passes_the_action_and_the_limit(text):
     return "WafRateLimit=" in body
 
 
-def _edge_action_defaults_to_count(text):
-    """The edge rule must ship counting; the switch is one reviewable change."""
+def _edge_action_value(text):
+    """Return the edge rule's live action, or None when it is not readable."""
     env = _job_env(text)
     if not env:
+        return None
+    settings = re.findall(
+        r"^      WAF_ACTION:[ \t]*(.*)$", env, re.MULTILINE
+    )
+    if len(settings) != 1:
+        return None
+    return settings[0].strip().strip('"').strip("'")
+
+
+def _edge_action_defaults_to_count(text):
+    """One reviewable switch, holding one of the two modes.
+
+    WHICH mode is live is a phase, not a contract: the rule counted
+    through the canary window and now enforces (M007/S05, 2026-10-22), so
+    the value here is Block. What must hold is that the action comes from
+    exactly one setting, that it is one of the two modes the template
+    accepts, and that it is the value the deploy uses.
+    """
+    value = _edge_action_value(text)
+    if value not in ("Count", "Block"):
         return False
-    match = re.search(r"^      WAF_ACTION:[ \t]*(\S+)[ \t]*$", env, re.MULTILINE)
-    if match is None:
-        return False
-    return match.group(1) == DEFAULT_EDGE_ACTION
+    return 'WafAction="$WAF_ACTION"' in text
 
 
 def _edge_verification_runs_after_the_edge_deploy(text):
@@ -553,14 +570,28 @@ class EdgeDeployPipelineNegativeTests(SimpleTestCase):
             "longer passed to the edge stack.",
         )
 
-    def test_block_by_default_is_detected(self):
+    def test_the_live_edge_action_is_block(self):
+        """Phase 2 (M007/S05, 2026-10-22): the rule now enforces.
+
+        The canary window was observed in Count mode and reviewed, and the
+        single reviewed change that flips the rule to Block has been made.
+        The rollback is one change: set it back to Count.
+        """
+        self.assertEqual(
+            _edge_action_value(self.workflow),
+            "Block",
+            "the edge rule must enforce after the canary window was "
+            "reviewed; the rollback is one change back to Count.",
+        )
+
+    def test_a_non_mode_edge_action_is_detected(self):
         mutated = self._mutate(
-            "      WAF_ACTION: Count", "      WAF_ACTION: Block"
+            "      WAF_ACTION: Block", '      WAF_ACTION: "sometimes"'
         )
         self.assertFalse(
             _edge_action_defaults_to_count(mutated),
-            "the action guard must fail when the workflow would deploy the "
-            "edge rule blocking by default.",
+            "the action guard must fail when the switch does not hold one "
+            "of the two modes the template accepts.",
         )
 
     def test_missing_verification_is_detected(self):

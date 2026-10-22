@@ -514,11 +514,12 @@ def _records_are_uploaded(text):
 
 
 def _edge_action_is_still_count(text):
-    """The workflow's edge action must still be Count.
+    """The workflow's edge action must be one of the two modes.
 
-    This slice makes the flip POSSIBLE and PROVABLE; it does not perform
-    it. The window has to be read first, exactly like the origin guard's
-    own rollout switch.
+    This slice made the flip POSSIBLE and PROVABLE; the flip itself
+    happened later, after the window had been read (M007/S05, 2026-10-22).
+    What must hold is that the action comes from exactly one setting and
+    that it is one of the two modes the template accepts.
     """
     env = _job_env(text)
     if not env:
@@ -528,7 +529,7 @@ def _edge_action_is_still_count(text):
     )
     if len(settings) != 1:
         return False
-    return settings[0].strip().strip('"').strip("'") == DEFAULT_EDGE_ACTION
+    return settings[0].strip().strip('"').strip("'") in ("Count", "Block")
 
 
 def _workflow_parses_as_yaml(text):
@@ -1003,14 +1004,14 @@ class EdgeCanaryPipelineNegativeTests(SimpleTestCase):
             "record worth reading.",
         )
 
-    def test_block_by_default_is_detected(self):
+    def test_a_non_mode_edge_action_is_detected(self):
         mutated = self._mutate(
-            "      WAF_ACTION: Count", "      WAF_ACTION: Block"
+            "      WAF_ACTION: Block", '      WAF_ACTION: "sometimes"'
         )
         self.assertFalse(
             _edge_action_is_still_count(mutated),
-            "the action guard must fail when the workflow would deploy "
-            "the edge rule blocking without a reviewed change.",
+            "the action guard must fail when the switch does not hold one "
+            "of the two modes the template accepts.",
         )
 
     def test_broken_yaml_is_detected(self):
