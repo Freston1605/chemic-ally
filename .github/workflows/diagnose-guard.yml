@@ -28,7 +28,7 @@ jobs:
             --log-group-name-prefix "/aws/lambda/chemically-DjangoFunction" \
             --query "logGroups[0].logGroupName" --output text)
           echo "log group: ${log_group}"
-          ( aws logs tail "$log_group" --since 1m --format short \
+          ( aws logs tail "$log_group" --since 5m --format short \
               > /tmp/tail.log 2>&1 & echo $! > /tmp/tail.pid )
           sleep 5
           url=$(aws cloudformation describe-stacks --stack-name chemically \
@@ -43,6 +43,35 @@ jobs:
           sleep 5
           kill "$(cat /tmp/tail.pid)" 2>/dev/null || true
           sleep 2
-          echo "=== the log ==="
-          tail -60 /tmp/tail.log
+          echo "=== the log (tail) ==="
+          tail -40 /tmp/tail.log
+          echo "=== the log (filter-log-events) ==="
+          aws logs filter-log-events --log-group-name "$log_group" \
+            --start-time $(( ($(date +%s) - 600) * 1000 )) \
+            --filter-pattern '?ERROR ?WARNING ?Refused ?refus ?publish ?metric' \
+            --output json 2>&1 \
+            | python3 -c '
+          import json, sys
+          try:
+              data = json.load(sys.stdin)
+          except Exception as exc:
+              print("could not read the log:", exc)
+              raise SystemExit(0)
+          for event in data.get("events", [])[-25:]:
+              print(event.get("message", "").strip()[:400])
+          '
+          echo "=== the last plain events ==="
+          aws logs filter-log-events --log-group-name "$log_group" \
+            --start-time $(( ($(date +%s) - 600) * 1000 )) \
+            --output json 2>&1 \
+            | python3 -c '
+          import json, sys
+          try:
+              data = json.load(sys.stdin)
+          except Exception as exc:
+              print("could not read the log:", exc)
+              raise SystemExit(0)
+          for event in data.get("events", [])[-15:]:
+              print(event.get("message", "").strip()[:300])
+          '
           echo "DONE"
