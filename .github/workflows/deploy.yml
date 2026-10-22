@@ -356,6 +356,62 @@ jobs:
             --no-fail-on-empty-changeset
 
       # ─────────────────────────────────────────────
+      # M007/S05: the edge canary is CI-owned, so the deploy job must know
+      # whether THIS run flips the rule. The flip is the only moment a
+      # Block-mode probe is worth running: a steady-state Block deploy
+      # must not burst the live site for no new information.
+      #
+      # The live action is read from the edge stack's OWN parameters before
+      # the deploy overwrites them, and compared with the workflow's
+      # WAF_ACTION setting. The result is published as the step output
+      # `waf_action_changed`.
+      #
+      # A stack that does not exist yet means this run CREATES the rule:
+      # there is no previous action to compare with, so the action counts
+      # as changed. EVERY other AWS failure (throttling, a lost
+      # connection) must fail the job: a read error must never be
+      # mistaken for "the action did not change", because that would
+      # silently skip the proof of the flip.
+      # ─────────────────────────────────────────────
+      - name: Read the live edge rule action
+        id: edge-action
+        run: |
+          set -uo pipefail
+
+          live_action=""
+          stack_absent="false"
+          output=""
+          if ! output=$(aws cloudformation describe-stacks \
+            --stack-name "$EDGE_STACK_NAME" --region us-east-1 \
+            --query "Stacks[0].Parameters[?ParameterKey=='WafAction'].ParameterValue" \
+            --output text 2>&1); then
+            if printf '%s' "$output" | grep -qi "does not exist"; then
+              stack_absent="true"
+            else
+              echo "::error::Could not read the live WafAction of the edge stack ${EDGE_STACK_NAME}; the deploy cannot tell whether it flips the rule."
+              printf '%s\n' "$output"
+              exit 1
+            fi
+          else
+            live_action=$(printf '%s' "$output" | tr -d '[:space:]')
+          fi
+
+          if [ "$stack_absent" = "true" ]; then
+            changed="true"
+            echo "The edge stack ${EDGE_STACK_NAME} does not exist yet: this run creates the rule, so the action counts as changed."
+          elif [ -z "$live_action" ] || [ "$live_action" = "None" ]; then
+            changed="true"
+            echo "::warning::The edge stack ${EDGE_STACK_NAME} does not report a WafAction parameter value; treating the action as changed."
+          elif [ "$live_action" = "$WAF_ACTION" ]; then
+            changed="false"
+          else
+            changed="true"
+          fi
+
+          echo "waf_action_changed=${changed}" >> "$GITHUB_OUTPUT"
+          echo "Edge rule action: live=${live_action:-none} wanted=${WAF_ACTION} changed=${changed}"
+
+      # ─────────────────────────────────────────────
       # M007/S02: the edge stack (us-east-1).
       #
       # AWS accepts WAFv2 web ACLs with Scope CLOUDFRONT only in us-east-1,
@@ -473,6 +529,69 @@ jobs:
             --expect auto \
             --expect-enforcement ${{ env.ENFORCE_ORIGIN_GUARD }} \
             --min-header-age-minutes 0
+
+      # ─────────────────────────────────────────────
+      # M007/S05: the edge canary, owned by CI.
+      #
+      # Count mode: the observer is READ-ONLY. It reads the live rule (the
+      # LIVE web ACL, not the stack parameter), the WAF counters for the
+      # window, and the ordinary site's status, and writes a JSON record.
+      # It runs on every Count deploy, because that is where the canary
+      # window's evidence comes from.
+      #
+      # Block mode: the probe is the PROOF of the flip. It sends a bounded,
+      # paced burst at a cheap read-only path inside the rule's scope and
+      # proves the edge refused the request before the origin ever saw it.
+      # It fires ONLY when this run actually changed the action, so a
+      # steady-state Block deploy does not burst the live site.
+      #
+      # Neither step may be swallowed (|| true / continue-on-error): a
+      # canary that cannot fail the job is a comment.
+      # ─────────────────────────────────────────────
+      - name: Observe the edge canary (Count mode)
+        id: observe-canary
+        if: env.WAF_ACTION == 'Count'
+        run: |
+          python scripts/verify_edge_canary.py \
+            --edge-stack-name "${{ env.EDGE_STACK_NAME }}" \
+            --edge-region us-east-1 \
+            --expect-action Count \
+            --minutes 1440 \
+            --site-url https://chemic-ally.xyz \
+            --record-out edge-canary-count-record.json
+
+      - name: Upload the edge canary record (Count mode)
+        if: always() && steps.observe-canary.outcome != 'skipped'
+        uses: actions/upload-artifact@v5
+        with:
+          name: edge-canary-count-record
+          path: edge-canary-count-record.json
+          if-no-files-found: warn
+          retention-days: 30
+
+      # The probe must be the LAST EXECUTABLE step of the job: it
+      # deliberately trips the rate limit for the runner's own address, and
+      # nothing that runs after it may be affected by that.
+      - name: Prove the edge block (Block mode)
+        id: probe-block
+        if: env.WAF_ACTION == 'Block' && steps.edge-action.outputs.waf_action_changed == 'true'
+        run: |
+          python scripts/verify_edge_block.py \
+            --edge-stack-name "${{ env.EDGE_STACK_NAME }}" \
+            --edge-region us-east-1 \
+            --site-url https://chemic-ally.xyz \
+            --path /hplc/api/levels/ \
+            --confirm-live \
+            --record-out edge-canary-block-record.json
+
+      - name: Upload the edge block record (Block mode)
+        if: always() && steps.probe-block.outcome != 'skipped'
+        uses: actions/upload-artifact@v5
+        with:
+          name: edge-canary-block-record
+          path: edge-canary-block-record.json
+          if-no-files-found: warn
+          retention-days: 30
 
   # ─────────────────────────────────────────────
   # Stage 5: Live production probe
