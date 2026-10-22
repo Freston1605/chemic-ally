@@ -42,6 +42,16 @@ REFUSAL_METRIC_NAME = "OriginGuardRefusals"
 # created on first use so that importing this module never touches AWS.
 _client = None
 
+#: Bounds on the CloudWatch call. The refusal is on the request's critical
+#: path, so the metric must not be able to hang the refusal: botocore's
+#: defaults (60s connect, 60s read, 5 legacy-mode attempts) can outlast the
+#: 30s Lambda timeout, which would turn the refusal into a gateway error
+#: instead of the fixed 403. Two standard-mode attempts of 2s connect plus
+#: 3s read stay well inside the timeout.
+CONNECT_TIMEOUT_SECONDS = 2
+READ_TIMEOUT_SECONDS = 3
+MAX_ATTEMPTS = 2
+
 
 def _cloudwatch_client():
     """Return a cached CloudWatch client, or None when one cannot be made."""
@@ -49,14 +59,22 @@ def _cloudwatch_client():
     if _client is None:
         try:
             import boto3
+            from botocore.config import Config
 
+            client_config = Config(
+                connect_timeout=CONNECT_TIMEOUT_SECONDS,
+                read_timeout=READ_TIMEOUT_SECONDS,
+                retries={"max_attempts": MAX_ATTEMPTS, "mode": "standard"},
+            )
             region = os.environ.get("AWS_REGION") or os.environ.get(
                 "AWS_DEFAULT_REGION"
             )
             if region:
-                _client = boto3.client("cloudwatch", region_name=region)
+                _client = boto3.client(
+                    "cloudwatch", region_name=region, config=client_config
+                )
             else:
-                _client = boto3.client("cloudwatch")
+                _client = boto3.client("cloudwatch", config=client_config)
         except Exception:  # noqa: BLE001 - no AWS, no metrics, no failure
             logger.warning(
                 "Could not create a CloudWatch client; origin guard refusal "

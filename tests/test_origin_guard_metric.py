@@ -80,6 +80,55 @@ class RefusalMetricPublisherTests(SimpleTestCase):
         self.assertFalse(published)
 
 
+class CloudWatchClientFactoryTests(SimpleTestCase):
+    """The lazily-created client must never be able to hang a refusal.
+
+    botocore's defaults (60s connect, 60s read, 5 legacy-mode attempts)
+    can outlast the 30s Lambda timeout, so a slow CloudWatch would turn a
+    refused request into a gateway error instead of the fixed 403. The
+    client is therefore created with bounded timeouts.
+    """
+
+    def setUp(self):
+        super().setUp()
+        self._saved_client = metrics._client
+        metrics._client = None
+        self.addCleanup(self._restore_client)
+
+    def _restore_client(self):
+        metrics._client = self._saved_client
+
+    def test_the_client_is_created_with_bounded_timeouts(self):
+        with mock.patch("boto3.client") as boto_client:
+            client = metrics._cloudwatch_client()
+        self.assertIsNotNone(client)
+        boto_client.assert_called_once()
+        kwargs = boto_client.call_args.kwargs
+        config = kwargs["config"]
+        self.assertEqual(config.connect_timeout, metrics.CONNECT_TIMEOUT_SECONDS)
+        self.assertEqual(config.read_timeout, metrics.READ_TIMEOUT_SECONDS)
+        self.assertEqual(config.retries["max_attempts"], metrics.MAX_ATTEMPTS)
+        self.assertLess(
+            metrics.MAX_ATTEMPTS
+            * (metrics.CONNECT_TIMEOUT_SECONDS + metrics.READ_TIMEOUT_SECONDS),
+            30,
+            "the bounded CloudWatch call must finish well inside the 30s "
+            "Lambda timeout, or a slow CloudWatch would turn a refused "
+            "request into a gateway error instead of a 403.",
+        )
+
+    def test_the_client_is_cached(self):
+        with mock.patch("boto3.client") as boto_client:
+            first = metrics._cloudwatch_client()
+            second = metrics._cloudwatch_client()
+        self.assertIs(first, second)
+        self.assertEqual(boto_client.call_count, 1)
+
+    def test_a_client_that_cannot_be_created_is_swallowed(self):
+        with mock.patch("boto3.client", side_effect=RuntimeError("no boto3")):
+            self.assertIsNone(metrics._cloudwatch_client())
+
+
 class RefusalMetricMiddlewareTests(SimpleTestCase):
     """The refusal path: counted, and never changed by the metric."""
 
