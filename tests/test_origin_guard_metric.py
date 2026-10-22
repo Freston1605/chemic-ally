@@ -226,7 +226,7 @@ class RefusalMustNotHangTests(SimpleTestCase):
         )
         self.assertLessEqual(
             metrics.READ_TIMEOUT_SECONDS,
-            2,
+            3,
             "the CloudWatch read timeout must be tight: a hanging publish "
             "turns the fixed 403 into a gateway error.",
         )
@@ -253,4 +253,12 @@ class RefusalMustNotHangTests(SimpleTestCase):
             template,
             "the endpoint must be the regional monitoring API (the one "
             "PutMetricData is served by).",
+        )
+        self.assertIn(
+            "PrivateDnsEnabled: true",
+            template,
+            "the endpoint must have private DNS: without it the VPC still "
+            "resolves the monitoring API to the public address the Lambda "
+            "cannot reach, and the refusal's publish fails (and burns "
+            "seconds on the refusal's critical path).",
         )

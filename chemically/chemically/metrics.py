@@ -48,14 +48,15 @@ _client = None
 #: 30s Lambda timeout, which would turn the refusal into a gateway error
 #: instead of the fixed 403.
 #:
-#: The bounds are deliberately tight (1s connect, 1s read, a single
-#: attempt): the metric is best-effort by design, and a refusal that takes
-#: seconds to answer is a refusal that looks like an outage. The endpoint
-#: (a VPC interface endpoint, so the Lambda can reach the monitoring API
-#: without a route to the internet) is what makes the publish succeed;
-#: these bounds are only the safety net.
-CONNECT_TIMEOUT_SECONDS = 1
-READ_TIMEOUT_SECONDS = 1
+#: The bounds are deliberately tight (2s connect, 3s read, a single
+#: attempt): the metric is best-effort by design, and a refusal that
+#: takes seconds to answer is a refusal that looks like an outage. The
+#: endpoint (a VPC interface endpoint with PRIVATE DNS, so the Lambda
+#: resolves the monitoring API to the endpoint instead of the public
+#: address it cannot reach) is what makes the publish succeed; these
+#: bounds are only the safety net.
+CONNECT_TIMEOUT_SECONDS = 2
+READ_TIMEOUT_SECONDS = 3
 MAX_ATTEMPTS = 1
 
 

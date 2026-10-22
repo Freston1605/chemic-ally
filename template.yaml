@@ -406,6 +406,12 @@ Resources:
       SubnetIds: !Ref LambdaSubnetIds
       SecurityGroupIds:
         - !GetAtt CloudWatchEndpointSecurityGroup.GroupId
+      # Private DNS is what makes the endpoint USABLE: without it the VPC
+      # still resolves monitoring.<region>.amazonaws.com to the PUBLIC
+      # address, and the Lambda has no route there -- the publish then fails
+      # (and, being on the refusal's critical path, wastes seconds on every
+      # refusal).
+      PrivateDnsEnabled: true
 
   # ─────────────────────────────────────────────
   # CloudFront Distribution
