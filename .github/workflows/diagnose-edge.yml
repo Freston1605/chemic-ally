@@ -1,8 +1,9 @@
 name: Diagnose edge association (temporary)
 
 # TEMPORARY diagnostic. It tries the association with the live
-# distribution's ARN against a REGIONAL-scope web ACL (us-east-2) and a
-# CLOUDFRONT-scope web ACL (us-east-1), and deletes both afterwards.
+# distribution's ARN against a CLOUDFRONT-scope web ACL (us-east-1) and a
+# REGIONAL-scope web ACL (us-east-2), with several ARN shapes, and deletes
+# every throwaway ACL again at the end.
 on:
   workflow_dispatch:
 
@@ -21,62 +22,113 @@ jobs:
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           aws-region: us-east-2
 
+      - name: Install boto3
+        run: pip install --quiet boto3
+
       - name: Report the live state
         run: |
-          dist_id=$(aws cloudformation describe-stacks --stack-name chemically \
-            --region us-east-2 \
-            --query "Stacks[0].Outputs[?OutputKey=='DistributionArn'].OutputValue" \
-            --output text | sed -e 's#.*distribution/##')
-          arn=$(aws cloudformation describe-stacks --stack-name chemically \
-            --region us-east-2 \
-            --query "Stacks[0].Outputs[?OutputKey=='DistributionArn'].OutputValue" \
-            --output text)
-          echo "distribution id: ${dist_id}"
-          echo "arn: ${arn}"
+          python3 - <<'PY'
+          import boto3
+          from botocore.exceptions import ClientError
 
-          echo "=== delete any leftover diagnostic ACLs ==="
-          for a in $(aws wafv2 list-web-acls --scope CLOUDFRONT --region us-east-1 --output json --query "WebACLs[?contains(Name, 'chemically-diagnostic')].ARN" --output text); do
-            token=$(aws wafv2 get-web-acl --web-acl-arn "$a" --region us-east-1 --output json --query 'LockToken' --output text)
-            aws wafv2 delete-web-acl --web-acl-arn "$a" --lock-token "$token" --region us-east-1 >/dev/null 2>&1 && echo "deleted ${a}"
-          done
-          for a in $(aws wafv2 list-web-acls --scope REGIONAL --region us-east-2 --output json --query "WebACLs[?contains(Name, 'chemically-diagnostic')].ARN" --output text); do
-            token=$(aws wafv2 get-web-acl --web-acl-arn "$a" --region us-east-2 --output json --query 'LockToken' --output text)
-            aws wafv2 delete-web-acl --web-acl-arn "$a" --lock-token "$token" --region us-east-2 >/dev/null 2>&1 && echo "deleted ${a}"
-          done
+          def client(service, region):
+              return boto3.client(service, region_name=region)
 
-          echo "=== REGIONAL-scope ACL (us-east-2) + the distribution ARN ==="
-          reg=$(aws wafv2 create-web-acl --name chemically-diagnostic-regional \
-            --scope REGIONAL --default-action '{"Allow": {}}' \
-            --visibility-config '{"CloudWatchMetricsEnabled": true, "MetricName": "ChemicAllyDiagReg", "SampledRequestsEnabled": false}' \
-            --region us-east-2 --output json --query 'Summary.ARN' --output text)
-          echo "regional acl: ${reg}"
-          aws wafv2 associate-web-acl --web-acl-arn "$reg" --resource-arn "$arn" --region us-east-2 2>&1 | head -8 || true
+          cfn = client("cloudformation", "us-east-2")
+          stack = cfn.describe_stacks(StackName="chemically")["Stacks"][0]
+          outputs = {o["OutputKey"]: o["OutputValue"] for o in stack["Outputs"]}
+          arn = outputs["DistributionArn"]
+          dist_id = arn.rsplit("/", 1)[-1]
+          print("stack status:", stack["StackStatus"])
+          print("arn:", repr(arn))
+          print("distribution id:", dist_id)
 
-          echo "=== CLOUDFRONT-scope ACL (us-east-1) + the distribution ARN ==="
-          cf=$(aws wafv2 create-web-acl --name chemically-diagnostic-cf \
-            --scope CLOUDFRONT --default-action '{"Allow": {}}' \
-            --visibility-config '{"CloudWatchMetricsEnabled": true, "MetricName": "ChemicAllyDiagCf", "SampledRequestsEnabled": false}' \
-            --region us-east-1 --output json --query 'Summary.ARN' --output text)
-          echo "cloudfront acl: ${cf}"
-          aws wafv2 associate-web-acl --web-acl-arn "$cf" --resource-arn "$arn" --region us-east-1 2>&1 | head -8 || true
+          cf = client("cloudfront", "us-east-1")
+          dist = cf.get_distribution(Id=dist_id)["Distribution"]
+          print("api arn:", repr(dist.get("ARN")))
+          print("api domain:", dist.get("DomainName"), "status:", dist.get("Status"))
+          print("api aliases:", dist.get("Aliases"))
 
-          echo "=== CLOUDFRONT-scope ACL + the distribution ARN with a region ==="
-          aws wafv2 associate-web-acl --web-acl-arn "$cf" \
-            --resource-arn "arn:aws:cloudfront:us-east-1:768125641662:distribution/${dist_id}" \
-            --region us-east-1 2>&1 | head -8 || true
+          waf_e1 = client("wafv2", "us-east-1")
+          waf_e2 = client("wafv2", "us-east-2")
 
-          echo "=== cleanup ==="
-          for pair in "us-east-1 CLOUDFRONT ${cf}" "us-east-2 REGIONAL ${reg}"; do
-            set -- $pair
-            region=$1
-            scope=$2
-            web_acl=$3
-            token=$(aws wafv2 get-web-acl --web-acl-arn "$web_acl" --region "$region" --output json --query 'LockToken' --output text 2>/dev/null)
-            if [ -n "$token" ]; then
-              aws wafv2 delete-web-acl --web-acl-arn "$web_acl" --lock-token "$token" --region "$region" >/dev/null 2>&1 && echo "deleted ${web_acl}" || echo "COULD NOT DELETE ${web_acl}"
-            fi
-          done
-          echo "=== remaining diagnostic ACLs ==="
-          aws wafv2 list-web-acls --scope CLOUDFRONT --region us-east-1 --output json --query 'WebACLs[].Name' || true
-          aws wafv2 list-web-acls --scope REGIONAL --region us-east-2 --output json --query 'WebACLs[].Name' || true
-          echo "DONE"
+          # Delete leftovers from earlier diagnostic runs.
+          for waf, region in ((waf_e1, "us-east-1"), (waf_e2, "us-east-2")):
+              for acl in waf.list_web_acls(Scope="CLOUDFRONT" if region == "us-east-1" else "REGIONAL").get("WebACLs", []):
+                  if "chemically-diagnostic" not in acl["Name"]:
+                      continue
+                  try:
+                      lock = waf.get_web_acl(WebACLArn=acl["ARN"])["LockToken"]
+                      waf.delete_web_acl(WebACLArn=acl["ARN"], LockToken=lock)
+                      print("deleted leftover", acl["ARN"])
+                  except ClientError as exc:
+                      print("could not delete leftover", acl["ARN"],
+                            exc.response["Error"]["Message"][:120])
+
+          created = []
+          try:
+              acl_cf = waf_e1.create_web_acl(
+                  Name="chemically-diagnostic-cf",
+                  Scope="CLOUDFRONT",
+                  DefaultAction={"Allow": {}},
+                  VisibilityConfig={
+                      "CloudWatchMetricsEnabled": True,
+                      "MetricName": "ChemicAllyDiagCf",
+                      "SampledRequestsEnabled": False,
+                  },
+              )["Summary"]["ARN"]
+              created.append((waf_e1, acl_cf))
+              print("created cloudfront-scope acl:", acl_cf)
+          except ClientError as exc:
+              print("could not create cloudfront-scope acl:",
+                    exc.response["Error"]["Message"][:200])
+              acl_cf = None
+
+          try:
+              acl_reg = waf_e2.create_web_acl(
+                  Name="chemically-diagnostic-regional",
+                  Scope="REGIONAL",
+                  DefaultAction={"Allow": {}},
+                  VisibilityConfig={
+                      "CloudWatchMetricsEnabled": True,
+                      "MetricName": "ChemicAllyDiagReg",
+                      "SampledRequestsEnabled": False,
+                  },
+              )["Summary"]["ARN"]
+              created.append((waf_e2, acl_reg))
+              print("created regional-scope acl:", acl_reg)
+          except ClientError as exc:
+              print("could not create regional-scope acl:",
+                    exc.response["Error"]["Message"][:200])
+              acl_reg = None
+
+          variants = [
+              ("as-is", arn),
+              ("with-region", arn.replace("::", ":us-east-1:")),
+              ("colon-resource", arn.replace("/", ":")),
+              ("bare-id", dist_id),
+          ]
+          for label, waf, acl in (
+              ("cf-scope/us-east-1", waf_e1, acl_cf),
+              ("reg-scope/us-east-2", waf_e2, acl_reg),
+          ):
+              if not acl:
+                  continue
+              for name, candidate in variants:
+                  try:
+                      waf.associate_web_acl(WebACLArn=acl, ResourceArn=candidate)
+                      print("OK  ", label, name, candidate)
+                  except ClientError as exc:
+                      print("FAIL", label, name, candidate,
+                            exc.response["Error"]["Message"][:180])
+
+          for waf, acl in created:
+              try:
+                  lock = waf.get_web_acl(WebACLArn=acl)["LockToken"]
+                  waf.delete_web_acl(WebACLArn=acl, LockToken=lock)
+                  print("deleted", acl)
+              except ClientError as exc:
+                  print("could not delete", acl,
+                        exc.response["Error"]["Message"][:160])
+          print("DONE")
+          PY
