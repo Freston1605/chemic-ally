@@ -1,0 +1,48 @@
+name: Diagnose the origin guard refusal (temporary)
+
+# TEMPORARY diagnostic: tails the Django function's log group while a direct
+# Function-URL call (which the guard refuses) is in flight, so the blocking
+# call is visible. Read-only apart from the probe itself.
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  diagnose:
+    name: Diagnose
+    runs-on: ubuntu-latest
+    steps:
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v5
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: us-east-2
+
+      - name: Tail the function log while the guard refuses
+        run: |
+          set -uo pipefail
+          log_group=$(aws logs describe-log-groups \
+            --log-group-name-prefix "/aws/lambda/chemically-DjangoFunction" \
+            --query "logGroups[0].logGroupName" --output text)
+          echo "log group: ${log_group}"
+          ( aws logs tail "$log_group" --since 1m --format short \
+              > /tmp/tail.log 2>&1 & echo $! > /tmp/tail.pid )
+          sleep 5
+          url=$(aws cloudformation describe-stacks --stack-name chemically \
+            --region us-east-2 \
+            --query "Stacks[0].Outputs[?OutputKey=='FunctionUrl'].OutputValue" \
+            --output text)
+          echo "probing ${url}"
+          curl -sS -o /tmp/probe.txt -w 'probe code=%{http_code} time=%{time_total}\n' \
+            --max-time 90 "$url" || true
+          head -c 200 /tmp/probe.txt || true
+          echo
+          sleep 5
+          kill "$(cat /tmp/tail.pid)" 2>/dev/null || true
+          sleep 2
+          echo "=== the log ==="
+          tail -60 /tmp/tail.log
+          echo "DONE"
