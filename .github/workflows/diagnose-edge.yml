@@ -1,10 +1,8 @@
 name: Diagnose edge association (temporary)
 
-# TEMPORARY diagnostic. The first part is READ-ONLY. The second part creates
-# ONE throwaway CloudFront-scoped web ACL in us-east-1, tries the
-# association with the ARN the pipeline passes, prints the API's answer, and
-# deletes the throwaway ACL again -- exactly what the edge stack does, and
-# it cleans up after itself.
+# TEMPORARY diagnostic. It prints the CloudFront distribution's own
+# identifiers, then tries the association with several ARN shapes against
+# ONE throwaway web ACL, and deletes that ACL again at the end.
 on:
   workflow_dispatch:
 
@@ -13,7 +11,7 @@ permissions:
 
 jobs:
   diagnose:
-    name: Diagnose (read-only + one throwaway ACL)
+    name: Diagnose
     runs-on: ubuntu-latest
     steps:
       - name: Configure AWS credentials (us-east-2)
@@ -26,30 +24,29 @@ jobs:
       - name: Report the live state
         run: |
           set -uo pipefail
-          echo "=== the API's own ARN for the distribution ==="
           dist_id=$(aws cloudformation describe-stacks --stack-name chemically \
             --region us-east-2 \
             --query "Stacks[0].Outputs[?OutputKey=='DistributionArn'].OutputValue" \
             --output text | sed -e 's#.*distribution/##')
+          echo "distribution id: ${dist_id}"
+
+          echo "=== every top-level key of the distribution object ==="
           aws cloudfront get-distribution --id "$dist_id" --output json \
             | python3 -c '
           import json, sys
           data = json.load(sys.stdin)["Distribution"]
-          print("id=%s" % data.get("Id"))
-          print("arn=%s" % data.get("ARN"))
-          print("status=%s" % data.get("Status"))
-          print("domain=%s" % data.get("DomainName"))
-          print("last_modified=%s" % data.get("LastModifiedTime"))
+          print("keys: %s" % sorted(data.keys()))
+          for key in sorted(data.keys()):
+              if key in ("Id", "ARN", "Status", "DomainName", "LastModifiedTime",
+                         "ActiveTrustedSigners", "WebACLId", "Restrictions"):
+                  print("%s=%s" % (key, data.get(key)))
           '
+
           echo
-          echo "=== the ARN the pipeline passes ==="
-          arn=$(aws cloudformation describe-stacks --stack-name chemically \
-            --region us-east-2 \
-            --query "Stacks[0].Outputs[?OutputKey=='DistributionArn'].OutputValue" \
-            --output text)
-          echo "pipeline arn=${arn}"
-          echo
-          echo "=== throwaway ACL + association attempt ==="
+          echo "=== the web ACLs currently in us-east-1 (CLOUDFRONT) ==="
+          aws wafv2 list-web-acls --scope CLOUDFRONT --region us-east-1 \
+            --output json --query 'WebACLs[].{name:Name,arn:ARN,scope:Scope,id:Id}'
+
           acl=$(aws wafv2 create-web-acl \
             --name chemically-diagnostic-association \
             --scope CLOUDFRONT \
@@ -57,21 +54,30 @@ jobs:
             --visibility-config '{"CloudWatchMetricsEnabled": true, "MetricName": "ChemicAllyDiagnostic", "SampledRequestsEnabled": false}' \
             --region us-east-1 --output json \
             | python3 -c 'import json,sys; print(json.load(sys.stdin)["Summary"]["ARN"])')
-          echo "throwaway acl=${acl}"
-          echo "--- associating with the pipeline ARN ---"
-          aws wafv2 associate-web-acl --web-acl-arn "$acl" --resource-arn "$arn" \
-            --region us-east-1 2>&1 | head -12
-          echo "--- associating with the API's own ARN ---"
-          api_arn=$(aws cloudfront get-distribution --id "$dist_id" --output json \
-            | python3 -c 'import json,sys; print(json.load(sys.stdin)["Distribution"]["ARN"])')
-          echo "api arn=${api_arn}"
-          aws wafv2 associate-web-acl --web-acl-arn "$acl" --resource-arn "$api_arn" \
-            --region us-east-1 2>&1 | head -12
-          echo "--- cleaning up the throwaway ACL ---"
-          aws wafv2 delete-web-acl --web-acl-arn "$acl" --lock-token "$(
-            aws wafv2 get-web-acl --web-acl-arn "$acl" --region us-east-1 --output json \
-              | python3 -c 'import json,sys; print(json.load(sys.stdin)["LockToken"])')" \
-            --region us-east-1 2>&1 | head -5
-          echo "--- remaining CLOUDFRONT ACLs ---"
+          echo "throwaway acl: ${acl}"
+
+          for variant in \
+            "arn:aws:cloudfront::768125641662:distribution/${dist_id}" \
+            "arn:aws:cloudfront:us-east-1:768125641662:distribution/${dist_id}" \
+            "arn:aws:cloudfront::768125641662:distribution:${dist_id}" \
+            "${dist_id}" ; do
+            echo "--- trying: ${variant}"
+            aws wafv2 associate-web-acl --web-acl-arn "$acl" --resource-arn "$variant" \
+              --region us-east-1 2>&1 | grep -E "Reason|Parameter|error|Error|\{|\}" | head -6
+            echo "--- exit: $?"
+          done
+
+          echo "=== cleaning up every throwaway ACL ==="
+          for name in chemically-diagnostic-association; do
+            for a in $(aws wafv2 list-web-acls --scope CLOUDFRONT --region us-east-1 \
+                --output json --query "WebACLs[?Name=='$name'].ARN" --output text); do
+              token=$(aws wafv2 get-web-acl --web-acl-arn "$a" --region us-east-1 \
+                --output json --query 'LockToken' --output text)
+              aws wafv2 delete-web-acl --web-acl-arn "$a" --lock-token "$token" \
+                --region us-east-1 2>&1 | head -3
+              echo "deleted ${a}"
+            done
+          done
+          echo "=== remaining CLOUDFRONT ACLs ==="
           aws wafv2 list-web-acls --scope CLOUDFRONT --region us-east-1 \
             --output json --query 'WebACLs[].Name'
