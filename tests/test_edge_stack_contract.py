@@ -481,9 +481,9 @@ class EdgeStackContractNegativeTests(SimpleTestCase):
     def test_distribution_name_property_is_detected(self):
         mutated = self._mutate(
             self.app,
-            "        Comment: ChemicAlly public distribution (us-east-2 app stack)",
+            "        # The fingerprint makes CloudFormation notice a change to the",
             "        Name: chemically\n"
-            "        Comment: ChemicAlly public distribution (us-east-2 app stack)",
+            "        # The fingerprint makes CloudFormation notice a change to the",
         )
         self.assertFalse(
             _distribution_has_no_name_property(mutated),
