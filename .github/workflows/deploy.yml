@@ -539,6 +539,29 @@ jobs:
             --expect-tag ${{ env.IMAGE_TAG }}
 
       # ─────────────────────────────────────────────
+      # M007/S06: the origin header must actually be stamped.
+      #
+      # CloudFormation's diff does not detect a change to a nested list
+      # property like Origins.Items[].OriginCustomHeaders, so the header
+      # was silently absent on the live distribution (observed on
+      # 2026-10-22) while the template declared it. The step below
+      # delivers it and verifies it against the state CloudFront reports.
+      #
+      # It is idempotent: a distribution that already stamps the header is
+      # left untouched. It is NOT swallowable - a guard that refuses
+      # requests the origin does not stamp would take the site down, so
+      # the header must be proven present before the guard is ever
+      # enforced.
+      # ─────────────────────────────────────────────
+      - name: Ensure the origin header is stamped
+        env:
+          ORIGIN_SECRET: ${{ secrets.ORIGIN_SECRET }}
+        run: |
+          python scripts/ensure_origin_header.py \
+            --stack-name chemically \
+            --region ${{ env.AWS_REGION }}
+
+      # ─────────────────────────────────────────────
       # M007/S04: the post-deploy witness. It proves which phase is
       # actually live: in phase 1 the header is live and the guard is
       # inert; in phase 2 a direct Function-URL call is refused with the

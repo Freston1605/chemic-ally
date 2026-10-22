@@ -451,3 +451,46 @@ class OriginHeaderLandingTests(SimpleTestCase):
             "must never reach the workflow's output or the distribution's "
             "Comment.",
         )
+
+
+class OriginHeaderDeliveryTests(SimpleTestCase):
+    """The header must be delivered to the LIVE distribution.
+
+    CloudFormation's diff does not detect a change to a nested list
+    property like ``Origins.Items[].OriginCustomHeaders``, so the header
+    was silently absent in production while the template declared it. A
+    dedicated step delivers it and verifies it, and it must not be
+    swallowable: a guard that refuses requests the origin does not stamp
+    would take the whole site down.
+    """
+
+    @classmethod
+    def setUpClass(cls):
+        super().setUpClass()
+        cls.workflow = DEPLOY_WORKFLOW.read_text(encoding="utf-8")
+
+    def test_the_deploy_job_ensures_the_header(self):
+        self.assertIn(
+            "scripts/ensure_origin_header.py",
+            self.workflow,
+            "the deploy job must run scripts/ensure_origin_header.py: "
+            "CloudFormation cannot deliver the origin header to an existing "
+            "distribution, so the header would never be stamped.",
+        )
+
+    def test_the_ensure_step_carries_the_secret_from_the_environment(self):
+        """The secret must come from the environment, never from a file."""
+        self.assertRegex(
+            self.workflow,
+            r"ORIGIN_SECRET: \$\{\{ secrets\.ORIGIN_SECRET \}\}",
+            "the ensure step must take the secret from the GitHub secret "
+            "through the environment.",
+        )
+
+    def test_the_ensure_step_cannot_be_swallowed(self):
+        self.assertNotIn(
+            "ensure_origin_header.py || true",
+            self.workflow,
+            "the ensure step must not be swallowable: an unstamped origin "
+            "header means the guard must not be enforced.",
+        )
