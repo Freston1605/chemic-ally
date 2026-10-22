@@ -259,7 +259,13 @@ jobs:
       # secret to Lambda and starts refusing direct Function-URL calls.
       # Enforcement therefore starts by one reviewed change, in the same
       # order as the header: header first, enforcement second.
-      ENFORCE_ORIGIN_GUARD: "false"
+      #
+      # PHASE 2 (M007/S04, 2026-10-22): the header has been live and
+      # settled on the distribution for hours (the deploy job's own witness
+      # proves it on every run), so the guard may now enforce. The
+      # preflight below re-checks that precondition on every deploy, so
+      # flipping this back to false is the immediate rollback.
+      ENFORCE_ORIGIN_GUARD: "true"
     steps:
       - uses: actions/checkout@v5
 

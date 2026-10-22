@@ -276,23 +276,31 @@ def _rollout_steps_cannot_be_swallowed(text):
     return True
 
 
-def _switch_is_owned_by_one_setting(text):
-    """One switch, defaulting to false, still passed to the deploy.
-
-    Regression guard on M007/S03's contract: the new steps read the
-    switch, so a second definition (or a default of "true") would make the
-    rollout order ambiguous.
-    """
+def _switch_value(text):
+    """Return the switch's current value, or None when it is not readable."""
     env = _job_env(text)
     if not env:
-        return False
+        return None
     settings = re.findall(
         r"^      ENFORCE_ORIGIN_GUARD:[ \t]*(.*)$", env, re.MULTILINE
     )
     if len(settings) != 1:
-        return False
-    value = settings[0].strip().strip('"').strip("'")
-    if value.lower() != DEFAULT_ENFORCE:
+        return None
+    return settings[0].strip().strip('"').strip("'").lower()
+
+
+def _switch_is_owned_by_one_setting(text):
+    """One switch, holding a boolean, still passed to the deploy.
+
+    Regression guard on M007/S03's contract: the new steps read the
+    switch, so a second definition would make the rollout order
+    ambiguous, and a value that is not a boolean would make the phase
+    unreadable. WHICH phase is live is a separate question (the phase
+    moved to enforcement on 2026-10-22, once the header had been live and
+    settled); this guard only cares that there is exactly one switch and
+    that it is a boolean.
+    """
+    if _switch_value(text) not in ("true", "false"):
         return False
     if "EnforceOriginGuard=${{ env.ENFORCE_ORIGIN_GUARD }}" not in text:
         return False
@@ -402,8 +410,24 @@ class OriginGuardRolloutPipelineTests(SimpleTestCase):
         self.assertTrue(
             _switch_is_owned_by_one_setting(self.workflow),
             "the deploy job must keep ONE ENFORCE_ORIGIN_GUARD setting "
-            "defaulting to false, pass it as the EnforceOriginGuard "
+            "holding a boolean, pass it as the EnforceOriginGuard "
             "parameter override, and still pass the OriginSecret.",
+        )
+
+    def test_the_live_phase_is_the_enforced_one(self):
+        """Phase 2 (M007/S04, 2026-10-22): the guard enforces.
+
+        The origin header has been live and settled on the distribution for
+        hours - the deploy job's own witness proves it on every run - so
+        the guard may now refuse direct Function-URL calls. The rollback is
+        one change: set the switch back to false.
+        """
+        self.assertEqual(
+            _switch_value(self.workflow),
+            "true",
+            "the origin guard must now enforce: the header has been live "
+            "and settled since the phase-1 deploy, and the preflight "
+            "re-checks that precondition on every deploy.",
         )
 
     def test_deploy_fails_loudly_without_the_origin_secret(self):
@@ -553,22 +577,22 @@ class OriginGuardRolloutPipelineNegativeTests(SimpleTestCase):
             "non-blocking with 'continue-on-error'.",
         )
 
-    def test_enforcing_by_default_is_detected(self):
+    def test_a_non_boolean_switch_value_is_detected(self):
         mutated = self._mutate(
-            '      ENFORCE_ORIGIN_GUARD: "false"',
             '      ENFORCE_ORIGIN_GUARD: "true"',
+            '      ENFORCE_ORIGIN_GUARD: "yes"',
         )
         self.assertFalse(
             _switch_is_owned_by_one_setting(mutated),
-            "the switch guard must fail when the workflow would enforce the "
-            "guard without a reviewed change.",
+            "the switch guard must fail when the switch does not hold a "
+            "boolean: the phase would be unreadable.",
         )
 
     def test_a_second_switch_definition_is_detected(self):
         mutated = self._mutate(
-            '      ENFORCE_ORIGIN_GUARD: "false"',
-            '      ENFORCE_ORIGIN_GUARD: "false"\n'
             '      ENFORCE_ORIGIN_GUARD: "true"',
+            '      ENFORCE_ORIGIN_GUARD: "true"\n'
+            '      ENFORCE_ORIGIN_GUARD: "false"',
         )
         self.assertFalse(
             _switch_is_owned_by_one_setting(mutated),

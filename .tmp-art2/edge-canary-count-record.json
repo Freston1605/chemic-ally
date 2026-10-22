@@ -1,0 +1,48 @@
+{
+  "acl_metric_name": "ChemicAllyEdgeWebAcl",
+  "action": "Count",
+  "ceiling_reached": null,
+  "discovered_metric_names": [],
+  "edge_region": "us-east-1",
+  "edge_stack_name": "chemically-edge",
+  "evaluation_window_seconds": 300,
+  "expect_action": "Count",
+  "limit": 2000,
+  "metrics": {
+    "AllowedRequests": {
+      "datapoints": 0,
+      "dimensions": [],
+      "metric_name": "AllowedRequests",
+      "state": "unknown",
+      "value": null
+    },
+    "BlockedRequests": {
+      "datapoints": 0,
+      "dimensions": [],
+      "metric_name": "BlockedRequests",
+      "state": "unknown",
+      "value": null
+    },
+    "CountedRequests": {
+      "datapoints": 0,
+      "dimensions": [],
+      "metric_name": "CountedRequests",
+      "state": "unknown",
+      "value": null
+    }
+  },
+  "observation_state": "warming_up",
+  "observation_state_reason": "the edge stack was created at 2026-10-22T07:31:46.794000+00:00, after the window started at 2026-10-21T12:45:48.975483+00:00, so the rule is younger than the window and could not have been observed for the whole window",
+  "observed_at": "2026-10-22T12:45:48.975483+00:00",
+  "observed_rate_per_window": null,
+  "require_data": true,
+  "scoped_requests": null,
+  "site_status": 200,
+  "site_url": "https://chemic-ally.xyz",
+  "stack_created_at": "2026-10-22T07:31:46.794000+00:00",
+  "status": "pass",
+  "web_acl_arn": "arn:aws:wafv2:us-east-1:768125641662:global/webacl/chemically-edge-rate-limit/b647ccf9-fe7a-449e-97ad-78d67634a130",
+  "window_end": "2026-10-22T12:45:48.975483+00:00",
+  "window_minutes": 1440,
+  "window_start": "2026-10-21T12:45:48.975483+00:00"
+}

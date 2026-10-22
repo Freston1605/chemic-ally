@@ -169,7 +169,13 @@ def _secret_parameter_is_noecho(text):
 
 
 def _workflow_owns_the_switch(text):
-    """One workflow setting, defaulting to false, passed to the deploy."""
+    """One workflow setting holding a boolean, passed to the deploy.
+
+    Which phase is live is a separate question: the guard moved to
+    enforcement on 2026-10-22 (M007/S04), once the origin header had
+    been live and settled. This guard only cares that there is exactly one
+    switch, that it holds a boolean, and that it reaches the deploy.
+    """
     env = re.search(
         r"^    env:[ \t]*$", text, re.MULTILINE
     )
@@ -186,7 +192,7 @@ def _workflow_owns_the_switch(text):
     )
     if setting is None:
         return False
-    if setting.group(1).lower() != "false":
+    if setting.group(1).lower() not in ("true", "false"):
         return False
     return (
         "EnforceOriginGuard=${{ env.ENFORCE_ORIGIN_GUARD }}" in text
@@ -362,16 +368,16 @@ class OriginGuardRolloutNegativeTests(SimpleTestCase):
             "committed default.",
         )
 
-    def test_workflow_without_the_switch_is_detected(self):
+    def test_workflow_without_a_boolean_switch_is_detected(self):
         mutated = self._mutate(
             self.workflow,
-            '      ENFORCE_ORIGIN_GUARD: "false"',
             '      ENFORCE_ORIGIN_GUARD: "true"',
+            '      ENFORCE_ORIGIN_GUARD: "perhaps"',
         )
         self.assertFalse(
             _workflow_owns_the_switch(mutated),
-            "the workflow guard must fail when the switch would enforce the "
-            "guard without a reviewed change.",
+            "the workflow guard must fail when the switch does not hold a "
+            "boolean: the phase would be unreadable.",
         )
 
     def test_workflow_without_the_parameter_override_is_detected(self):
