@@ -268,7 +268,13 @@ Resources:
                 Action:
                   - cloudwatch:PutMetricData
                 Resource:
+                  # CloudWatch's namespace resource is written with a
+                  # slash; the colon form is granted as well because the
+                  # two spellings are easy to get wrong and an AccessDenied
+                  # here would silently cost the milestone its detection
+                  # story. Both name the SAME namespace - no wildcard.
                   - !Sub "arn:aws:cloudwatch:${AWS::Region}:${AWS::AccountId}:namespace/ChemicAlly"
+                  - !Sub "arn:aws:cloudwatch:${AWS::Region}:${AWS::AccountId}:namespace:ChemicAlly"
 
   # ─────────────────────────────────────────────
   # Lambda function (container image)

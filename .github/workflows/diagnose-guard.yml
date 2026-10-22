@@ -45,6 +45,19 @@ jobs:
           sleep 2
           echo "=== the log (tail) ==="
           tail -40 /tmp/tail.log
+          echo "=== the Lambda role's inline policies ==="
+          role=$(aws cloudformation describe-stack-resources \
+            --stack-name chemically --region us-east-2 \
+            --query "StackResources[?ResourceType=='AWS::IAM::Role'].PhysicalResourceId" \
+            --output text)
+          echo "role: ${role}"
+          aws iam list-role-policies --role-name "$role" --output json 2>&1 | head -5
+          for policy in $(aws iam list-role-policies --role-name "$role" --query 'PolicyNames' --output text 2>/dev/null); do
+            echo "--- policy ${policy}"
+            aws iam get-role-policy --role-name "$role" --policy-name "$policy" \
+              --output json 2>&1 | head -20
+          done
+
           echo "=== the log (filter-log-events) ==="
           aws logs filter-log-events --log-group-name "$log_group" \
             --start-time $(( ($(date +%s) - 600) * 1000 )) \
