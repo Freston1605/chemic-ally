@@ -64,7 +64,14 @@ def _resource(text, logical_name):
 
 
 def _role_may_publish_only_to_the_namespace(text):
-    """The role may publish metrics, scoped to the ChemicAlly namespace."""
+    """The role may publish metrics, scoped to the ChemicAlly namespace.
+
+    The scoping is a CONDITION, not the resource: AWS does not honour a
+    namespace-scoped resource for PutMetricData in this account (both
+    spellings of the namespace ARN are denied with AccessDenied), so the
+    action is granted on the service's wildcard and the namespace is
+    pinned by the cloudwatch:namespace condition key.
+    """
     role = _resource(text, ROLE_NAME)
     if not role:
         return False
@@ -72,10 +79,11 @@ def _role_may_publish_only_to_the_namespace(text):
         return False
     # The grant must be scoped: an unscoped PutMetricData would let the
     # function write into any namespace in the account.
-    scoped = re.search(
-        r"namespace/" + re.escape(METRIC_NAMESPACE), role
+    condition = re.search(
+        r"cloudwatch:namespace:[ \t]*" + re.escape(METRIC_NAMESPACE),
+        role,
     )
-    return scoped is not None
+    return condition is not None
 
 
 def _alarm_watches_the_refusal_metric(text):
@@ -171,10 +179,8 @@ class OriginGuardAlarmNegativeTests(SimpleTestCase):
 
     def test_unscoped_metric_permission_is_detected(self):
         mutated = self._mutate(
-            '                  - !Sub "arn:aws:cloudwatch:${AWS::Region}:'
-            '${AWS::AccountId}:namespace/ChemicAlly"',
-            '                  - !Sub "arn:aws:cloudwatch:${AWS::Region}:'
-            '${AWS::AccountId}:*"',
+            "                    cloudwatch:namespace: ChemicAlly",
+            "                    cloudwatch:namespace: *",
         )
         self.assertFalse(
             _role_may_publish_only_to_the_namespace(mutated),
