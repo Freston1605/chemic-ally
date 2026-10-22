@@ -241,14 +241,16 @@ jobs:
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     environment: production
     env:
-      # The edge rule's action (M007/S02). Count measures the traffic
-      # without touching a single request - the canary mode and the safe
-      # default; Block refuses a request that trips the limit at the edge.
-      # Switching to Block is ONE reviewed change to this setting, so the
-      # edge rule can never start blocking by accident. A manual
-      # `sam deploy ... WafAction=Block` is reverted by the next CI run
-      # unless this setting is changed at the same time.
-      WAF_ACTION: Count
+      # The edge rule's action (M007/S02, M007/S05). Count measures the
+      # traffic without touching a single request - the canary mode and the
+      # safe default; Block refuses a request that trips the limit at the
+      # edge.
+      #
+      # PHASE 2 (M007/S05, 2026-10-22): the canary window was observed in
+      # Count mode, the observed rate was reviewed against the inherited
+      # 2000/300s ceiling, and the rule now enforces. The rollback is one
+      # change: set this back to Count.
+      WAF_ACTION: Block
       # The edge stack's name. It is declared once so the deploy step and
       # the verification step can never disagree about which stack holds the
       # CloudFront rate rule.
