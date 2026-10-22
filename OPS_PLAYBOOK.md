@@ -2,7 +2,7 @@
 
 > **Purpose:** This document aligns engineers and operational agents on the deployment architecture, secrets management, disaster recovery, and day-to-day operational procedures for ChemicAlly.
 >
-> **Last updated:** 2026-10-21
+> **Last updated:** 2026-10-22
 > **AWS Account:** `768125641662`
 > **Region:** `us-east-2` (application stack) / `us-east-1` (edge stack)
 
@@ -362,6 +362,132 @@ so the region is a parameter, not a second credential set.
 site keeps serving and the in-app throttles (D016) remain the only bound --
 re-run the edge deploy. The app stack never depends on the edge stack.
 
+### Rolling out the origin guard: header first, enforcement second
+
+The origin guard (`chemically.middleware.OriginHeaderGuardMiddleware`) refuses
+every request that does not carry the `X-ChemicAlly-Origin` header that
+CloudFront stamps on origin requests. Turning it on is therefore a TWO-PHASE
+rollout: the header goes live first, enforcement second. This section is the
+whole procedure. After reading it you can flip the switch safely, or roll it
+back, without asking anybody.
+
+**The two phases.**
+
+| Phase | What is live | What the guard does |
+|-------|--------------|---------------------|
+| **Phase 1 (the default)** | The CloudFront origin stamps `X-ChemicAlly-Origin`; the Lambda carries NO `ORIGIN_HEADER_SECRET` | Nothing. The guard is INERT: it cannot refuse anything. |
+| **Phase 2** | The Lambda carries the shared origin secret as `ORIGIN_HEADER_SECRET` | Every request that did not come through CloudFront is refused with the fixed 403 body (`Forbidden: request did not arrive through the CloudFront origin.`) and counted in the `ChemicAlly/OriginGuardRefusals` metric. |
+
+The switch between them is ONE workflow setting, `ENFORCE_ORIGIN_GUARD`, in
+`.github/workflows/deploy.yml`. Its default is `"false"` (phase 1), so a
+deploy nobody reviewed can never refuse traffic.
+
+**Why the order matters.** The guard refuses every request that does not
+carry the header, so the header must already be live on EVERY CloudFront edge
+before the guard may enforce. A distribution configuration change takes "a
+few minutes" to propagate to all edge locations, and CloudFormation does not
+order the Lambda update against the distribution update: if the Lambda is
+updated first, the site refuses its own legitimate traffic until the
+distribution starts stamping the header. Header first, enforcement second is
+the only order in which that window cannot happen.
+
+**The pre-flight (run this before flipping the switch).**
+
+```bash
+python scripts/verify_origin_guard.py --expect header-live
+```
+
+It proves, read-only, that the origin that actually serves the Function URL
+stamps `X-ChemicAlly-Origin` with a non-empty value, that the header name
+agrees across the stack parameter and the Lambda environment, that the
+distribution has not changed for at least ten minutes (so the header has had
+time to reach every edge), and that a Lambda which already carries the secret
+matches the stamped value.
+
+It changes nothing: it only describes the live state. It needs AWS
+credentials with read access to CloudFormation, CloudFront, Lambda and
+CloudWatch -- the same credentials the deploy job uses.
+
+The deploy job runs this pre-flight automatically, as its own step
+("Preflight: the origin header must be live before enforcement"), immediately
+before the SAM deploy, and only when `ENFORCE_ORIGIN_GUARD` is `"true"`. So a
+flip without a live header fails the deploy instead of taking the site down.
+The pre-flight cannot be swallowed: it is not `|| true` and it has no
+`continue-on-error`.
+
+**Phase 1 -- ship the header, keep the guard inert.**
+
+1. Leave `ENFORCE_ORIGIN_GUARD: "false"` in `.github/workflows/deploy.yml`.
+2. Push to `main` and let the deploy job run.
+3. Read the deploy job's "Verify the origin guard rollout" step. It must
+   report that the origin header is live on the live origin, that the guard
+   is inert, and that the public site serves 200.
+4. The refusal metric must stay at zero: an inert guard refuses nothing.
+
+```bash
+# The refusal count must be zero after a phase-1 deploy
+aws cloudwatch get-metric-statistics \
+  --namespace ChemicAlly \
+  --metric-name OriginGuardRefusals \
+  --statistics Sum \
+  --period 300 \
+  --start-time "$(date -u -d '1 hour ago' +%Y-%m-%dT%H:%M:%SZ)" \
+  --region us-east-2
+```
+
+**Phase 2 -- turn on enforcement.**
+
+1. Change that single setting to `ENFORCE_ORIGIN_GUARD: "true"` in
+   `.github/workflows/deploy.yml`.
+2. Push to `main`. This is ONE reviewed change; nothing else changes.
+3. The same deploy run proves the new behaviour: a direct Function-URL call
+   is refused with the fixed 403 body, the refusal is counted in the metric,
+   and the public site still serves 200.
+4. The deploy job's pre-flight runs first and refuses to continue if the
+   origin header is not live. A deploy that fails there changed nothing: the
+   previous deployment is still the live one.
+
+**The evidence to keep.** For BOTH phases, keep:
+
+* the CI run URL (the deploy job of the run that shipped the phase);
+* the output of the "Verify the origin guard rollout" step;
+* the reading of the refusal metric (`ChemicAlly/OriginGuardRefusals`) taken
+  after the run;
+* the record that no legitimate request was refused: the public site served
+  200 and the `live-probe` job stayed green in both phases.
+
+**The rollback.** Flip the setting back to `ENFORCE_ORIGIN_GUARD: "false"` and
+push. The next deploy ships a Lambda with no `ORIGIN_HEADER_SECRET`, so the
+guard is inert again and refuses nothing.
+
+**CI owns the switch.** The deploy job passes the setting to the deploy as
+the `EnforceOriginGuard` parameter override on every run. A manual
+`sam deploy ... EnforceOriginGuard=false` (or `EnforceOriginGuard=true`) is
+therefore **reverted by the next CI run**, which redeploys the app stack with
+the workflow's setting, unless that setting is changed at the same time. A
+rollback that must hold has to be made in the workflow.
+
+**The secret rule: never rotate `ORIGIN_SECRET` in the same deploy that
+enables enforcement.** A rotation changes the value CloudFront stamps AND the
+value the Lambda compares against, in the same stack operation. The
+distribution's new value needs "a few minutes" to reach every edge, and
+during that window the Lambda refuses the legitimate requests that arrive
+carrying the old value. Rotate in a phase-1 deploy (the guard is inert, so a
+refused request costs nothing), wait for the propagation, and only then
+enable enforcement in a later deploy.
+
+**What to read when something looks wrong.**
+
+* the refusal metric `ChemicAlly/OriginGuardRefusals` (the command above);
+* the alarm `chemically-origin-guard-refusals` -- see "Priority 3";
+* the middleware's WARNING log line, "Origin header guard refused a request
+  without the CloudFront origin header", in the Lambda's CloudWatch log
+  group;
+* the verification step's own FAIL message, which names the contract that
+  failed (the header is not live, the guard is not enforcing, the refusal
+  body is not the fixed body, the metric did not move, or the public site did
+  not serve 200).
+
 ### Running Django Management Commands
 
 Lambda does not have an interactive shell. Use one of:
@@ -410,9 +536,14 @@ aws logs tail /aws/lambda/chemically-DjangoFunction-XXXXX --follow --region us-e
    - Update the GitHub secret `ORIGIN_SECRET`
    - Redeploy: the new value must reach BOTH the Lambda environment
      (`ORIGIN_HEADER_SECRET`) and the CloudFront origin custom header. They are
-     set from the same SAM parameter, so a single redeploy updates both
-     atomically. Until the redeploy lands, the old value is still the live
-     one -- do not rotate it out of band.
+     set from the same SAM parameter, so a single redeploy updates both.
+     Until the redeploy lands, the old value is still the live one -- do not
+     rotate it out of band.
+   - Never rotate it in the same deploy that ENABLES enforcement, and rotate
+     it in a phase-1 deploy (guard inert). The distribution's new value needs
+     "a few minutes" to reach every edge, and until it does, the Lambda
+     refuses legitimate requests carrying the old value. See "Rolling out the
+     origin guard: header first, enforcement second" in section 5.
 
 ### Local Development with Lambda Emulation
 
@@ -476,7 +607,7 @@ aws lambda get-resource-policy \
   --region us-east-2
 ```
 
-Rollout note: the first deploy that enables the guard updates the Lambda environment and the CloudFront distribution in the same stack operation, and CloudFormation does not guarantee their order. If the function is updated first, requests are refused with 403 until the distribution starts stamping the header (a one-time window of seconds). The `live-probe` job after the deploy is the gate that catches it.
+Rollout note: the guard is rolled out in TWO PHASES -- the origin header first, enforcement second -- and the procedure is "Rolling out the origin guard: header first, enforcement second" in section 5. The switch is the single `ENFORCE_ORIGIN_GUARD` setting in `.github/workflows/deploy.yml` (default `"false"`), and the deploy job refuses to enable enforcement until the origin header is live on the live distribution. The curl commands above are still the fastest way to see the two behaviours by hand: a 403 on the Function URL and a 200 on the public site.
 
 ### Priority 3 — Enable CloudWatch Alarms
 
@@ -557,4 +688,4 @@ This limits concurrent executions to 5, capping worst-case monthly cost.
 
 ---
 
-*Last updated: 2026-06-08 | Maintained by: DevOps / Engineering Team*
+*Last updated: 2026-10-22 | Maintained by: DevOps / Engineering Team*

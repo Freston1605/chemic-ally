@@ -188,11 +188,23 @@ def _runbook_states_the_ci_reverts_a_manual_block(text):
     ``WafAction=Block`` by hand and does not read the runbook would
     otherwise believe the rule is blocking when the next CI run has already
     put it back into Count.
+
+    The warning must sit in the SAME paragraph as the manual deploy it is
+    about. The runbook states the same consequence for the origin guard's
+    own switch (its rollout section, M007/S04), and that sentence does not
+    warn the operator who changed ``WAF_ACTION``.
     """
     flat = re.sub(r"\s+", " ", text)
     if "WafAction=Block" not in flat:
         return False
-    if "reverted by the next CI run" not in flat:
+    positions = [
+        match.start()
+        for match in re.finditer(re.escape("WafAction=Block"), flat)
+    ]
+    if not any(
+        "reverted by the next CI run" in flat[position:position + 400]
+        for position in positions
+    ):
         return False
     if "WAF_ACTION" not in flat:
         return False
