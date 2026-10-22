@@ -315,6 +315,29 @@ jobs:
             exit 1
           fi
 
+      # ─────────────────────────────────────────────
+      # M007/S04: the two-phase rollout is "header first, enforcement
+      # second". Before a deploy that would ENFORCE the guard, the origin
+      # header must already be live on the live distribution AND settled
+      # (CloudFront propagates a configuration change to every edge in "a
+      # few minutes"). If it is not, CloudFront would not stamp the header
+      # on every edge while the Lambda already refuses header-less
+      # requests -- the whole site goes down.
+      #
+      # The preflight is GATED on the switch, so phase 1 is never blocked
+      # by the very header the phase-1 deploy is about to ship. It is NOT
+      # swallowable: a preflight that cannot fail the job is a comment.
+      # The witness is read-only (boto3 is already installed by the
+      # deploy-helpers step above).
+      # ─────────────────────────────────────────────
+      - name: "Preflight: the origin header must be live before enforcement"
+        if: env.ENFORCE_ORIGIN_GUARD == 'true'
+        run: |
+          python scripts/verify_origin_guard.py \
+            --stack-name chemically \
+            --region ${{ env.AWS_REGION }} \
+            --expect header-live
+
       - name: SAM deploy
         run: |
           sam deploy \
@@ -420,6 +443,36 @@ jobs:
             --stack-name chemically \
             --region ${{ env.AWS_REGION }} \
             --expect-tag ${{ env.IMAGE_TAG }}
+
+      # ─────────────────────────────────────────────
+      # M007/S04: the post-deploy witness. It proves which phase is
+      # actually live: in phase 1 the header is live and the guard is
+      # inert; in phase 2 a direct Function-URL call is refused with the
+      # fixed 403 body and counted in the ChemicAlly/OriginGuardRefusals
+      # metric while the public site still serves 200 (no legitimate
+      # request was refused).
+      #
+      # It runs AFTER the Cloudflare DNS sync (the public-site probe has to
+      # hit the live alias) and AFTER the deployment check. It is not
+      # swallowable.
+      #
+      # --min-header-age-minutes 0: the "settled across the edges" window
+      # is a PRE-DEPLOY gate (the preflight above), not a post-deploy
+      # assertion. This step runs immediately after a deploy that may
+      # itself have changed the distribution -- phase 1 ships the header,
+      # so the distribution was modified seconds ago -- and demanding a
+      # 10-minute-old distribution here would turn every phase-1 deploy
+      # red for a reason that has nothing to do with the guard.
+      # ─────────────────────────────────────────────
+      - name: Verify the origin guard rollout
+        run: |
+          python scripts/verify_origin_guard.py \
+            --stack-name chemically \
+            --region ${{ env.AWS_REGION }} \
+            --site-url https://chemic-ally.xyz \
+            --expect auto \
+            --expect-enforcement ${{ env.ENFORCE_ORIGIN_GUARD }} \
+            --min-header-age-minutes 0
 
   # ─────────────────────────────────────────────
   # Stage 5: Live production probe
