@@ -68,7 +68,9 @@ jobs:
           resources = processed.get("Resources", {})
           dist_template = resources.get("CloudFrontDistribution", {})
           origins = dist_template.get("Properties", {}).get(
-              "DistributionConfig", {}).get("Origins", {}).get("Items", [])
+              "DistributionConfig", {}).get("Origins", [])
+          if isinstance(origins, dict):
+              origins = origins.get("Items", [])
           for origin in origins:
               headers = origin.get("OriginCustomHeaders")
               print("RESULT processed template origin headers:", _json.dumps(headers)[:300])
