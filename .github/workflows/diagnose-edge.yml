@@ -1,9 +1,8 @@
 name: Diagnose edge association (temporary)
 
-# TEMPORARY diagnostic. It tries the association with the live
-# distribution's ARN against a CLOUDFRONT-scope web ACL (us-east-1) and a
-# REGIONAL-scope web ACL (us-east-2), with several ARN shapes, and deletes
-# every throwaway ACL again at the end.
+# TEMPORARY diagnostic: try the association with the live distribution's ARN
+# against a CLOUDFRONT-scope ACL (us-east-1) and a REGIONAL-scope ACL
+# (us-east-2), with several ARN shapes, then delete the throwaway ACLs.
 on:
   workflow_dispatch:
 
@@ -39,33 +38,14 @@ jobs:
           outputs = {o["OutputKey"]: o["OutputValue"] for o in stack["Outputs"]}
           arn = outputs["DistributionArn"]
           dist_id = arn.rsplit("/", 1)[-1]
-          print("stack status:", stack["StackStatus"])
-          print("arn:", repr(arn))
-          print("distribution id:", dist_id)
-
-          cf = client("cloudfront", "us-east-1")
-          dist = cf.get_distribution(Id=dist_id)["Distribution"]
-          print("api arn:", repr(dist.get("ARN")))
-          print("api domain:", dist.get("DomainName"), "status:", dist.get("Status"))
-          print("api aliases:", dist.get("Aliases"))
+          print("RESULT stack status:", stack["StackStatus"])
+          print("RESULT pipeline arn:", repr(arn))
 
           waf_e1 = client("wafv2", "us-east-1")
           waf_e2 = client("wafv2", "us-east-2")
 
-          # Delete leftovers from earlier diagnostic runs.
-          for waf, region in ((waf_e1, "us-east-1"), (waf_e2, "us-east-2")):
-              for acl in waf.list_web_acls(Scope="CLOUDFRONT" if region == "us-east-1" else "REGIONAL").get("WebACLs", []):
-                  if "chemically-diagnostic" not in acl["Name"]:
-                      continue
-                  try:
-                      lock = waf.get_web_acl(WebACLArn=acl["ARN"])["LockToken"]
-                      waf.delete_web_acl(WebACLArn=acl["ARN"], LockToken=lock)
-                      print("deleted leftover", acl["ARN"])
-                  except ClientError as exc:
-                      print("could not delete leftover", acl["ARN"],
-                            exc.response["Error"]["Message"][:120])
-
-          created = []
+          acl_cf = None
+          acl_reg = None
           try:
               acl_cf = waf_e1.create_web_acl(
                   Name="chemically-diagnostic-cf",
@@ -77,12 +57,10 @@ jobs:
                       "SampledRequestsEnabled": False,
                   },
               )["Summary"]["ARN"]
-              created.append((waf_e1, acl_cf))
-              print("created cloudfront-scope acl:", acl_cf)
+              print("RESULT created cf-scope acl:", acl_cf)
           except ClientError as exc:
-              print("could not create cloudfront-scope acl:",
+              print("RESULT could not create cf-scope acl:",
                     exc.response["Error"]["Message"][:200])
-              acl_cf = None
 
           try:
               acl_reg = waf_e2.create_web_acl(
@@ -95,12 +73,10 @@ jobs:
                       "SampledRequestsEnabled": False,
                   },
               )["Summary"]["ARN"]
-              created.append((waf_e2, acl_reg))
-              print("created regional-scope acl:", acl_reg)
+              print("RESULT created reg-scope acl:", acl_reg)
           except ClientError as exc:
-              print("could not create regional-scope acl:",
+              print("RESULT could not create reg-scope acl:",
                     exc.response["Error"]["Message"][:200])
-              acl_reg = None
 
           variants = [
               ("as-is", arn),
@@ -117,18 +93,19 @@ jobs:
               for name, candidate in variants:
                   try:
                       waf.associate_web_acl(WebACLArn=acl, ResourceArn=candidate)
-                      print("OK  ", label, name, candidate)
+                      print("RESULT OK", label, name, candidate)
                   except ClientError as exc:
-                      print("FAIL", label, name, candidate,
+                      print("RESULT FAIL", label, name, candidate,
                             exc.response["Error"]["Message"][:180])
 
-          for waf, acl in created:
+          for waf, acl in ((waf_e1, acl_cf), (waf_e2, acl_reg)):
+              if not acl:
+                  continue
               try:
                   lock = waf.get_web_acl(WebACLArn=acl)["LockToken"]
                   waf.delete_web_acl(WebACLArn=acl, LockToken=lock)
-                  print("deleted", acl)
-              except ClientError as exc:
-                  print("could not delete", acl,
-                        exc.response["Error"]["Message"][:160])
-          print("DONE")
+                  print("RESULT deleted", acl)
+              except Exception as exc:
+                  print("RESULT could not delete", acl, str(exc)[:160])
+          print("RESULT DONE")
           PY
