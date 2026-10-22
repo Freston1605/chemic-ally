@@ -321,9 +321,24 @@ def gate_action_matches(rule, expect_action):
     return action
 
 
+def _rate_based_statement(rule):
+    """Return the rule's rate-based statement.
+
+    The WAFv2 API nests it: ``Statement: {RateBasedStatement: {...}}``. A
+    reader that looks for the statement at the rule's top level finds
+    nothing and reports a missing ceiling for a rule that has one.
+    """
+    statement = rule.get("Statement")
+    if isinstance(statement, dict):
+        nested = statement.get("RateBasedStatement")
+        if isinstance(nested, dict):
+            return nested
+    return rule.get("RateBasedStatement") or {}
+
+
 def gate_limit_and_window(rule):
     """G4: the live limit and evaluation window are reportable and sane."""
-    statement = rule.get("RateBasedStatement") or {}
+    statement = _rate_based_statement(rule)
     limit = statement.get("Limit")
     if limit is None:
         raise RuntimeError(

@@ -107,9 +107,12 @@ def _rule(action="Count", limit=2000, window=300, name="EdgeRateLimit"):
     # The WAFv2 API reports an action as a structure, not a bare name.
     rule = {"Name": name, "Action": {action: {}}}
     if limit is not None:
-        rule["RateBasedStatement"] = {"Limit": limit}
+        # The WAFv2 API nests the statement: Statement: {RateBasedStatement}.
+        rule["Statement"] = {"RateBasedStatement": {"Limit": limit}}
         if window is not None:
-            rule["RateBasedStatement"]["EvaluationWindowSec"] = window
+            rule["Statement"]["RateBasedStatement"][
+                "EvaluationWindowSec"
+            ] = window
     return rule
 
 

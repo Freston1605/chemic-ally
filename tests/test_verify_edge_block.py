@@ -137,12 +137,13 @@ def _rule(
         "Name": name,
         # The WAFv2 API reports an action as a structure.
         "Action": {action: {}},
-        "RateBasedStatement": {
+        # The WAFv2 API nests the statement: Statement: {RateBasedStatement}.
+        "Statement": {"RateBasedStatement": {
             "Limit": limit,
             "EvaluationWindowSec": window,
             "AggregateKeyType": "IP",
             "ScopeDownStatement": _scope_statement(scope, encode_scope),
-        },
+        }},
     }
     return rule
 
@@ -644,7 +645,7 @@ class ProbeScopeTests(SimpleTestCase):
 
     def test_a_rule_without_a_scope_down_statement_is_refused(self):
         rule = _rule()
-        rule["RateBasedStatement"].pop("ScopeDownStatement")
+        rule["Statement"]["RateBasedStatement"].pop("ScopeDownStatement")
         waf = FakeWaf(web_acl=_web_acl(rules=[rule]))
         clients = FakeClients(waf=waf)
         http = ScriptedHttp(_answered(3) + _blocked(3))
