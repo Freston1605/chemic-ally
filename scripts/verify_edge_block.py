@@ -939,6 +939,7 @@ def run(
         response = waf_client.get_web_acl(ARN=web_acl_arn)
         web_acl = (response or {}).get("WebACL") or {}
         rule = gate_web_acl_holds_rule(web_acl)
+        print("DEBUG live rule: {}".format(json.dumps(rule)[:1200]))
         # The WAFv2 API reports a rule's action as a STRUCTURE
         # ({"Count": {}}, {"Block": {}}), not as the bare name.
         action = _action_name(rule)
