@@ -267,14 +267,19 @@ Resources:
               - Effect: Allow
                 Action:
                   - cloudwatch:PutMetricData
-                Resource:
-                  # CloudWatch's namespace resource is written with a
-                  # slash; the colon form is granted as well because the
-                  # two spellings are easy to get wrong and an AccessDenied
-                  # here would silently cost the milestone its detection
-                  # story. Both name the SAME namespace - no wildcard.
-                  - !Sub "arn:aws:cloudwatch:${AWS::Region}:${AWS::AccountId}:namespace/ChemicAlly"
-                  - !Sub "arn:aws:cloudwatch:${AWS::Region}:${AWS::AccountId}:namespace:ChemicAlly"
+                Resource: "*"
+                # The namespace scoping is done with a CONDITION, not with
+                # the resource: AWS does not honour a namespace-scoped
+                # resource for PutMetricData here - both the slash and the
+                # colon spelling of the namespace ARN are denied with
+                # AccessDenied (observed live on 2026-10-22) - so the
+                # action is granted on the service's wildcard and the
+                # namespace is pinned by the cloudwatch:namespace condition
+                # key instead. The function may publish into the ChemicAlly
+                # namespace and nowhere else.
+                Condition:
+                  StringEquals:
+                    cloudwatch:namespace: ChemicAlly
 
   # ─────────────────────────────────────────────
   # Lambda function (container image)
