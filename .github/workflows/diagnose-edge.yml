@@ -1,9 +1,8 @@
 name: Diagnose edge association (temporary)
 
-# TEMPORARY diagnostic: the decisive comparison. The live distribution's ARN
-# is tried against a REGIONAL-scope web ACL (us-east-2) and a
-# CLOUDFRONT-scope web ACL (us-east-1). Unique names avoid the duplicate
-# leftovers; every throwaway ACL is deleted at the end.
+# TEMPORARY diagnostic: reports the live distribution's full config, the
+# app stack's origin-secret parameter, and the Lambda environment. It only
+# reads.
 on:
   workflow_dispatch:
 
@@ -12,7 +11,7 @@ permissions:
 
 jobs:
   diagnose:
-    name: Diagnose
+    name: Diagnose (read-only)
     runs-on: ubuntu-latest
     steps:
       - name: Configure AWS credentials (us-east-2)
@@ -25,12 +24,11 @@ jobs:
       - name: Install boto3
         run: pip install --quiet boto3
 
-      - name: Report the live state
+      - name: Report
         run: |
           python3 - <<'PY'
-          import time
+          import json
           import boto3
-          from botocore.exceptions import ClientError
 
           def client(service, region):
               return boto3.client(service, region_name=region)
@@ -38,92 +36,36 @@ jobs:
           cfn = client("cloudformation", "us-east-2")
           stack = cfn.describe_stacks(StackName="chemically")["Stacks"][0]
           outputs = {o["OutputKey"]: o["OutputValue"] for o in stack["Outputs"]}
-          arn = outputs["DistributionArn"]
-          dist_id = arn.rsplit("/", 1)[-1]
+          params = {p["ParameterKey"]: p["ParameterValue"] for p in stack["Parameters"]}
+
           print("RESULT stack status:", stack["StackStatus"])
-          print("RESULT pipeline arn:", repr(arn))
-          print("RESULT distribution id:", dist_id, "len", len(dist_id))
+          secret = params.get("OriginSecret", "<missing>")
+          print("RESULT OriginSecret parameter: present=%s len=%s value=%r" % (
+              "OriginSecret" in params, len(secret), secret))
+          print("RESULT OriginHeaderName parameter: %r" % params.get("OriginHeaderName"))
+          print("RESULT EnforceOriginGuard parameter: %r" % params.get("EnforceOriginGuard"))
 
-          waf_e1 = client("wafv2", "us-east-1")
-          waf_e2 = client("wafv2", "us-east-2")
-          stamp = str(int(time.time()))
+          dist_arn = outputs["DistributionArn"]
+          dist_id = dist_arn.rsplit("/", 1)[-1]
+          cf = client("cloudfront", "us-east-1")
+          dist = cf.get_distribution(Id=dist_id)["Distribution"]
+          config = dist["DistributionConfig"]
+          print("RESULT distribution last_modified:", dist.get("LastModifiedTime"))
+          for origin in config.get("Origins", {}).get("Items", []):
+              print("RESULT origin domain:", origin.get("DomainName"))
+              print("RESULT origin custom headers:", json.dumps(
+                  origin.get("OriginCustomHeaders")))
+          print("RESULT distribution WebACLId:", config.get("WebACLId"))
 
-          def delete_all(waf, scope):
-              for acl in waf.list_web_acls(Scope=scope).get("WebACLs", []):
-                  if "chemically-diagnostic" not in acl["Name"]:
-                      continue
-                  try:
-                      lock = waf.get_web_acl(
-                          Name=acl["Name"], Scope=scope, Id=acl["Id"]
-                      )["LockToken"]
-                      waf.delete_web_acl(
-                          Name=acl["Name"], Scope=scope, Id=acl["Id"],
-                          LockToken=lock,
-                      )
-                      print("RESULT deleted leftover", acl["Name"])
-                  except Exception as exc:
-                      print("RESULT leftover kept", acl["Name"], str(exc)[:140])
-
-          delete_all(waf_e1, "CLOUDFRONT")
-          delete_all(waf_e2, "REGIONAL")
-
-          made = []
-
-          def make(waf, scope, name, metric):
-              try:
-                  acl = waf.create_web_acl(
-                      Name=name,
-                      Scope=scope,
-                      DefaultAction={"Allow": {}},
-                      VisibilityConfig={
-                          "CloudWatchMetricsEnabled": True,
-                          "MetricName": metric,
-                          "SampledRequestsEnabled": False,
-                      },
-                  )["Summary"]["ARN"]
-                  made.append((waf, scope, name, acl))
-                  print("RESULT created", scope, name)
-                  return acl
-              except Exception as exc:
-                  print("RESULT could not create", scope, name, str(exc)[:180])
-                  return None
-
-          acl_cf = make(waf_e1, "CLOUDFRONT",
-                        "chemically-diagnostic-cf-" + stamp, "ChemicAllyDiagCf")
-          acl_reg = make(waf_e2, "REGIONAL",
-                         "chemically-diagnostic-reg-" + stamp, "ChemicAllyDiagReg")
-
-          variants = [
-              ("as-is", arn),
-              ("with-region", arn.replace("::", ":us-east-1:")),
-          ]
-          for label, waf, acl in (
-              ("reg-scope/us-east-2", waf_e2, acl_reg),
-              ("cf-scope/us-east-1", waf_e1, acl_cf),
-          ):
-              if not acl:
-                  continue
-              for name, candidate in variants:
-                  try:
-                      waf.associate_web_acl(WebACLArn=acl, ResourceArn=candidate)
-                      print("RESULT OK", label, name, candidate)
-                  except Exception as exc:
-                      code = ""
-                      if isinstance(exc, ClientError):
-                          code = exc.response["Error"].get("Code", "")
-                      print("RESULT FAIL", label, name, code, str(exc)[:190])
-
-          for waf, scope, name, acl in made:
-              try:
-                  lock = waf.get_web_acl(
-                      Name=name, Scope=scope, Id=acl.rsplit("/", 1)[-1]
-                  )["LockToken"]
-                  waf.delete_web_acl(
-                      Name=name, Scope=scope, Id=acl.rsplit("/", 1)[-1],
-                      LockToken=lock,
-                  )
-                  print("RESULT deleted", name)
-              except Exception as exc:
-                  print("RESULT could not delete", name, str(exc)[:150])
+          lam = client("lambda", "us-east-2")
+          function = outputs["LambdaFunctionArn"].split(":function:")[-1]
+          env = lam.get_function_configuration(
+              FunctionName=function
+          ).get("Environment", {}).get("Variables", {})
+          print("RESULT lambda env keys:", sorted(env))
+          for key in sorted(env):
+              if "SECRET" in key or "ORIGIN" in key:
+                  value = env[key]
+                  print("RESULT lambda env %s: len=%s" % (key, len(value)))
           print("RESULT DONE")
           PY
