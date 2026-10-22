@@ -45,6 +45,25 @@ jobs:
           sleep 2
           echo "=== the log (tail) ==="
           tail -40 /tmp/tail.log
+          echo "=== the LIVE web ACL (rule shape) ==="
+          acl_arn=$(aws cloudformation describe-stacks --stack-name chemically-edge \
+            --region us-east-1 \
+            --query "Stacks[0].Outputs[?OutputKey=='WebACLArn'].OutputValue" \
+            --output text)
+          echo "acl: ${acl_arn}"
+          aws wafv2 get-web-acl --web-acl-arn "$acl_arn" --region us-east-1 \
+            --output json 2>&1 | python3 -c '
+          import json, sys
+          try:
+              data = json.load(sys.stdin)
+          except Exception as exc:
+              print("could not read the ACL:", exc)
+              raise SystemExit(0)
+          web_acl = data.get("WebACL", {})
+          for rule in web_acl.get("Rules", []):
+              print(json.dumps(rule, indent=1)[:1500])
+          '
+
           echo "=== the Lambda role's inline policies ==="
           role=$(aws cloudformation describe-stack-resources \
             --stack-name chemically --region us-east-2 \
