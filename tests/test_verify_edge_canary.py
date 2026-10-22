@@ -104,7 +104,8 @@ def _young_stack(minutes_ago=5, **kwargs):
 
 
 def _rule(action="Count", limit=2000, window=300, name="EdgeRateLimit"):
-    rule = {"Name": name, "Action": action}
+    # The WAFv2 API reports an action as a structure, not a bare name.
+    rule = {"Name": name, "Action": {action: {}}}
     if limit is not None:
         rule["RateBasedStatement"] = {"Limit": limit}
         if window is not None:

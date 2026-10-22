@@ -308,6 +308,25 @@ def gate_web_acl_holds_rule(web_acl, rule_name=RULE_NAME):
     )
 
 
+def _action_name(rule):
+    """Return the live rule's action as a name.
+
+    The WAFv2 API reports a rule's action as a STRUCTURE - {"Count": {}},
+    {"Block": {}} - not as the bare name, so the name has to be read out
+    of the single key it carries.
+    """
+    action = rule.get("Action")
+    if isinstance(action, dict):
+        keys = [key for key in action if key]
+        if len(keys) != 1:
+            raise RuntimeError(
+                "the live rule reports the action {!r}, which does not name "
+                "exactly one mode".format(action)
+            )
+        return keys[0]
+    return action
+
+
 def gate_action_is_blocking(action, expect_no_block):
     """G3: the live action is the one the probe is allowed to prove."""
     if expect_no_block:
@@ -905,7 +924,9 @@ def run(
         response = waf_client.get_web_acl(ARN=web_acl_arn)
         web_acl = (response or {}).get("WebACL") or {}
         rule = gate_web_acl_holds_rule(web_acl)
-        action = rule.get("Action")
+        # The WAFv2 API reports a rule's action as a STRUCTURE
+        # ({"Count": {}}, {"Block": {}}), not as the bare name.
+        action = _action_name(rule)
         record["action"] = action
         gate_action_is_blocking(action, expect_no_block)
         limit, evaluation_window = gate_limit_and_window(rule)

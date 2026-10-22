@@ -135,7 +135,8 @@ def _rule(
 ):
     rule = {
         "Name": name,
-        "Action": action,
+        # The WAFv2 API reports an action as a structure.
+        "Action": {action: {}},
         "RateBasedStatement": {
             "Limit": limit,
             "EvaluationWindowSec": window,
